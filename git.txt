@@ -10,3 +10,22 @@ For adding a Specific file for staging          File then staging then commit
 
 git commit -m "<Message>"
 This is for commiting and -m is for Message or comment make sure it's descripted
+
+git log
+For viewing commit history
+
+git log --oneline
+For Showing Each commits on one line with shortcodes
+
+Undoing commits:
+Checkout commit         Revert commit           Reset commit
+
+
+Checkout commit:
+With this we can view the previous commit just as view. So we can only view those code but won't be able to edit it. Maybe.
+
+Revert Commit:
+With this we can delete some Specific commits. Like we commited some code in there then a few more commits. Revert will delete only what in that specicfic commit
+
+Reset Commit:
+This is like going back in past. it will take you to that specicfic commit while deleting the others after that commit..
