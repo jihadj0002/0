@@ -53,4 +53,14 @@ Create a New Branch
 This will show us all the available Branches
 
 >>> git checkout <branch name>
-This will take you to that branch
+This will take you to that Specific Branch
+
+TO delete the Branch
+go to main branch. then
+
+>>>git branch -d <branch name>
+if the branch is not merged then:
+>>>git branch -D <branch name>
+
+Shortcut to create and switch to new branch
+>>> git checkout -b <branch name>
