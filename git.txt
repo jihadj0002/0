@@ -64,3 +64,9 @@ if the branch is not merged then:
 
 Shortcut to create and switch to new branch
 >>> git checkout -b <branch name>
+
+Merge Branch:
+>>> git merge <branch name>
+You have to be in the main branch to merge it.
+
+git push
