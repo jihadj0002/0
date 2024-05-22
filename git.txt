@@ -1,0 +1,12 @@
+git clone is for cloning a reposotory 
+
+Try to use git add before commiting the file
+
+git status
+for getting the data of which of the files are commited or not
+
+git add <file name>
+For adding a Specific file for staging          File then staging then commit
+
+git commit -m "<Message>"
+This is for commiting and -m is for Message or comment make sure it's descripted
