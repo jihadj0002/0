@@ -52,3 +52,5 @@ Create a New Branch
 >>> git branch -a 
 This will show us all the available Branches
 
+>>> git checkout <branch name>
+This will take you to that branch
