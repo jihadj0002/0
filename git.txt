@@ -41,3 +41,14 @@ Reset Commit:
 
 
 This is like going back in past. it will take you to that specicfic commit while deleting the others after that commit..
+
+
+
+Branches::::::
+
+>>> git branch <branch name>
+Create a New Branch
+
+>>> git branch -a 
+This will show us all the available Branches
+
