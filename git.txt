@@ -78,5 +78,10 @@ On this line of code you need to paste the link each time for a Shortcut you can
 >>> git remote add <origin/other name> <git link>
 Then each time you can do is:
 >>> git push origin main
+Which is maybe already added to mine
 
-add
+
+Git Pull:
+>>> git pull
+It is for pulling a code which I already have to check if there is any changes on github which is not updated on my local storage.
+Or >>> git pull origin master
