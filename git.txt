@@ -87,3 +87,8 @@ It is for pulling a code which I already have to check if there is any changes o
 Or >>> git pull origin main
 
 Always Make a pull request 
+
+
+Forking:
+FOrking is copying someones reposotory and adding to your own reposotory.
+Then we can code in that.   We can then adjust those code and help them out or contibute to their project.
