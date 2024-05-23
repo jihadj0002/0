@@ -69,4 +69,12 @@ Merge Branch:
 >>> git merge <branch name>
 You have to be in the main branch to merge it.
 
-git push
+git push:
+If we are already in the github reposotory or added Then:
+>>> git push
+If you want to push to a specific github reposotory Then:
+>>> git push <github git link> <branch name>
+On this line of code you need to paste the link each time for a Shortcut you can give the link a name by doing.
+>>> git remote add <origin/other name> <git link>
+Then each time you can do is:
+>>> git push origin main
