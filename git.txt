@@ -84,4 +84,6 @@ Which is maybe already added to mine
 Git Pull:
 >>> git pull
 It is for pulling a code which I already have to check if there is any changes on github which is not updated on my local storage.
-Or >>> git pull origin master
+Or >>> git pull origin main
+
+Always Make a pull request 
