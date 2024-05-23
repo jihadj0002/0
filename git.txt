@@ -78,3 +78,5 @@ On this line of code you need to paste the link each time for a Shortcut you can
 >>> git remote add <origin/other name> <git link>
 Then each time you can do is:
 >>> git push origin main
+
+add
