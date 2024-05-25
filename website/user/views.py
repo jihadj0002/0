@@ -4,6 +4,9 @@ from django.contrib.auth import authenticate, login, logout
 
 # Create your views here.
 
+def user(request):
+    return render(request, 'user/index.html')
+
 def user_login(request):
     if request.method == 'POST':
         form = LoginForm(request.POST)
@@ -13,7 +16,7 @@ def user_login(request):
             user = authenticate(request, username=username, password=password)
             if user:
                 login(request, user)
-                return redirect('signup')
+                return redirect('user')
     else:
         form = LoginForm()
         
@@ -28,8 +31,8 @@ def user_signup(request):
         if form.is_valid():
             form.save()
             return redirect('login')
-        else:
-            form = SignupForm()
+    else:
+        form = SignupForm()
     
     return  render(request, 'user/signup.html', {
         'form': form

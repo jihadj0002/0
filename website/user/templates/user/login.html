@@ -5,6 +5,14 @@
     </head>
 <body>
     <h1>Hello World</h1>
+    <h2>Login Page</h2>
+    <form method="POST">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Login</button>
+        <a href="{% url 'signup' %}"> Don't Have Account Create </a>
+        </form>
+
 
 </body>
 </html>
