@@ -1,0 +1,155 @@
+<!-- templates/home.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Agent Service</title>
+  <!-- TailwindCSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 text-gray-900">
+
+  <!-- Hero Section -->
+  <section class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+    <div class="max-w-6xl mx-auto px-6 py-20 text-center">
+      <h1 class="text-4xl md:text-6xl font-bold mb-6">
+        Automate Your Business Conversations with AI
+      </h1>
+      <p class="text-lg md:text-xl mb-8">
+        Stop paying ৳10,000/month for human agents. Get your AI Agent for just ৳4,499 and save time + money.
+      </p>
+      <a href="#pricing" class="bg-white text-indigo-600 px-6 py-3 rounded-xl font-semibold shadow hover:bg-gray-100 transition">
+        Get Started
+      </a>
+    </div>
+  </section>
+
+  <!-- 🎥 Video Section (Portrait) -->
+<section class="max-w-sm mx-auto px-6 py-12">
+  <div class="aspect-[9/16]">
+    <iframe 
+      class="w-full h-[500px] rounded-2xl shadow-lg"
+      src="https://www.youtube.com/shorts/yeUPTLZvJl0" 
+      title="AI Agent Demo Video"
+      frameborder="0" 
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+      allowfullscreen>
+    </iframe>
+  </div>
+  <p class="text-center mt-4 text-gray-600">
+    Watch how our AI Agent handles real customer conversations seamlessly.
+  </p>
+</section>
+
+
+  <!-- Features Section -->
+  <section class="max-w-6xl mx-auto px-6 py-20">
+    <h2 class="text-3xl font-bold text-center mb-12">Why Choose Our AI Agent?</h2>
+    <div class="grid md:grid-cols-3 gap-8 text-center">
+      <div class="p-6 bg-white shadow rounded-2xl">
+        <h3 class="font-semibold text-xl mb-3">24/7 Support</h3>
+        <p>Always online — your customers never wait for answers.</p>
+      </div>
+      <div class="p-6 bg-white shadow rounded-2xl">
+        <h3 class="font-semibold text-xl mb-3">Smart Order Tracking</h3>
+        <p>Fetches and shares real-time order status instantly.</p>
+      </div>
+      <div class="p-6 bg-white shadow rounded-2xl">
+        <h3 class="font-semibold text-xl mb-3">Saves Time & Money</h3>
+        <p>Cut repetitive support costs by up to 60% with automation.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Section -->
+  <section id="pricing" class="bg-gray-100 py-20">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-6">Simple Pricing</h2>
+      <p class="mb-10 text-lg">Replace expensive human agents with our AI Agent.</p>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <!-- Human -->
+        <div class="bg-white shadow rounded-2xl p-8">
+          <h3 class="text-xl font-semibold mb-4">Hiring a Human</h3>
+          <p class="text-4xl font-bold text-red-500 mb-4">৳10,000+</p>
+          <p class="mb-6">Per month, per person</p>
+          <ul class="text-left mb-6 space-y-2">
+            <li>❌ Limited working hours</li>
+            <li>❌ Repetitive mistakes</li>
+            <li>❌ High costs</li>
+          </ul>
+        </div>
+
+        <!-- AI Agent -->
+        <div class="bg-indigo-600 text-white shadow rounded-2xl p-8">
+          <h3 class="text-xl font-semibold mb-4">AI Agent</h3>
+          <p class="text-4xl font-bold mb-4">৳4,499</p>
+          <p class="mb-6">Per month, unlimited support</p>
+          <ul class="text-left mb-6 space-y-2">
+            <li>✅ 24/7 availability</li>
+            <li>✅ Smart product & order queries</li>
+            <li>✅ Saves 60% of costs</li>
+          </ul>
+          <a href="#contact" class="bg-white text-indigo-600 px-6 py-3 rounded-xl font-semibold shadow hover:bg-gray-200 transition">
+            Get Your AI Agent
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ Section -->
+  <section class="max-w-6xl mx-auto px-6 py-20">
+    <h2 class="text-3xl font-bold text-center mb-12">Frequently Asked Questions</h2>
+    <div class="space-y-6">
+      <div class="bg-white shadow p-6 rounded-2xl">
+        <h3 class="font-semibold mb-2">Can the AI work on Facebook & Instagram chat?</h3>
+        <p>Yes! We integrate directly with your business pages so your customers can chat instantly.</p>
+      </div>
+      <div class="bg-white shadow p-6 rounded-2xl">
+        <h3 class="font-semibold mb-2">Does it support product FAQs and order tracking?</h3>
+        <p>Absolutely. It connects to your store, fetches live data, and answers product queries automatically.</p>
+      </div>
+      <div class="bg-white shadow p-6 rounded-2xl">
+        <h3 class="font-semibold mb-2">How much time can I save?</h3>
+        <p>On average, store owners save 20+ hours per month by automating repetitive conversations.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact Section -->
+  <section id="contact" class="bg-indigo-600 text-white py-20">
+    <div class="max-w-3xl mx-auto px-6 text-center">
+      <h2 class="text-3xl font-bold mb-6">Get Started Today</h2>
+      <p class="mb-8">Fill in your details and we’ll reach out to set up your AI Agent.</p>
+        <form action="{% url 'contact' %}" method="POST" class="bg-white text-gray-900 p-8 rounded-2xl shadow">
+        {% csrf_token %}
+        <div class="mb-4">
+            <input type="text" name="name" placeholder="Your Name"
+                class="w-full p-3 border rounded-xl focus:ring focus:ring-indigo-400" required>
+        </div>
+        <div class="mb-4">
+            <input type="email" name="email" placeholder="Your Email"
+                class="w-full p-3 border rounded-xl focus:ring focus:ring-indigo-400" required>
+        </div>
+        <div class="mb-4">
+            <input type="text" name="business" placeholder="Your Business Name"
+                class="w-full p-3 border rounded-xl focus:ring focus:ring-indigo-400">
+        </div>
+        <button type="submit"
+                class="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold hover:bg-indigo-700 transition">
+            Request a Demo
+        </button>
+        </form>
+
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="bg-gray-900 text-gray-300 py-6 text-center">
+    <p>&copy; {{ year }} AI Agent Service. All rights reserved.</p>
+  </footer>
+
+</body>
+</html>

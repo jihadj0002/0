@@ -1,0 +1,192 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Conversations Module</title>
+  <style>
+:root{
+  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
+  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{
+  margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;
+}
+.app{display:flex; min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
+.brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+.logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
+.brand-text{font-weight:700}
+.nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
+.nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
+.nav-item:hover{background:var(--soft)}
+.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
+
+/* MAIN */
+.main{flex:1; display:flex; flex-direction:column}
+.topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px; background:transparent}
+.search-wrap{flex:1; max-width:640px}
+.search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
+.top-actions{display:flex; align-items:center; gap:12px}
+.btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer}
+.avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
+
+/* CONTENT */
+.content{padding:20px 28px 40px}
+.page-header h1{margin:0; font-size:28px}
+.page-header .sub{color:var(--muted); margin-top:6px}
+
+.filters .mini-search{padding:8px 10px; border-radius:10px; border:1px solid #eef2f6}
+
+.layout-2cols{display:grid; grid-template-columns:1fr 420px; gap:18px; margin-top:20px}
+.panel{background:var(--panel); padding:16px; border-radius:12px; box-shadow:var(--shadow)}
+.panel-header{display:flex; justify-content:space-between; align-items:center}
+
+/* Table */
+.conversations-table{width:100%; border-collapse:collapse; margin-top:12px}
+.conversations-table th{text-align:left; color:var(--muted); font-size:13px; padding:8px 0}
+.conversations-table td{padding:12px 0; border-top:1px solid #f3f6fb}
+
+/* Status Badges */
+.badge{padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px}
+.badge.pending{background:#fffbeb; color:#92400e}
+.badge.success{background:#ecfdf5; color:#065f46}
+.badge.closed{background:#f1f5f9; color:#475569}
+
+/* Messages */
+.messages{display:flex; flex-direction:column; gap:10px}
+.msg{padding:10px 14px; border-radius:12px; max-width:80%; line-height:1.4}
+.msg.from{background:var(--soft); align-self:flex-start}
+.msg.to{background:var(--accent); color:white; align-self:flex-end}
+
+/* Input bar */
+.input-bar input{flex:1; padding:10px; border-radius:10px; border:1px solid #eef2f6}
+.input-bar button{padding:10px 16px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-weight:600; cursor:pointer}
+
+/* Responsive */
+@media (max-width:1000px){
+  .sidebar{display:none}
+  .layout-2cols{grid-template-columns:1fr}
+}
+</style>
+
+</head>
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">MA</div>
+        <div class="brand-text">Matrix AI</div>
+      </div>
+      <nav class="nav">
+        <nav class="nav">
+        <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
+        <a class="nav-item active" href="{% url 'back:c_dashboard' %}">💬 Conversations</a>
+        <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
+        <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a>
+        <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a>
+      </nav>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+      <!-- Topbar -->
+      <div class="topbar">
+        <div class="search-wrap">
+          <input class="search" type="text" placeholder="Search conversations by name...">
+        </div>
+        <div class="top-actions">
+          <button class="btn-primary">+ New Conversation</button>
+          <div class="avatar">U</div>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+        <div class="page-header">
+          <h1>Conversations</h1>
+          <p class="sub">List of conversations handled by chatbot</p>
+        </div>
+
+        <!-- Filters -->
+        <div class="filters" style="margin-top:16px; display:flex; gap:12px;">
+          <input class="mini-search" type="text" placeholder="Filter by customer name">
+          <input class="mini-search" type="date">
+          <select class="mini-search">
+            <option>Status</option>
+            <option value="pending">Pending</option>
+            <option value="success">Successful</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+
+        <!-- Layout -->
+        <div class="layout-2cols">
+          <!-- Conversations Table -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>All Conversations</h3>
+            </div>
+            <table class="conversations-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Last Message</th>
+                  <th>Status</th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Jenny Wilson</td>
+                  <td>Order confirmed ✅</td>
+                  <td><span class="badge success">Successful</span></td>
+                  <td>22 Sept, 2025</td>
+                </tr>
+                <tr>
+                  <td>Robert Fox</td>
+                  <td>Still waiting for payment...</td>
+                  <td><span class="badge pending">Pending</span></td>
+                  <td>21 Sept, 2025</td>
+                </tr>
+                <tr>
+                  <td>Guy Hawkins</td>
+                  <td>Conversation closed</td>
+                  <td><span class="badge closed">Closed</span></td>
+                  <td>20 Sept, 2025</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Chat Log -->
+          <div class="panel">
+            <div class="panel-header">
+              <h3>Chat Log</h3>
+            </div>
+            <div class="messages" style="margin-top:12px; max-height:400px; overflow:auto">
+              <div class="msg from">Hello, I would like to order a Smart Watch.</div>
+              <div class="msg to">Sure, Jenny! How many units would you like?</div>
+              <div class="msg from">Just 1 please.</div>
+              <div class="msg to">Your order is confirmed ✅</div>
+            </div>
+            <div class="input-bar" style="margin-top:12px; display:flex; gap:8px;">
+              <input type="text" placeholder="Type a reply..." style="flex:1; padding:10px; border-radius:10px; border:1px solid #eef2f6;">
+              <button class="btn-primary">Send</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</body>
+</html>

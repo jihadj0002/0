@@ -1,0 +1,74 @@
+/* FILE: main.css */
+:root{
+  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
+  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;}
+.app{display:flex; min-height:100vh}
+
+/* Sidebar */
+.sidebar{width:80px; background:linear-gradient(180deg,#fff,#fbfdff); border-right:1px solid #eef2f6; display:flex; flex-direction:column; align-items:center; padding:20px 0}
+.sidebar .logo{width:48px; height:48px; border-radius:12px; background:linear-gradient(135deg,var(--accent),#60a5fa); display:flex; align-items:center; justify-content:center; color:white; font-weight:700; font-size:20px; margin-bottom:20px}
+.sidebar nav{display:flex; flex-direction:column; gap:16px}
+.sidebar nav a{text-decoration:none; font-size:22px; text-align:center; opacity:0.8}
+.sidebar nav a:hover{opacity:1}
+
+/* Main */
+.main{flex:1; display:flex; flex-direction:column}
+.header{padding:16px 24px; background:#fff; border-bottom:1px solid #eef2f6; display:flex; align-items:center; gap:16px}
+.header h1{flex:1; font-size:20px; font-weight:700}
+.tabs{display:flex; gap:8px}
+.tabs button{padding:6px 12px; border:none; border-radius:8px; background:var(--soft); font-weight:600; cursor:pointer}
+.tabs button.active{background:var(--accent); color:white}
+.search{flex:0.6; padding:8px 12px; border:1px solid #e6eefc; border-radius:8px}
+
+/* Content */
+.content{flex:1; display:grid; grid-template-columns:280px 1fr 280px;}
+
+/* Conversations */
+.conversations{background:var(--panel); border-right:1px solid #eef2f6; display:flex; flex-direction:column}
+.conversations .filter{display:flex; gap:6px; padding:10px; border-bottom:1px solid #eef2f6}
+.conversations .filter button{flex:1; padding:6px; border:none; border-radius:8px; background:var(--soft); font-weight:600; cursor:pointer}
+.conversations .filter button.active{background:var(--accent); color:white}
+.conversations ul{list-style:none; overflow-y:auto}
+.conversations li{display:flex; align-items:center; padding:10px; gap:10px; border-bottom:1px solid #f3f6fb; cursor:pointer}
+.conversations li.active{background:#f0f5ff}
+.conversations .avatar{width:36px; height:36px; border-radius:50%; background:#e5e7eb}
+.conversations .name{font-weight:600}
+.conversations .preview{color:var(--muted); font-size:13px}
+.conversations .time{margin-left:auto; font-size:12px; color:var(--muted)}
+
+/* Chat */
+.chat{display:flex; flex-direction:column; background:#fff}
+.chat .messages{flex:1; padding:16px; overflow-y:auto; display:flex; flex-direction:column; gap:12px}
+.msg{max-width:70%; padding:10px 14px; border-radius:12px; line-height:1.4}
+.msg.from{background:var(--soft); align-self:flex-start}
+.msg.to{background:var(--accent); color:white; align-self:flex-end}
+.input-bar{display:flex; gap:8px; padding:12px; border-top:1px solid #eef2f6}
+.input-bar input{flex:1; padding:10px 12px; border:1px solid #e6eefc; border-radius:8px}
+.input-bar button{background:var(--accent); color:white; border:none; border-radius:8px; padding:10px 16px; font-weight:600}
+
+/* Details */
+.details{background:var(--panel); border-left:1px solid #eef2f6; display:flex; flex-direction:column; padding:16px; gap:20px}
+.details .profile{text-align:center}
+.details .avatar.big{width:64px; height:64px; border-radius:50%; background:#e5e7eb; margin:0 auto 10px}
+.details h3{margin:4px 0; font-size:18px}
+.details p{font-size:13px; color:var(--muted)}
+.details button{margin-top:8px; padding:8px 12px; border:none; border-radius:8px; cursor:pointer; font-weight:600; width:100%}
+.details .stop{background:#fee2e2; color:#b91c1c}
+.details .primary{background:var(--accent); color:white}
+.notes h4{margin-bottom:6px; font-size:15px}
+.notes p{color:var(--muted); font-size:13px}
+.notes button{margin-top:8px; padding:8px; border:1px solid #e6eefc; border-radius:8px; background:#f9fafb; cursor:pointer}
+
+/* Responsive */
+@media (max-width:1000px){
+  .content{grid-template-columns:220px 1fr}
+  .details{display:none}
+}
+@media (max-width:700px){
+  .content{grid-template-columns:1fr}
+  .conversations{display:none}
+}
