@@ -16,9 +16,10 @@ class User(AbstractUser):
         ("enterprise", "Enterprise"),
     ]
 
+    uuid = models.CharField(max_length=100, null=True, blank=True)
     email = models.EmailField(unique=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="free")
-    created_at = models.DateTimeField(auto_now_add=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     # Override related_name to avoid clashes with default auth.User
@@ -49,6 +50,7 @@ class User(AbstractUser):
 # -----------------------
 class Product(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
+    
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
@@ -132,3 +134,10 @@ class Setting(models.Model):
 
     def __str__(self):
         return f"{self.platform} settings for {self.user.email}"
+
+
+
+
+
+
+
