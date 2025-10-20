@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pricing Plans</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <style>
+    body {
+      background-color: #0d0d0d;
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+    }
+    .pricing-section {
+      padding: 60px 0;
+    }
+    .pricing-card {
+      background-color: #141414;
+      border: 1px solid #2a2a2a;
+      border-radius: 12px;
+      padding: 30px;
+      transition: all 0.3s ease;
+      height: 100%;
+    }
+    .pricing-card:hover {
+      border-color: #3f3fff;
+      transform: translateY(-5px);
+    }
+    .price {
+      font-size: 2.5rem;
+      font-weight: 700;
+    }
+    .old-price {
+      text-decoration: line-through;
+      color: #888;
+      font-size: 1rem;
+    }
+    .save-tag {
+      background-color: #1a7f37;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      margin-left: 5px;
+    }
+    .btn-custom {
+      background-color: #3f3fff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      width: 100%;
+      font-weight: 600;
+    }
+    .btn-custom:hover {
+      background-color: #2f2fd4;
+    }
+    .feature-list {
+      list-style: none;
+      padding-left: 0;
+    }
+    .feature-list li {
+      margin-bottom: 10px;
+    }
+    .feature-list li::before {
+      content: "✔";
+      color: #1a7f37;
+      margin-right: 8px;
+    }
+    .guarantee {
+      text-align: center;
+      margin-bottom: 40px;
+      font-size: 1.1rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+
+  <section class="pricing-section container">
+    <div class="guarantee">
+      <span>💰 30-Day Money-Back Guarantee</span>
+    </div>
+    <div class="row g-4">
+
+      <!-- Basic Bot -->
+      <div class="col-md-3">
+        <div class="pricing-card text-center">
+          <h5>Basic Bot</h5>
+          <p class="price">$8.99<span class="old-price">$14.99</span><span class="save-tag">Save 40%</span></p>
+          <p class="text-secondary small">Billed annually. You pay $108 today<br>Renews at $180/yr</p>
+          <button class="btn-custom mb-3">Buy Now</button>
+          <ul class="feature-list text-start">
+            <li>10,000 Monthly Replies</li>
+            <li>3M AI Model Tokens/Month</li>
+            <li>Unlimited WhatsApp Service Messages</li>
+            <li>Unlimited Telegram Conversations</li>
+            <li>24/7 Basic Support</li>
+            <li>Meta API Integration Support</li>
+            <li>Web App Integration Support</li>
+            <li>Basic Website Crawling Support</li>
+            <li>Email Support</li>
+            <li>Basic RAG Database Support</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- HOST CLOUD+ -->
+      <div class="col-md-3">
+        <div class="pricing-card text-center">
+          <h5>Gold Bot</h5>
+          <p class="price">$14.99<span class="old-price">$24.99</span><span class="save-tag">Save 40%</span></p>
+          <p class="text-secondary small">Billed annually. You pay $180 today<br>Renews at $300/yr</p>
+          <button class="btn-custom mb-3">Buy Now</button>
+          <ul class="feature-list text-start">
+            <li>20,000 Monthly Replies</li>
+            <li>5M AI Model Tokens/Month</li>
+            <li>Unlimited WhatsApp Service Messages</li>
+            <li>Unlimited Telegram Conversations</li>
+            <li>24/7 Basic Support</li>
+            <li>Meta API Integration Support</li>
+            <li>Web App Integration Support</li>
+            <li>Basic Website Crawling Support</li>
+            <li>Email Support</li>
+            <li>Basic RAG Database Support</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- HOST CLOUD X3 -->
+      <div class="col-md-3">
+        <div class="pricing-card text-center">
+          <h5>Premium Bot</h5>
+          <p class="price">$24.99<span class="old-price">$34.99</span><span class="save-tag">Save 28%</span></p>
+          <p class="text-secondary small">Billed annually. You pay $300 today<br>Renews at $420/yr</p>
+          <button class="btn-custom mb-3">Buy Now</button>
+          <ul class="feature-list text-start">
+            <li>100,000 Monthly Replies</li>
+            <li>20M AI Model Tokens/Month</li>
+            <li>Unlimited WhatsApp Service Messages</li>
+            <li>Unlimited Telegram Conversations</li>
+            <li>24/7 Basic Support</li>
+            <li>Meta API Integration Support</li>
+            <li>Web App Integration Support</li>
+            <li> <b>Agentic AI Based</b> website Crawling Support</li>
+            <li>Email Support</li>
+            <li>Basic RAG Database Support</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ENTERPRISE -->
+      <div class="col-md-3">
+        <div class="pricing-card text-center">
+          <h5>ENTERPRISE</h5>
+          <p class="text-light fs-6">Need more capabilities?</p>
+          <p class="text-secondary small">Our custom enterprise plans scale with your business</p>
+          <button class="btn-custom mb-3">Let’s Talk</button>
+          <ul class="feature-list text-start">
+            <li>Custom Thresholds</li>
+            <li>Enterprise-Grade Security</li>
+            <li>Professional Advisory Sessions</li>
+            <li>Security Audits</li>
+            <li>Platinum Support</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Button To go back home -->
+       <style>
+      a:link, a:visited {
+        background-color: #f44336;
+        color: white;
+        padding: 14px 25px;
+        text-align: center;
+        text-decoration: none;
+        display: inline-block;
+      }
+
+      a:hover, a:active {
+        background-color: red;
+      }
+      </style>
+      <a href="{% url 'front:home' %}">Back to Home</a>
+    </div>
+  </section>
+
+
+</body>
+</html>

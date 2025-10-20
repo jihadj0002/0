@@ -16,10 +16,10 @@ def home(request):
         "year": datetime.date.today().year,
         "matrixai_logo_url": f"{settings.MEDIA_URL}images/matrixai.png"
     }
-    
-
-
     return render(request, "front/home01.html", context)
+
+def pricing(request):
+    return render(request, "front/pricing.html")
 
 def contact(request):
     if request.method == "POST":
@@ -45,22 +45,24 @@ def contact(request):
     
     return HttpResponse("❌ Invalid request.")
 
-login_required()
-def dashboard(request):
-    return render(request, "front/dashboard.html", {"user": request.user})
 
 
-def c_dashboard(request):
-    return render(request, "front/c_dashboard.html", {"user": request.user})
+# login_required()
+# def dashboard(request):
+#     return render(request, "front/dashboard.html", {"user": request.user})
 
-def products(request):
-    return render(request, "front/products.html", {"user": request.user})
 
-def stats(request):
-    return render(request, "front/stats.html", {"user": request.user})
+# def c_dashboard(request):
+#     return render(request, "front/c_dashboard.html", {"user": request.user})
 
-def sett(request):
-    return render(request, "front/options.html", {"user": request.user})
+# def products(request):
+#     return render(request, "front/products.html", {"user": request.user})
+
+# def stats(request):
+#     return render(request, "front/stats.html", {"user": request.user})
+
+# def sett(request):
+#     return render(request, "front/options.html", {"user": request.user})
 
 
 
@@ -75,6 +77,7 @@ def login_view(request):
 
     if request.method == 'POST':
         form = AuthenticationForm(request, data=request.POST)
+        # print(form)
         if form.is_valid():
             username = form.cleaned_data.get('username')
             password = form.cleaned_data.get('password')
