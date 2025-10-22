@@ -29,7 +29,7 @@
 
 
 # myapp/mongo_test.py
-from mongoengine import Document, StringField
+# from mongoengine import Document, StringField
 
-class TestDoc(Document):
-    name = StringField(required=True)
+# class TestDoc(Document):
+#     name = StringField(required=True)

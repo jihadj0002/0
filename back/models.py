@@ -19,7 +19,7 @@ class User(AbstractUser):
     uuid = models.CharField(max_length=100, null=True, blank=True)
     email = models.EmailField(unique=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="free")
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     # Override related_name to avoid clashes with default auth.User

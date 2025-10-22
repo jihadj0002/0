@@ -1,1 +1,1 @@
-default_app_config = "back.apps.BackConfig"
+# default_app_config = "back.apps.BackConfig"
