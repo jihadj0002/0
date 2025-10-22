@@ -1,28 +1,51 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User, Product, Conversation, Sale, Setting
+from django.contrib.auth.models import User
+from .models import UserProfile, Product, Conversation, Sale, Setting
 
 # -----------------------
 # Custom User Admin
 # -----------------------
+# Define an inline admin descriptor for UserProfile model
+# which acts a bit like a "subform" of the User admin page
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    verbose_name_plural = "Profile"
+    fk_name = "user"
+    extra = 0
+
+
+# Extend the built-in UserAdmin to include profile info
 class UserAdmin(BaseUserAdmin):
-    model = User
-    list_display = ("email", "username", "plan", "is_staff", "is_active", "created_at")
-    list_filter = ("plan", "is_staff", "is_active")
-    search_fields = ("email", "username")
-    ordering = ("email",)
-    fieldsets = (
-        (None, {"fields": ("email", "username", "password")}),
-        ("Permissions", {"fields": ("is_staff", "is_active", "is_superuser", "groups", "user_permissions")}),
-        ("Plan Info", {"fields": ("plan",)}),
-        ("Important Dates", {"fields": ("last_login", "created_at", "updated_at")}),
+    inlines = (UserProfileInline,)
+
+    list_display = (
+        "username",
+        "email",
+        "first_name",
+        "last_name",
+        "is_staff",
+        "get_plan",
+        "get_uuid",
     )
-    add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("email", "username", "password1", "password2", "is_staff", "is_active", "plan")}
-        ),
-    )
+    list_select_related = ("profile",)
+    search_fields = ("username", "email")
+
+    # Custom column methods to show profile info
+    def get_plan(self, instance):
+        return instance.profile.plan if hasattr(instance, "profile") else "-"
+    get_plan.short_description = "Plan"
+
+    def get_uuid(self, instance):
+        return instance.profile.uuid if hasattr(instance, "profile") else "-"
+    get_uuid.short_description = "UUID"
+
+    def get_inline_instances(self, request, obj=None):
+        if not obj:
+            return []
+        return super().get_inline_instances(request, obj)
+
 
 # -----------------------
 # Product Admin
@@ -63,6 +86,7 @@ class SettingAdmin(admin.ModelAdmin):
 # -----------------------
 # Register all models
 # -----------------------
+admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
 admin.site.register(Product, ProductAdmin)
 admin.site.register(Conversation, ConversationAdmin)

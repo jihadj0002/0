@@ -45,3 +45,7 @@
 #             alias="default"
 #         )
 #         print("✅ Connected to MongoDB successfully")
+
+
+
+default_app_config = "back.create_or_update_user_profile"

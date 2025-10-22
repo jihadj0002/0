@@ -4,45 +4,68 @@ from django.db import models
 
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import User
+import uuid
 
 
 # -----------------------
 # Custom User Model
 # -----------------------
-class User(AbstractUser):
+# class User(AbstractUser):
+#     PLAN_CHOICES = [
+#         ("free", "Free"),
+#         ("pro", "Pro"),
+#         ("enterprise", "Enterprise"),
+#     ]
+
+#     uuid = models.CharField(max_length=100, null=True, blank=True)
+#     email = models.EmailField(unique=True)
+#     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="free")
+#     created_at = models.DateTimeField(auto_now_add=True, editable=False)
+#     updated_at = models.DateTimeField(auto_now=True)
+
+#     # Override related_name to avoid clashes with default auth.User
+#     groups = models.ManyToManyField(
+#         "auth.Group",
+#         related_name="custom_user_set",   # 👈 new related_name
+#         blank=True,
+#         help_text="The groups this user belongs to.",
+#         verbose_name="groups"
+#     )
+#     user_permissions = models.ManyToManyField(
+#         "auth.Permission",
+#         related_name="custom_user_set",   # 👈 new related_name
+#         blank=True,
+#         help_text="Specific permissions for this user.",
+#         verbose_name="user permissions"
+#     )
+
+#     USERNAME_FIELD = "email"
+#     REQUIRED_FIELDS = ["username"]  # username still required for admin
+
+#     def __str__(self):
+        # return self.email
+    
+# -----------------------
+# User Profile
+# -----------------------
+
+
+class UserProfile(models.Model):
     PLAN_CHOICES = [
         ("free", "Free"),
         ("pro", "Pro"),
         ("enterprise", "Enterprise"),
     ]
 
-    uuid = models.CharField(max_length=100, null=True, blank=True)
-    email = models.EmailField(unique=True)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="free")
-    created_at = models.DateTimeField(auto_now_add=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    # Override related_name to avoid clashes with default auth.User
-    groups = models.ManyToManyField(
-        "auth.Group",
-        related_name="custom_user_set",   # 👈 new related_name
-        blank=True,
-        help_text="The groups this user belongs to.",
-        verbose_name="groups"
-    )
-    user_permissions = models.ManyToManyField(
-        "auth.Permission",
-        related_name="custom_user_set",   # 👈 new related_name
-        blank=True,
-        help_text="Specific permissions for this user.",
-        verbose_name="user permissions"
-    )
-
-    USERNAME_FIELD = "email"
-    REQUIRED_FIELDS = ["username"]  # username still required for admin
-
     def __str__(self):
-        return self.email
+        return f"{self.user.username} ({self.plan})"
 
 
 # -----------------------
