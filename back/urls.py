@@ -7,6 +7,7 @@ app_name = "back"
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("products", views.products, name="products"),
+    path("products/add", views.add_product, name="add_product"),
     # path("pricing", views.pricing, name="pricing"),
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),

@@ -136,11 +136,12 @@ body{
               </tr>
             </thead>
             <tbody>
+              {% for p in all_products %}
               <tr>
-                <td>Boon Avocado Quilt</td>
-                <td>25</td>
-                <td>$49.99</td>
-                <td>21 Sept, 2025</td>
+                <td>{{p.name}}</td>
+                <td>{{p.stock_quantity}}</td>
+                <td>{{p.price}}</td>
+                <td>{{p.last_synced}}</td>
                 <td>
                   <label class="switch">
                     <input type="checkbox" checked>
@@ -148,30 +149,7 @@ body{
                   </label>
                 </td>
               </tr>
-              <tr>
-                <td>Smart Fitness Watch</td>
-                <td>14</td>
-                <td>$129.00</td>
-                <td>20 Sept, 2025</td>
-                <td>
-                  <label class="switch">
-                    <input type="checkbox">
-                    <span class="slider"></span>
-                  </label>
-                </td>
-              </tr>
-              <tr>
-                <td>Noise Cancelling Headphones</td>
-                <td>40</td>
-                <td>$89.00</td>
-                <td>19 Sept, 2025</td>
-                <td>
-                  <label class="switch">
-                    <input type="checkbox" checked>
-                    <span class="slider"></span>
-                  </label>
-                </td>
-              </tr>
+              {% endfor %}
             </tbody>
           </table>
         </div>

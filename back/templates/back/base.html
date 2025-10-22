@@ -1,0 +1,55 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}AI Chatbot Dashboard{% endblock %}</title>
+
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* your CSS (exactly as you gave it) */
+    :root {
+      --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
+      --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
+      font-family:'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing:border-box}
+    html,body,#root{height:100%}
+    body{margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;}
+    .app{display:flex; min-height:100vh}
+    /* SIDEBAR */
+    .sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
+    .brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+    .logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
+    .brand-text{font-weight:700}
+    .nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
+    .nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
+    .nav-item:hover{background:var(--soft)}
+    .nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
+    .sidebar-footer{position:absolute; left:28px; bottom:24px; display:flex; gap:8px}
+    .btn-outline{background:transparent; border:1px solid #e6eefc; padding:8px 10px; border-radius:8px}
+    .btn-ghost{background:transparent; padding:8px 10px}
+    /* MAIN */
+    .main{flex:1; display:flex; flex-direction:column}
+    .topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px; background:transparent}
+    .search-wrap{flex:1; max-width:640px}
+    .search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
+    .top-actions{display:flex; align-items:center; gap:12px}
+    .btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700}
+    .avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
+    .content{padding:20px 28px 40px}
+    .page-header h1{margin:0; font-size:28px}
+    .page-header .sub{color:var(--muted); margin-top:6px}
+    .footer{padding:18px 28px; color:var(--muted); display:flex; justify-content:space-between}
+    @media (max-width:1000px){.sidebar{display:none}}
+  </style>
+</head>
+
+      
+        {% block content %}
+        <!-- Page-specific content goes here -->
+        {% endblock %}
+
