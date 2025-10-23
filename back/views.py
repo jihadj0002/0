@@ -6,7 +6,7 @@ from .models import Product
 
 @login_required
 def dashboard(request):
-    print(request.user)
+    user = request.user
     return render(request, "back/dashboard.html", {"user": request.user})
 
 @login_required

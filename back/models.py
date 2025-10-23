@@ -49,8 +49,6 @@ import uuid
 # -----------------------
 # User Profile
 # -----------------------
-
-
 class UserProfile(models.Model):
     PLAN_CHOICES = [
         ("free", "Free"),
