@@ -117,24 +117,99 @@ body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialia
             </tr>
           </thead>
           <tbody>
-            {% for order in all_orders %}
-            <tr>
-              <td>#{{ order.id }}</td>
-              <td>{{ order.product.name|default:"N/A" }}</td>
-              <td>{{ order.customer_id }}</td>
-              <td>${{ order.amount }}</td>
-              <td><span class="badge {{ order.status }}">{{ order.status }}</span></td>
-              <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
-            </tr>
-            {% empty %}
-            <tr>
-              <td colspan="6" style="text-align:center; color:var(--muted); padding:20px;">No orders yet.</td>
-            </tr>
-            {% endfor %}
-          </tbody>
+  {% for order in all_orders %}
+  <tr data-order-id="{{ order.id }}">
+    <td>#{{ order.id }}</td>
+    <td>{{ order.product.name|default:"N/A" }}</td>
+    <td>{{ order.customer_id }}</td>
+    <td>${{ order.amount }}</td>
+    <td>
+      <select class="status-select" data-order-id="{{ order.id }}">
+        {% for key, value in order.STATUS_CHOICES %}
+          <option value="{{ key }}" {% if order.status == key %}selected{% endif %}>
+            {{ value }}
+          </option>
+        {% endfor %}
+      </select>
+    </td>
+    <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+  </tr>
+  {% empty %}
+  <tr>
+    <td colspan="6" style="text-align:center; color:var(--muted); padding:20px;">No orders yet.</td>
+  </tr>
+  {% endfor %}
+</tbody>
+
         </table>
       </div>
     </div>
+
+    <script>
+  // CSRF helper
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+      const cookies = document.cookie.split(';');
+      for (let i = 0; i < cookies.length; i++) {
+        const cookie = cookies[i].trim();
+        if (cookie.substring(0, name.length + 1) === (name + '=')) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
+
+  document.querySelectorAll('.status-select').forEach(select => {
+    select.addEventListener('change', function() {
+      const orderId = this.dataset.orderId;
+      const newStatus = this.value;
+
+      fetch("{% url 'back:update_order_status' %}", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrftoken,
+        },
+        body: JSON.stringify({
+          order_id: orderId,
+          status: newStatus,
+        }),
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          this.style.border = "2px solid #22c55e"; // green border to indicate success
+          setTimeout(() => this.style.border = "", 1000);
+        } else {
+          alert("Failed to update order status!");
+        }
+      })
+      .catch(err => console.error(err));
+    });
+  });
+</script>
+
+<style>
+.status-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+.status-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+
+</style>
+
   </main>
 </div>
 </body>

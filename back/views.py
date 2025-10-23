@@ -4,6 +4,10 @@ from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale
 # Create your views here.
 
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+import json
+
 
 @login_required
 def dashboard(request):
@@ -38,6 +42,25 @@ def dashboard(request):
 def orders(request):
     all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
     return render(request, 'back/orders.html', {'all_orders': all_orders})
+
+@csrf_exempt  # because we manually include CSRF token in fetch()
+def update_order_status(request):
+    if request.method == "POST":
+        try:
+            data = json.loads(request.body)
+            order_id = data.get("order_id")
+            new_status = data.get("status")
+
+            order = Sale.objects.get(id=order_id, user=request.user)
+            order.status = new_status
+            order.save()
+
+            return JsonResponse({"success": True, "status": new_status})
+        except Sale.DoesNotExist:
+            return JsonResponse({"success": False, "error": "Order not found"})
+        except Exception as e:
+            return JsonResponse({"success": False, "error": str(e)})
+    return JsonResponse({"success": False, "error": "Invalid request"})
 
 
 @login_required
