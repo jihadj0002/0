@@ -1,13 +1,44 @@
 from django.shortcuts import render, redirect
+from django.db.models import Sum, Count, Q
 from django.contrib.auth.decorators import login_required
-from .models import Product
+from .models import Product, Conversation, Sale
 # Create your views here.
 
 
 @login_required
 def dashboard(request):
     user = request.user
-    return render(request, "back/dashboard.html", {"user": request.user})
+
+    total_sales = (
+        Sale.objects.filter(user=user, status="completed")
+        .aggregate(total=Sum("amount"))["total"]
+        or 0
+    )
+
+    completed_sales = Sale.objects.filter(user=user, status="completed").count()
+    total_conversations = Conversation.objects.filter(user=user).count()
+    active_products = Product.objects.filter(user=user, stock_quantity__gt=0).count()
+    
+    conversion_rate = (
+        round((completed_sales / total_conversations) * 100, 2)
+        if total_conversations > 0
+        else 0
+    )
+
+    context = {
+        "total_sales": total_sales,
+        "total_conversations": total_conversations,
+        "conversion_rate": conversion_rate,
+        "active_products": active_products,
+    }
+    return render(request, "back/dashboard.html", context)
+
+
+@login_required
+def orders(request):
+    all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
+    return render(request, 'back/orders.html', {'all_orders': all_orders})
+
 
 @login_required
 def c_dashboard(request):

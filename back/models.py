@@ -114,6 +114,7 @@ class Conversation(models.Model):
 class Sale(models.Model):
     STATUS_CHOICES = [
         ("pending", "Pending"),
+        ("delivering", "Delivering"),
         ("completed", "Completed"),
         ("refunded", "Refunded"),
     ]

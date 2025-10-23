@@ -9,6 +9,7 @@ urlpatterns = [
     path("products", views.products, name="products"),
     path("products/add", views.add_product, name="add_product"),
     # path("pricing", views.pricing, name="pricing"),
+    path("orders", views.orders, name="orders"),
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),
     path("chats", views.c_dashboard, name="c_dashboard"),

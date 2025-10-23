@@ -1,0 +1,141 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Orders</title>
+  <style>
+:root{
+  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
+  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
+  font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;
+}
+*{box-sizing:border-box}
+html,body,#root{height:100%}
+body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialiased;}
+.app{display:flex;min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:260px;background:linear-gradient(180deg,#fff,#fbfdff);padding:28px;border-right:1px solid #eef2f6}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#60a5fa);color:white;display:flex;align-items:center;justify-content:center;font-weight:700}
+.brand-text{font-weight:700}
+.nav{display:flex;flex-direction:column;gap:6px;margin-top:18px}
+.nav-item{padding:10px 12px;border-radius:8px;color:#0f172a;text-decoration:none;font-weight:600;opacity:0.88}
+.nav-item:hover{background:var(--soft)}
+.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff);box-shadow:var(--shadow)}
+
+/* MAIN */
+.main{flex:1;display:flex;flex-direction:column}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:20px 28px;background:transparent}
+.search-wrap{flex:1;max-width:640px}
+.search{width:100%;padding:10px 14px;border-radius:10px;border:1px solid #e6eefc}
+.top-actions{display:flex;align-items:center;gap:12px}
+.btn-primary{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}
+.avatar{width:40px;height:40px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+/* CONTENT */
+.content{padding:20px 28px 40px}
+.page-header h1{margin:0;font-size:28px}
+.page-header .sub{color:var(--muted);margin-top:6px}
+
+.panel{background:var(--panel);padding:16px;border-radius:12px;box-shadow:var(--shadow)}
+.panel-header{display:flex;justify-content:space-between;align-items:center}
+
+/* Table */
+.orders-table{width:100%;border-collapse:collapse;margin-top:12px}
+.orders-table th{text-align:left;color:var(--muted);font-size:13px;padding:8px 0}
+.orders-table td{padding:12px 0;border-top:1px solid #f3f6fb}
+
+/* Status Badges */
+.badge{padding:6px 10px;border-radius:999px;font-weight:700;font-size:13px;text-transform:capitalize}
+.badge.pending{background:#fffbeb;color:#92400e}
+.badge.delivering{background:#dbeafe;color:#1e40af}
+.badge.completed{background:#ecfdf5;color:#065f46}
+.badge.refunded{background:#fee2e2;color:#991b1b}
+
+/* Responsive */
+@media (max-width:1000px){
+  .sidebar{display:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">MA</div>
+      <div class="brand-text">Matrix AI</div>
+    </div>
+    <nav class="nav">
+      <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
+      <a class="nav-item" href="{% url 'back:c_dashboard' %}">💬 Conversations</a>
+      <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
+      <a class="nav-item active" href="{% url 'back:orders' %}">🧾 Orders</a>
+      <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a>
+      <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a>
+      <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
+    </nav>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Topbar -->
+    <div class="topbar">
+      <div class="search-wrap">
+        <input class="search" type="text" placeholder="Search orders...">
+      </div>
+      <div class="top-actions">
+        <div class="avatar">U</div>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+      <div class="page-header">
+        <h1>Orders</h1>
+        <p class="sub">View and manage your customer orders</p>
+      </div>
+
+      <!-- Orders Table -->
+      <div class="panel" style="margin-top:20px;">
+        <div class="panel-header">
+          <h3>All Orders</h3>
+          <button class="btn-primary">Export CSV</button>
+        </div>
+
+        <table class="orders-table">
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Product</th>
+              <th>Customer ID</th>
+              <th>Amount</th>
+              <th>Status</th>
+              <th>Created At</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for order in all_orders %}
+            <tr>
+              <td>#{{ order.id }}</td>
+              <td>{{ order.product.name|default:"N/A" }}</td>
+              <td>{{ order.customer_id }}</td>
+              <td>${{ order.amount }}</td>
+              <td><span class="badge {{ order.status }}">{{ order.status }}</span></td>
+              <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" style="text-align:center; color:var(--muted); padding:20px;">No orders yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>
