@@ -34,7 +34,8 @@ ALLOWED_HOSTS = ['*']
 INSTALLED_APPS = [
     "front",
     "back",
-    
+    "api",
+    "rest_framework",
     # "mysql",
     "django.contrib.admin",
     "django.contrib.auth",

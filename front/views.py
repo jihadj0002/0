@@ -18,6 +18,7 @@ def home(request):
     }
     return render(request, "front/home01.html", context)
 
+
 def pricing(request):
     return render(request, "front/pricing.html")
 
