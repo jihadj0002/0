@@ -85,3 +85,15 @@ class UserOrderListCreateView(APIView):
 
 
 
+class UserOrderCreateView(APIView):
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        data = request.data.copy()
+        data['user'] = user.id
+        serializer = SaleSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
