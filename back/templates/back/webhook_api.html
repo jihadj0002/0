@@ -1,0 +1,129 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Webhook / API Settings - Matrix AI</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* Include same base styles as dashboard */
+    :root{
+      --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
+      --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
+      font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;
+    }
+    *{box-sizing:border-box}
+    html,body,#root{height:100%}
+    body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialiased;}
+    .app{display:flex;min-height:100vh}
+    .sidebar{width:260px;background:linear-gradient(180deg,#fff,#fbfdff);padding:28px;border-right:1px solid #eef2f6}
+    .brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    .logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#60a5fa);color:white;display:flex;align-items:center;justify-content:center;font-weight:700}
+    .brand-text{font-weight:700}
+    .nav{display:flex;flex-direction:column;gap:6px;margin-top:18px}
+    .nav-item{padding:10px 12px;border-radius:8px;color:#0f172a;text-decoration:none;font-weight:600;opacity:0.88}
+    .nav-item:hover{background:var(--soft)}
+    .nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff);box-shadow:var(--shadow)}
+    .main{flex:1;display:flex;flex-direction:column}
+    .topbar{display:flex;justify-content:space-between;align-items:center;padding:20px 28px;background:transparent}
+    .search-wrap{flex:1;max-width:640px}
+    .search{width:100%;padding:10px 14px;border-radius:10px;border:1px solid #e6eefc}
+    .top-actions{display:flex;align-items:center;gap:12px}
+    .btn-primary{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer}
+    .avatar{width:40px;height:40px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:700}
+    .content{padding:20px 28px 40px}
+    .page-header h1{margin:0;font-size:28px}
+    .page-header .sub{color:var(--muted);margin-top:6px}
+
+    /* Webhook page specific styles */
+    .panel{background:var(--panel);padding:20px;border-radius:var(--radius);box-shadow:var(--shadow);margin-top:20px}
+    .panel h2{margin:0 0 12px;font-size:18px}
+    .token-box{display:flex;gap:10px;align-items:center;margin-top:10px}
+    .token-input{flex:1;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#f9fafb;font-family:monospace}
+    .btn{border:none;cursor:pointer;border-radius:8px;padding:8px 12px;font-weight:600}
+    .btn.copy{background:#f3f4f6}
+    .btn.regen{background:var(--accent);color:white}
+    .webhook-section{margin-top:32px}
+    .webhook-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    .create-btn{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:10px;font-weight:600;cursor:pointer}
+    .footer{padding:18px 28px;color:var(--muted);display:flex;justify-content:space-between}
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">MA</div>
+        <div class="brand-text">Matrix AI</div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
+        <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
+        <a class="nav-item" href="{% url 'back:orders' %}">🧾 Orders</a>
+        <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a>
+        <a class="nav-item active" href="{% url 'back:webhook_api' %}">🔗 Webhook/API</a>
+        <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a>
+        <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
+      </nav>
+    </aside>
+
+    <!-- Main content -->
+    <main class="main">
+      <header class="topbar">
+        <div class="search-wrap">
+          <input class="search" placeholder="Search..." />
+        </div>
+        <div class="top-actions">
+          <button class="btn-primary">Connect Messenger</button>
+          <div class="avatar">{{ user.username|first|upper }}</div>
+        </div>
+      </header>
+
+      <section class="content">
+        <div class="page-header">
+          <h1>Webhook / API Settings</h1>
+          <p class="sub">Manage your API tokens and webhook integrations</p>
+        </div>
+
+        <div class="panel">
+          <h2>API Auth/Bearer Token</h2>
+          <div class="token-box">
+            <input type="text" class="token-input" value="{{ api_token }}" readonly>
+            <button class="btn copy" onclick="copyToken()">Copy</button>
+            <button class="btn regen" onclick="regenToken()">Regenerate</button>
+          </div>
+        </div>
+
+        <div class="panel webhook-section">
+          <div class="webhook-header">
+            <h2>Webhooks</h2>
+            <button class="create-btn">+ Create New Webhook</button>
+          </div>
+          <p style="color:var(--muted);font-size:14px">No webhooks added yet.</p>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div>© 2025 Matrix AI • Built with n8n</div>
+        <div>Privacy • Terms</div>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    function copyToken() {
+      const token = document.querySelector('.token-input');
+      navigator.clipboard.writeText(token.value);
+      alert('Token copied to clipboard!');
+    }
+    function regenToken() {
+      alert('Token regenerated (for demo purpose only). In production, this would request the backend.');
+    }
+  </script>
+</body>
+</html>
