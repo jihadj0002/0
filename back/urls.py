@@ -16,7 +16,7 @@ urlpatterns = [
 
     path("orders/update-status/", views.update_order_status, name="update_order_status"),
 
-    path('webhook-api/', views.webhook_api, name='webhook_api'),
+    # path('webhook-api/', views.webhook_api, name='webhook_api'),
 
     
     # path("contact", views.contact, name="contact"),

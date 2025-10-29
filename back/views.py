@@ -43,11 +43,11 @@ def orders(request):
     all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
     return render(request, 'back/orders.html', {'all_orders': all_orders})
 
-@login_required
-def webhook_api(request):
-    return render(request, 'back/webhook_api.html', {
-        'api_token': 'b273036d044c0cdfb43e328d25e0a92'
-    })
+# @login_required
+# def webhook_api(request):
+#     return render(request, 'back/webhook_api.html', {
+#         'api_token': 'b273036d044c0cdfb43e328d25e0a92'
+#     })
 
 
 @csrf_exempt  # because we manually include CSRF token in fetch()
