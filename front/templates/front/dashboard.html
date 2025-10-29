@@ -110,6 +110,66 @@ body{
 
   </style>
 
+
+<!-- New Analytics css -->
+<style>
+
+    .panel.analytics-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  padding: 20px;
+  transition: transform 0.2s ease;
+}
+
+.panel.analytics-panel:hover {
+  transform: translateY(-4px);
+}
+
+.panel-header h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.panel-sub {
+  color: #888;
+  font-size: 0.85rem;
+}
+
+.chart-wrap {
+  margin: 12px 0;
+}
+
+.sparkline {
+  width: 100%;
+  height: 80px;
+}
+
+.sales-stats {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.stat-item {
+  text-align: left;
+}
+
+.s-label {
+  font-size: 0.9rem;
+  color: #666;
+}
+
+.s-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #111;
+}
+
+  </style>
+
 </head>
 <body>
   <div class="app">
@@ -164,44 +224,67 @@ body{
           </div>
         </div>
 
-        <div class="layout-2cols">
-          <div class="panel conversations-panel">
-            <div class="panel-header">
-              <h2>Conversations</h2>
-              <input placeholder="Search" class="mini-search" />
-            </div>
-            <table class="conversations-table">
-              <thead>
-                <tr><th>Customer</th><th>Date</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Jenny Wilson</td><td>June 5</td><td><span class="badge pending">Pending</span></td></tr>
-                <tr><td>Robert Fox</td><td>June 4</td><td><span class="badge success">Successful</span></td></tr>
-                <tr><td>Darlene Robertson</td><td>June 3</td><td><span class="badge closed">Closed</span></td></tr>
-                <tr><td>Jenny Wilson</td><td>June 2</td><td><span class="badge pending">Pending</span></td></tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="layout-3cols" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
 
-          <div class="panel sales-panel">
-            <div class="panel-header">
-              <h2>Sales & Revenue</h2>
-              <div class="panel-sub">Last 30 days</div>
-            </div>
-            <div class="chart-wrap">
-              <!-- Simple inline sparkline using SVG (placeholder) -->
-              <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
-                <polyline fill="none" stroke="#2563eb" stroke-width="3" points="0,90 30,70 60,85 90,60 120,80 150,55 180,65 210,40 240,60 270,30 300,20" />
-              </svg>
-            </div>
+  <!-- Order Analytics -->
+  <div class="panel analytics-panel">
+    <div class="panel-header">
+      <h2>Order Analytics</h2>
+      <div class="panel-sub">Last 30 Days</div>
+    </div>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#22c55e" stroke-width="3"
+          points="0,90 30,80 60,70 90,50 120,55 150,45 180,30 210,35 240,25 270,20 300,15" />
+      </svg>
+    </div>
+    <div class="sales-stats">
+      <div class="stat-item"><div class="s-label">Total Orders</div><div class="s-value">542</div></div>
+      <div class="stat-item"><div class="s-label">Completed</div><div class="s-value">489</div></div>
+      <div class="stat-item"><div class="s-label">Pending</div><div class="s-value">53</div></div>
+    </div>
+  </div>
 
-            <div class="sales-stats">
-              <div class="stat-item"><div class="s-label">Avg Order</div><div class="s-value">$34.20</div></div>
-              <div class="stat-item"><div class="s-label">Chat Sales</div><div class="s-value">42</div></div>
-              <div class="stat-item"><div class="s-label">Response Time</div><div class="s-value">1h 12m</div></div>
-            </div>
-          </div>
-        </div>
+  <!-- Message Status Analytics -->
+  <div class="panel analytics-panel">
+    <div class="panel-header">
+      <h2>Message Status Analytics</h2>
+      <div class="panel-sub">Overview</div>
+    </div>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#f97316" stroke-width="3"
+          points="0,100 30,90 60,70 90,80 120,50 150,40 180,60 210,30 240,35 270,20 300,25" />
+      </svg>
+    </div>
+    <div class="sales-stats">
+      <div class="stat-item"><div class="s-label">Total Messages</div><div class="s-value">3,242</div></div>
+      <div class="stat-item"><div class="s-label">Replied</div><div class="s-value">3,020</div></div>
+      <div class="stat-item"><div class="s-label">Pending</div><div class="s-value">222</div></div>
+    </div>
+  </div>
+
+  <!-- Sales & Revenue -->
+  <div class="panel analytics-panel">
+    <div class="panel-header">
+      <h2>Sales & Revenue</h2>
+      <div class="panel-sub">Last 30 Days</div>
+    </div>
+    <div class="chart-wrap">
+      <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
+        <polyline fill="none" stroke="#2563eb" stroke-width="3"
+          points="0,90 30,70 60,85 90,60 120,80 150,55 180,65 210,40 240,60 270,30 300,20" />
+      </svg>
+    </div>
+    <div class="sales-stats">
+      <div class="stat-item"><div class="s-label">Avg Order</div><div class="s-value">$34.20</div></div>
+      <div class="stat-item"><div class="s-label">Chat Sales</div><div class="s-value">42</div></div>
+      <div class="stat-item"><div class="s-label">Response Time</div><div class="s-value">1h 12m</div></div>
+    </div>
+  </div>
+
+</div>
+
 
         <div class="layout-3cols">
           <div class="small-panel">
