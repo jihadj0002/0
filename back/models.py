@@ -70,7 +70,6 @@ class UserProfile(models.Model):
 # Products
 # -----------------------
 class Product(models.Model):
-    # pid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
     
     name = models.CharField(max_length=255)
@@ -119,13 +118,14 @@ class Sale(models.Model):
         ("completed", "Completed"),
         ("refunded", "Refunded"),
     ]
-
-    # sid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sales")
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
+    customer_name = models.CharField(max_length=150, blank=True)
+    customer_address = models.CharField(max_length=150, blank=True)
     customer_id = models.CharField(max_length=255)
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(max_digits=10, decimal_places=2, default=1)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
 
