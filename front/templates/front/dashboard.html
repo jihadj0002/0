@@ -183,8 +183,8 @@ body{
         <a class="nav-item active" href="{% url 'front:dashboard' %}">🏠 Dashboard</a>
         <a class="nav-item" href="{% url 'front:c_dashboard' %}">💬 Conversations</a>
         <a class="nav-item" href="{% url 'front:products' %}">📦 Products</a>
-        <a class="nav-item" href="{% url 'front:stats' %}">📊 Stats</a>
-        <a class="nav-item" href="{% url 'front:options' %}">⚙️ Settings</a>
+        {% comment %} <a class="nav-item" href="{% url 'front:stats' %}">📊 Stats</a> {% endcomment %}
+        {% comment %} <a class="nav-item" href="{% url 'front:options' %}">⚙️ Settings</a> {% endcomment %}
       </nav>
     </aside>
 
