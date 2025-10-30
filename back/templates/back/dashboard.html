@@ -1,401 +1,145 @@
-<!-- FILE: index.html -->
- {% load static %}
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI Chatbot Dashboard</title>
-  <!-- <link rel="stylesheet" href="{% static './front/dbstyles.css' %}" /> -->
-  <link rel="preconnect" href="https://fonts.gstatic.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+{% extends 'back/base.html' %}
+{% block title %}Dashboard | Matrix AI{% endblock %}
 
-  <style>
-    /* FILE: styles.css */
-:root{
-  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
-  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-}
-*{box-sizing:border-box}
-html,body,#root{height:100%}
-body{
-  margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;
-}
-.app{display:flex; min-height:100vh}
+{% block extra_css %}
+<style>
+  /* Extra analytics styling */
+  .panel.analytics-panel {
+    background:#fff; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.05);
+    padding:20px; transition:transform 0.2s ease;
+  }
+  .panel.analytics-panel:hover {transform:translateY(-4px)}
+  .panel-header{display:flex;justify-content:space-between;align-items:center}
+  .panel-sub{color:#888;font-size:0.85rem}
+  .chart-wrap{margin:12px 0}
+  .sparkline{width:100%;height:80px}
+  .sales-stats{display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  .s-label{font-size:0.9rem;color:#666}
+  .s-value{font-size:1.2rem;font-weight:600;color:#111}
+  .time-range{display:flex;gap:6px}
+  .time-btn{border:none;background:#f3f4f6;color:#555;font-size:0.8rem;font-weight:500;
+    padding:4px 8px;border-radius:6px;cursor:pointer;transition:all 0.2s ease;}
+  .time-btn:hover{background:#e5e7eb}
+  .time-btn.active{background:#2563eb;color:#fff}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:18px}
+  .card{background:#fff;padding:18px;border-radius:12px;box-shadow:var(--shadow)}
+  .card-title{color:var(--muted);font-weight:600}
+  .card-value{font-size:22px;font-weight:800;margin-top:6px}
+</style>
+{% endblock %}
 
-/* SIDEBAR */
-.sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
-.brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
-.logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
-.brand-text{font-weight:700}
-.nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
-.nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
-.nav-item:hover{background:var(--soft)}
-.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
-.sidebar-footer{position:absolute; left:28px; bottom:24px; display:flex; gap:8px}
-.btn-outline{background:transparent; border:1px solid #e6eefc; padding:8px 10px; border-radius:8px}
-.btn-ghost{background:transparent; padding:8px 10px}
+{% block content %}
+<div class="page-header">
+  <h1>Welcome, your e-commerce store</h1>
+  <p class="sub">Overview of chatbot activity, sales and product performance.</p>
+</div>
 
-/* MAIN */
-.main{flex:1; display:flex; flex-direction:column}
-.topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px; background:transparent}
-.search-wrap{flex:1; max-width:640px}
-.search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
-.top-actions{display:flex; align-items:center; gap:12px}
-.btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700}
-.avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
+<div class="cards">
+  <div class="card"><div class="card-title">Sales</div><div class="card-value">${{ total_sales|floatformat:2 }}</div></div>
+  <div class="card"><div class="card-title">Total Conversations</div><div class="card-value">{{ total_conversations }}</div></div>
+  <div class="card"><div class="card-title">Conversion Rate</div><div class="card-value">{{ conversion_rate }}%</div></div>
+  <div class="card"><div class="card-title">Active Products</div><div class="card-value">{{ active_products }}</div></div>
+</div>
 
-.content{padding:20px 28px 40px}
-.page-header h1{margin:0; font-size:28px}
-.page-header .sub{color:var(--muted); margin-top:6px}
-
-.cards{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:18px}
-.card{background:var(--panel); padding:18px; border-radius:12px; box-shadow:var(--shadow)}
-.card-title{color:var(--muted); font-weight:600}
-.card-value{font-size:22px; font-weight:800; margin-top:6px}
-
-.layout-2cols{display:grid; grid-template-columns:1fr 420px; gap:18px; margin-top:20px}
-.panel{background:var(--panel); padding:16px; border-radius:12px; box-shadow:var(--shadow)}
-.panel-header{display:flex; justify-content:space-between; align-items:center}
-.mini-search{padding:8px 10px; border-radius:10px; border:1px solid #eef2f6}
-.conversations-table{width:100%; border-collapse:collapse; margin-top:12px}
-.conversations-table th{ text-align:left; color:var(--muted); font-size:13px; padding:8px 0}
-.conversations-table td{padding:12px 0; border-top:1px solid #f3f6fb}
-.badge{padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px}
-.badge.pending{background:#fffbeb; color:#92400e}
-.badge.success{background:#ecfdf5; color:#065f46}
-.badge.closed{background:#f1f5f9; color:#475569}
-
-.chart-wrap{height:130px; display:flex; align-items:center; justify-content:center}
-.sparkline{width:100%; height:100%}
-.sales-stats{display:flex; gap:12px; margin-top:12px}
-.stat-item{flex:1; background:var(--soft); padding:12px; border-radius:10px; text-align:center}
-.s-label{font-size:12px; color:var(--muted)}
-.s-value{font-weight:700; margin-top:6px}
-
-.layout-3cols{display:grid; grid-template-columns:1fr 260px 260px; gap:18px; margin-top:20px}
-.small-panel{background:var(--panel); padding:14px; border-radius:12px; box-shadow:var(--shadow)}
-.product-list{padding-left:18px}
-.muted{color:var(--muted); font-size:13px}
-.integrations-list{list-style:none; padding:0; margin:0}
-.integrations-list li{padding:6px 0}
-.dot{font-weight:700; text-transform:lowercase; margin-left:8px}
-.dot.connected{color:green}
-.dot.off{color:#9ca3af}
-
-.toggle-row{display:flex; align-items:center; gap:12px; margin-top:12px}
-.switch{position:relative; display:inline-block; width:44px; height:24px}
-.switch input{display:none}
-.slider{position:absolute; cursor:pointer; inset:0; background:#e6eefc; border-radius:999px}
-.slider:before{content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:white; border-radius:50%; transition:transform .2s}
-.switch input:checked + .slider{background:linear-gradient(90deg,var(--accent),#60a5fa)}
-.switch input:checked + .slider:before{transform:translateX(20px)}
-.toggle-label{font-weight:600}
-
-.footer{padding:18px 28px; color:var(--muted); display:flex; justify-content:space-between}
-
-/* Responsive */
-@media (max-width:1000px){
-  .sidebar{display:none}
-  .layout-2cols{grid-template-columns:1fr}
-  .layout-3cols{grid-template-columns:1fr}
-  .cards{grid-template-columns:repeat(2,1fr)}
-}
-
-@media (max-width:600px){
-  .cards{grid-template-columns:1fr}
-  .top-actions .btn-primary{padding:8px}
-}
-
-  </style>
-
-  <!-- For New Analytics -->
-
-  <style>
-
-    .panel.analytics-panel {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-  padding: 20px;
-  transition: transform 0.2s ease;
-}
-
-.panel.analytics-panel:hover {
-  transform: translateY(-4px);
-}
-
-.panel-header h2 {
-  font-size: 1.2rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.panel-sub {
-  color: #888;
-  font-size: 0.85rem;
-}
-
-.chart-wrap {
-  margin: 12px 0;
-}
-
-.sparkline {
-  width: 100%;
-  height: 80px;
-}
-
-.sales-stats {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.stat-item {
-  text-align: left;
-}
-
-.s-label {
-  font-size: 0.9rem;
-  color: #666;
-}
-
-.s-value {
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #111;
-}
-
-
-.time-range {
-  display: flex;
-  gap: 6px;
-}
-
-.time-btn {
-  border: none;
-  background: #f3f4f6;
-  color: #555;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 4px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.time-btn:hover {
-  background: #e5e7eb;
-}
-
-.time-btn.active {
-  background: #2563eb;
-  color: #fff;
-}
-
-  </style>
-
-</head>
-<body>
-  <div class="app">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo">MA</div>
-        <div class="brand-text">Matrix AI</div>
-      </div>
-      <nav class="nav">
-        <a class="nav-item active" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
-        <!-- <a class="nav-item" href="{% url 'back:c_dashboard' %}">💬 Conversations</a> -->
-        <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
-        <a class="nav-item" href="{% url 'back:orders' %}">🧾 Orders</a>
-        {% comment %} <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a> {% endcomment %}
-        {% comment %} <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a> {% endcomment %}
-        
-        <a class="nav-item" href="{% url 'front:logout' %}">⚙️ Logout</a>
-      </nav>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <div class="search-wrap">
-          <input class="search" placeholder="Search conversations, products..." />
-        </div>
-        <div class="top-actions">
-          <button id="connectBtn" class="btn-primary">Connect Messenger</button>
-         <div class="avatar">{{ user.username|first|upper }}</div>
-        </div>
-      </header>
-
-      <section class="content">
-        <div class="page-header">
-          <h1>Welcome, your e‑commerce store</h1>
-          <p class="sub">Overview of chatbot activity, sales and product performance.</p>
-        </div>
-
-        <div class="cards">
-          <div class="card">
-            <div class="card-title">Salesss</div>
-            <div class="card-value">${{ total_sales|floatformat:2 }}</div>
-          </div>
-          <div class="card">
-            <div class="card-title">Total Conversations</div>
-            <div class="card-value">{{ total_conversations }}</div>
-          </div>
-          <div class="card">
-            <div class="card-title">Conversion Rate</div>
-            <div class="card-value">{{ conversion_rate }}%</div>
-          </div>
-          <div class="card">
-            <div class="card-title">Active Products</div>
-            <div class="card-value">{{ active_products }}</div>
-          </div>
-        </div>
-
-        <div class="layout-3cols" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px;">
-
+<!-- Analytics Section -->
+<div class="layout-3cols" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin-top:20px">
   <!-- Order Analytics -->
   <div class="panel analytics-panel">
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <h2>Order Analytics</h2>
-        <div class="panel-sub">Last 30 Days</div>
-      </div>
+    <div class="panel-header">
+      <div><h2>Order Analytics</h2><div class="panel-sub">Last 30 Days</div></div>
       <div class="time-range">
-        <button class="time-btn active">1D</button>
-        <button class="time-btn">7D</button>
-        <button class="time-btn">30D</button>
-        <button class="time-btn">6M</button>
+        <button class="time-btn active">1D</button><button class="time-btn">7D</button>
+        <button class="time-btn">30D</button><button class="time-btn">6M</button>
       </div>
     </div>
-
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
         <polyline fill="none" stroke="#22c55e" stroke-width="3"
-          points="0,90 30,80 60,70 90,50 120,55 150,45 180,30 210,35 240,25 270,20 300,15" />
+          points="0,90 30,80 60,70 90,50 120,55 150,45 180,30 210,35 240,25 270,20 300,15"/>
       </svg>
     </div>
-
     <div class="sales-stats">
-      <div class="stat-item"><div class="s-label">Total Orders</div><div class="s-value">542</div></div>
-      <div class="stat-item"><div class="s-label">Completed</div><div class="s-value">489</div></div>
-      <div class="stat-item"><div class="s-label">Pending</div><div class="s-value">53</div></div>
+      <div><div class="s-label">Total Orders</div><div class="s-value">542</div></div>
+      <div><div class="s-label">Completed</div><div class="s-value">489</div></div>
+      <div><div class="s-label">Pending</div><div class="s-value">53</div></div>
     </div>
   </div>
 
-  <!-- Message Status Analytics -->
+  <!-- Message Analytics -->
   <div class="panel analytics-panel">
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <h2>Message Status Analytics</h2>
-        <div class="panel-sub">Overview</div>
-      </div>
+    <div class="panel-header">
+      <div><h2>Message Status Analytics</h2><div class="panel-sub">Overview</div></div>
       <div class="time-range">
-        <button class="time-btn active">1D</button>
-        <button class="time-btn">7D</button>
-        <button class="time-btn">30D</button>
-        <button class="time-btn">6M</button>
+        <button class="time-btn active">1D</button><button class="time-btn">7D</button>
+        <button class="time-btn">30D</button><button class="time-btn">6M</button>
       </div>
     </div>
-
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
         <polyline fill="none" stroke="#f97316" stroke-width="3"
-          points="0,100 30,90 60,70 90,80 120,50 150,40 180,60 210,30 240,35 270,20 300,25" />
+          points="0,100 30,90 60,70 90,80 120,50 150,40 180,60 210,30 240,35 270,20 300,25"/>
       </svg>
     </div>
-
     <div class="sales-stats">
-      <div class="stat-item"><div class="s-label">Total Messages</div><div class="s-value">3,242</div></div>
-      <div class="stat-item"><div class="s-label">Replied</div><div class="s-value">3,020</div></div>
-      <div class="stat-item"><div class="s-label">Pending</div><div class="s-value">222</div></div>
+      <div><div class="s-label">Total Messages</div><div class="s-value">3,242</div></div>
+      <div><div class="s-label">Replied</div><div class="s-value">3,020</div></div>
+      <div><div class="s-label">Pending</div><div class="s-value">222</div></div>
     </div>
   </div>
 
   <!-- Sales & Revenue -->
   <div class="panel analytics-panel">
-    <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center;">
-      <div>
-        <h2>Sales & Revenue</h2>
-        <div class="panel-sub">Last 30 Days</div>
-      </div>
+    <div class="panel-header">
+      <div><h2>Sales & Revenue</h2><div class="panel-sub">Last 30 Days</div></div>
       <div class="time-range">
-        <button class="time-btn active">1D</button>
-        <button class="time-btn">7D</button>
-        <button class="time-btn">30D</button>
-        <button class="time-btn">6M</button>
+        <button class="time-btn active">1D</button><button class="time-btn">7D</button>
+        <button class="time-btn">30D</button><button class="time-btn">6M</button>
       </div>
     </div>
-
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
         <polyline fill="none" stroke="#2563eb" stroke-width="3"
-          points="0,90 30,70 60,85 90,60 120,80 150,55 180,65 210,40 240,60 270,30 300,20" />
+          points="0,90 30,70 60,85 90,60 120,80 150,55 180,65 210,40 240,60 270,30 300,20"/>
       </svg>
     </div>
-
     <div class="sales-stats">
-      <div class="stat-item"><div class="s-label">Avg Order</div><div class="s-value">$34.20</div></div>
-      <div class="stat-item"><div class="s-label">Chat Sales</div><div class="s-value">42</div></div>
-      <div class="stat-item"><div class="s-label">Response Time</div><div class="s-value">1h 12m</div></div>
+      <div><div class="s-label">Avg Order</div><div class="s-value">$34.20</div></div>
+      <div><div class="s-label">Chat Sales</div><div class="s-value">42</div></div>
+      <div><div class="s-label">Response Time</div><div class="s-value">1h 12m</div></div>
     </div>
   </div>
-
 </div>
 
-
-
-        <div class="layout-3cols">
-          <div class="small-panel">
-            <h3>Top Products (via Chatbot)</h3>
-            <ol class="product-list">
-              <li>Wireless Headphones <span class="muted">— 12 sold</span></li>
-              <li>Smart Watch <span class="muted">— 9 sold</span></li>
-              <li>Yoga Mat <span class="muted">— 7 sold</span></li>
-            </ol>
-          </div>
-
-          <div class="small-panel">
-            <h3>Integrations</h3>
-            <ul class="integrations-list">
-              <li>Facebook Messenger <span class="dot connected">connected</span></li>
-              <li>Shopify <span class="dot sync">sync</span></li>
-              <li>WhatsApp <span class="dot off">not connected</span></li>
-            </ul>
-          </div>
-
-          <div class="small-panel">
-            <h3>Automation Quick Toggle</h3>
-            <div class="toggle-row">
-              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
-              <div class="toggle-label">Auto-respond to FAQs</div>
-            </div>
-            <div class="toggle-row">
-              <label class="switch"><input type="checkbox"><span class="slider"></span></label>
-              <div class="toggle-label">Upsell recommended products</div>
-            </div>
-          </div>
-        </div>
-
-      </section>
-
-      <footer class="footer">
-        <div>© 2025 Matrix AI • Built with n8n</div>
-        <div class="footer-links">Privacy • Terms</div>
-      </footer>
-    </main>
+<!-- Lower Panels -->
+<div class="layout-3cols" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin-top:20px">
+  <div class="small-panel">
+    <h3>Top Products (via Chatbot)</h3>
+    <ol class="product-list">
+      <li>Wireless Headphones <span class="muted">— 12 sold</span></li>
+      <li>Smart Watch <span class="muted">— 9 sold</span></li>
+      <li>Yoga Mat <span class="muted">— 7 sold</span></li>
+    </ol>
   </div>
 
-  <script>
-    // minimal interactivity for the Connect button
-    document.getElementById('connectBtn').addEventListener('click', function(){
-      const token = prompt('Paste your Messenger Page Access Token or Webhook URL:');
-      if(token) alert('Saved (demo). In production you would POST this securely to your backend.');
-    });
-  </script>
-</body>
-</html>
+  <div class="small-panel">
+    <h3>Integrations</h3>
+    <ul class="integrations-list">
+      <li>Facebook Messenger <span class="dot connected">connected</span></li>
+      <li>Shopify <span class="dot sync">sync</span></li>
+      <li>WhatsApp <span class="dot off">not connected</span></li>
+    </ul>
+  </div>
 
-
+  <div class="small-panel">
+    <h3>Automation Quick Toggle</h3>
+    <div class="toggle-row">
+      <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+      <div class="toggle-label">Auto-respond to FAQs</div>
+    </div>
+    <div class="toggle-row">
+      <label class="switch"><input type="checkbox"><span class="slider"></span></label>
+      <div class="toggle-label">Upsell recommended products</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

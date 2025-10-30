@@ -5,6 +5,7 @@
 		}
 	],
 	"settings": {
-		"dotnet.defaultSolution": "TestApp.sln"
+		"dotnet.defaultSolution": "TestApp.sln",
+		"liveServer.settings.multiRootWorkspaceName": "001"
 	}
 }
