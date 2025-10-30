@@ -124,6 +124,7 @@ class Sale(models.Model):
     product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
     customer_name = models.CharField(max_length=150, blank=True)
     customer_address = models.CharField(max_length=150, blank=True)
+    customer_phone = models.CharField(max_length=15, blank=True)
     customer_id = models.CharField(max_length=255)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=1)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
