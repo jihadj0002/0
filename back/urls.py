@@ -13,6 +13,8 @@ urlpatterns = [
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),
     path("chats", views.c_dashboard, name="c_dashboard"),
+    path("edit", views.edit_product, name="c_dashboard"),
+    
 
     path("orders/update-status/", views.update_order_status, name="update_order_status"),
 

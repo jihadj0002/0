@@ -1,0 +1,195 @@
+{% extends 'back/base.html' %}
+{% block title %}Dashboard | Matrix AI{% endblock %}
+
+{% block extra_css %}
+
+{% endblock %}
+
+{% block content %}
+<div class="edit-product-wrapper py-5">
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-lg-8">
+        <div class="edit-card shadow-lg border-0 rounded-4 p-md-5 p-4">
+          
+          <!-- Header -->
+          <div class="text-center mb-5">
+            <h2 class="fw-bold mb-2 text-primary">Edit Product</h2>
+            <p class="text-muted mb-0">Modify your product details below</p>
+          </div>
+
+          <form method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <!-- Product Image Preview -->
+            {% if product.image %}
+            <div class="text-center mb-4">
+              <img src="{{ product.image.url }}" alt="{{ product.name }}" class="preview-img shadow-sm">
+            </div>
+            {% endif %}
+
+            <!-- Product Name -->
+            <div class="form-floating mb-4">
+              <input type="text" name="name" id="id_name" class="form-control" value="{{ product.name }}" required>
+              <label for="id_name">Product Name</label>
+            </div>
+
+            <!-- Product Image -->
+            <div class="mb-4">
+              <label for="id_image" class="form-label fw-semibold">Product Image</label>
+              <input type="file" name="image" id="id_image" class="form-control">
+            </div>
+
+            <!-- Description -->
+            <div class="form-floating mb-4">
+              <textarea name="description" id="id_description" class="form-control" style="height: 120px;">{{ product.description }}</textarea>
+              <label for="id_description">Description</label>
+            </div>
+
+            <!-- Price + Discount -->
+            <div class="row g-4">
+              <div class="col-md-6">
+                <div class="form-floating">
+                  <input type="number" name="price" id="id_price" class="form-control" step="0.01" value="{{ product.price }}" required>
+                  <label for="id_price">Price</label>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="form-floating">
+                  <input type="number" name="discounted_price" id="id_discounted_price" class="form-control" step="0.01" value="{{ product.discounted_price }}">
+                  <label for="id_discounted_price">Discounted Price</label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stock -->
+            <div class="form-floating mt-4 mb-4">
+              <input type="number" name="stock_quantity" id="id_stock_quantity" class="form-control" value="{{ product.stock_quantity }}" required>
+              <label for="id_stock_quantity">Stock Quantity</label>
+            </div>
+
+            <!-- Toggles -->
+            <div class="toggles-container mt-4 mb-5">
+              <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" id="id_status" name="status" {% if product.status %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="id_status">Active Product</label>
+              </div>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="id_upsell_enabled" name="upsell_enabled" {% if product.upsell_enabled %}checked{% endif %}>
+                <label class="form-check-label fw-semibold" for="id_upsell_enabled">Enable Upsell</label>
+              </div>
+            </div>
+
+            <!-- Submit -->
+            <div class="text-center">
+              <button type="submit" class="btn-save px-5 py-3 fw-semibold">
+                💾 Save Changes
+              </button>
+            </div>
+          </form>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  /* === Layout & Container === */
+  body {
+    background: linear-gradient(135deg, #eef3ff, #f7faff);
+    font-family: "Poppins", sans-serif;
+  }
+
+  .edit-card {
+    background: #fff;
+    border-radius: 20px;
+  }
+
+  .edit-product-wrapper {
+    min-height: 100vh;
+  }
+
+  /* === Form Aesthetics === */
+  .form-control {
+    border-radius: 10px;
+    border: 1px solid #dee2f0;
+    background-color: #f9faff;
+    padding: 0.9rem 1rem;
+  }
+
+  .form-control:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 0.15rem rgba(79, 70, 229, 0.25);
+    background-color: #fff;
+  }
+
+  label {
+    color: #5b5b5b;
+  }
+
+  /* === Image Preview === */
+  .preview-img {
+    max-width: 180px;
+    height: auto;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    transition: transform 0.3s ease;
+  }
+
+  .preview-img:hover {
+    transform: scale(1.05);
+  }
+
+  /* === Switches === */
+  .form-switch .form-check-input {
+    width: 2.5em;
+    height: 1.3em;
+    cursor: pointer;
+  }
+
+  .toggles-container {
+    background: #f9faff;
+    border: 1px solid #e7ecf9;
+    padding: 1.2rem 1.5rem;
+    border-radius: 12px;
+  }
+
+  /* === Button === */
+  .btn-save {
+    background: linear-gradient(90deg, #6366f1, #4f46e5);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+  }
+
+  .btn-save:hover {
+    background: linear-gradient(90deg, #4f46e5, #4338ca);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+  }
+
+  /* === Spacing improvements === */
+  .form-floating > .form-control {
+    height: 56px;
+  }
+
+  .form-floating > label {
+    padding: 0.75rem 1rem;
+  }
+
+  .card-body {
+    padding: 2rem;
+  }
+
+  @media (max-width: 576px) {
+    .edit-card {
+      padding: 2rem 1.5rem;
+    }
+    .btn-save {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}

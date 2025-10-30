@@ -121,3 +121,31 @@ def add_product(request):
 
 # def pricing(request):
 #     return render(request, "front/pricing.html")
+
+@login_required
+def edit_product(request):
+    # product = Product.objects.get(pid=pid)
+    user = request.user
+    if request.method == "POST":
+        name = request.POST.get("name")
+        description = request.POST.get("description")
+        price = request.POST.get("price")
+        discounted_price = request.POST.get("discounted_price")
+        stock_quantity = request.POST.get("stock_quantity")
+        upsell_enabled = request.POST.get("upsell_enabled") == "on"
+
+        # Create and save product for the logged-in user
+        Product.objects.create(
+            user=request.user,
+            name=name,
+            description=description,
+            price=price,
+            discounted_price=discounted_price if discounted_price else None,
+            stock_quantity=stock_quantity,
+            upsell_enabled=upsell_enabled,
+        )
+
+        return redirect("back:products")  # or wherever you want to go after saving
+
+    return render(request, "back/edit_product.html", {"user": request.user})
+

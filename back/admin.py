@@ -1,13 +1,18 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import UserProfile, Product, Conversation, Sale, Setting
+from .models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
 
 # -----------------------
 # Custom User Admin
 # -----------------------
 # Define an inline admin descriptor for UserProfile model
 # which acts a bit like a "subform" of the User admin page
+
+class ProductImagesAdmin(admin.TabularInline):
+    model= ProductImages
+
+
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
@@ -51,7 +56,8 @@ class UserAdmin(BaseUserAdmin):
 # Product Admin
 # -----------------------
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ("name", "user", "price", "stock_quantity", "upsell_enabled", "last_synced")
+    inlines = [ProductImagesAdmin]
+    list_display = ("name", "user","product_image", "price", "stock_quantity", "upsell_enabled", "last_synced")
     list_filter = ("upsell_enabled",)
     search_fields = ("name", "user__email")
     ordering = ("-last_synced",)
@@ -92,3 +98,4 @@ admin.site.register(Product, ProductAdmin)
 admin.site.register(Conversation, ConversationAdmin)
 admin.site.register(Sale, SaleAdmin)
 admin.site.register(Setting, SettingAdmin)
+# admin.site.register(ProductImages, ProductImagesAdmin)
