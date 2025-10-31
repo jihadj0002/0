@@ -18,6 +18,9 @@ urlpatterns = [
 
     path("orders/update-status/", views.update_order_status, name="update_order_status"),
 
+    path("order-analytics/", views.get_order_analytics, name="order_analytics"),
+    path("sales-analytics/", views.get_sales_analytics, name="sales_analytics"),
+
     # path('webhook-api/', views.webhook_api, name='webhook_api'),
 
     

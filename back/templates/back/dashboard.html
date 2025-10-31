@@ -2,6 +2,8 @@
 {% block title %}Dashboard | Matrix AI{% endblock %}
 
 {% block extra_css %}
+
+
 <style>
   /* Extra analytics styling */
   .panel.analytics-panel {
@@ -26,6 +28,8 @@
   .card-title{color:var(--muted);font-weight:600}
   .card-value{font-size:22px;font-weight:800;margin-top:6px}
 </style>
+
+
 {% endblock %}
 
 {% block content %}
@@ -37,7 +41,7 @@
 <div class="cards">
   <div class="card"><div class="card-title">Sales</div><div class="card-value">${{ total_sales|floatformat:2 }}</div></div>
   <div class="card"><div class="card-title">Total Conversations</div><div class="card-value">{{ total_conversations }}</div></div>
-  <div class="card"><div class="card-title">Conversion Rate</div><div class="card-value">{{ conversion_rate }}%</div></div>
+  <div class="card"><div class="card-title">Conversion Rate</div><div class="card-value">{{ conversion_rate }}</div></div>
   <div class="card"><div class="card-title">Active Products</div><div class="card-value">{{ active_products }}</div></div>
 </div>
 
@@ -46,29 +50,36 @@
   <!-- Order Analytics -->
   <div class="panel analytics-panel">
     <div class="panel-header">
-      <div><h2>Order Analytics</h2><div class="panel-sub">Last 30 Days</div></div>
+      <div>
+        <h2>Order Analytics</h2>
+        <div class="panel-sub" id="analytics-range-label">Last 30 Days</div>
+      </div>
       <div class="time-range">
-        <button class="time-btn active">1D</button><button class="time-btn">7D</button>
-        <button class="time-btn">30D</button><button class="time-btn">6M</button>
+        <button class="time-btn active" data-range="1D">1D</button>
+        <button class="time-btn" data-range="7D">7D</button>
+        <button class="time-btn" data-range="30D">30D</button>
+        <button class="time-btn" data-range="6M">6M</button>
       </div>
     </div>
+
     <div class="chart-wrap">
-      <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#22c55e" stroke-width="3"
+      <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none" id="analytics-chart">
+        <polyline fill="none" stroke="#22c55e" stroke-width="3" id="order-chart-line"
           points="0,90 30,80 60,70 90,50 120,55 150,45 180,30 210,35 240,25 270,20 300,15"/>
       </svg>
     </div>
+
     <div class="sales-stats">
-      <div><div class="s-label">Total Orders</div><div class="s-value">542</div></div>
-      <div><div class="s-label">Completed</div><div class="s-value">489</div></div>
-      <div><div class="s-label">Pending</div><div class="s-value">53</div></div>
+      <div><div class="s-label">Total Orders</div><div class="s-value" id="total-orders">{{ total_orders }}</div></div>
+      <div><div class="s-label">Completed</div><div class="s-value" id="completed-orders">{{ completed }}</div></div>
+      <div><div class="s-label">Pending</div><div class="s-value" id="pending-orders">{{ pending }}</div></div>
     </div>
   </div>
 
   <!-- Message Analytics -->
   <div class="panel analytics-panel">
     <div class="panel-header">
-      <div><h2>Message Status Analytics</h2><div class="panel-sub">Overview</div></div>
+      <div><h2>Message Status Analytics</h2><div class="panel-sub" id="msg-range-label">Overview</div></div>
       <div class="time-range">
         <button class="time-btn active">1D</button><button class="time-btn">7D</button>
         <button class="time-btn">30D</button><button class="time-btn">6M</button>
@@ -76,7 +87,7 @@
     </div>
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#f97316" stroke-width="3"
+        <polyline fill="none" stroke="#f97316" stroke-width="3" id="msg-chart-line"
           points="0,100 30,90 60,70 90,80 120,50 150,40 180,60 210,30 240,35 270,20 300,25"/>
       </svg>
     </div>
@@ -90,7 +101,7 @@
   <!-- Sales & Revenue -->
   <div class="panel analytics-panel">
     <div class="panel-header">
-      <div><h2>Sales & Revenue</h2><div class="panel-sub">Last 30 Days</div></div>
+      <div><h2>Sales & Revenue</h2><div class="panel-sub" id="sales-range-label">Last 30 Days</div></div>
       <div class="time-range">
         <button class="time-btn active">1D</button><button class="time-btn">7D</button>
         <button class="time-btn">30D</button><button class="time-btn">6M</button>
@@ -98,14 +109,14 @@
     </div>
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
-        <polyline fill="none" stroke="#2563eb" stroke-width="3"
+        <polyline fill="none" stroke="#2563eb" stroke-width="3" id="sales-chart-line"
           points="0,90 30,70 60,85 90,60 120,80 150,55 180,65 210,40 240,60 270,30 300,20"/>
       </svg>
     </div>
     <div class="sales-stats">
-      <div><div class="s-label">Avg Order</div><div class="s-value">$34.20</div></div>
-      <div><div class="s-label">Chat Sales</div><div class="s-value">42</div></div>
-      <div><div class="s-label">Response Time</div><div class="s-value">1h 12m</div></div>
+      <div><div class="s-label">Avg Order</div><div class="s-value" id="avg-orders">$34.20</div></div>
+      <div><div class="s-label">Chat Sales</div><div class="s-value" id="chat-sales">42</div></div>
+      <div><div class="s-label">Response Time</div><div class="s-value" id="response-time">1h 12m</div></div>
     </div>
   </div>
 </div>
@@ -142,4 +153,79 @@
     </div>
   </div>
 </div>
+
+
+{% comment %} Order Analytics {% endcomment %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const buttons = document.querySelectorAll(".time-btn");
+
+  const totalEl = document.getElementById("total-orders");
+  const completedEl = document.getElementById("completed-orders");
+  const pendingEl = document.getElementById("pending-orders");
+  const chartLine = document.getElementById("order-chart-line");
+  const rangeLabel = document.getElementById("analytics-range-label");
+  
+  const avgOrd = document.getElementById("avg-orders");
+  const cSells = document.getElementById("chat-sales");
+  const responseTime = document.getElementById("response-time");
+  const salesChartLine = document.getElementById("sales-chart-line");
+  const salesRangeLabel = document.getElementById("sales-range-label");
+
+
+  // Default load (30D)
+  loadOrderAnalytics("30D");
+
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const range = btn.dataset.range;
+      const labels = {
+        "1D": "Last 24 Hours",
+        "7D": "Last 7 Days",
+        "30D": "Last 30 Days",
+        "6M": "Last 6 Months"
+      };
+      rangeLabel.textContent = labels[range] || "Last 30 Days";
+
+      loadOrderAnalytics(range);
+    });
+  });
+
+  function loadOrderAnalytics(range) {
+    // show loading placeholder
+    totalEl.textContent = "...";
+    completedEl.textContent = "...";
+    pendingEl.textContent = "...";
+
+    fetch(`{% url 'back:order_analytics' %}?range=${range}`)
+      .then(res => {
+        if (!res.ok) throw new Error("Network response was not ok");
+        return res.json();
+      })
+      .then(data => {
+        totalEl.textContent = data.total_orders ?? 0;
+        completedEl.textContent = data.completed ?? 0;
+        pendingEl.textContent = data.pending ?? 0;
+
+        // Update sparkline
+        const max = Math.max(...data.chart_data, 1);
+        const scaleY = 100 / max;
+        const points = data.chart_data
+          .map((v, i) => `${i * 25},${100 - v * scaleY}`)
+          .join(" ");
+        chartLine.setAttribute("points", points);
+      })
+      .catch(err => {
+        console.error("Error fetching analytics:", err);
+        totalEl.textContent = "–";
+        completedEl.textContent = "–";
+        pendingEl.textContent = "–";
+      });
+  }
+});
+</script>
+
+
 {% endblock %}
