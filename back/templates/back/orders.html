@@ -1,95 +1,201 @@
+{% extends 'back/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Orders</title>
-  <style>
-:root{
-  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
-  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
-  font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;
+
+
+{% block title %}Dashboard | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+/* =====================
+   BASE STYLING
+===================== */
+:root {
+  --primary: #2563eb;
+  --accent: #3b82f6;
+  --bg-light: #f8fafc;
+  --border: #e2e8f0;
+  --muted: #64748b;
 }
-*{box-sizing:border-box}
-html,body,#root{height:100%}
-body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialiased;}
-.app{display:flex;min-height:100vh}
 
-/* SIDEBAR */
-.sidebar{width:260px;background:linear-gradient(180deg,#fff,#fbfdff);padding:28px;border-right:1px solid #eef2f6}
-.brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
-.logo{width:44px;height:44px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#60a5fa);color:white;display:flex;align-items:center;justify-content:center;font-weight:700}
-.brand-text{font-weight:700}
-.nav{display:flex;flex-direction:column;gap:6px;margin-top:18px}
-.nav-item{padding:10px 12px;border-radius:8px;color:#0f172a;text-decoration:none;font-weight:600;opacity:0.88}
-.nav-item:hover{background:var(--soft)}
-.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff);box-shadow:var(--shadow)}
-
-/* MAIN */
-.main{flex:1;display:flex;flex-direction:column}
-.topbar{display:flex;justify-content:space-between;align-items:center;padding:20px 28px;background:transparent}
-.search-wrap{flex:1;max-width:640px}
-.search{width:100%;padding:10px 14px;border-radius:10px;border:1px solid #e6eefc}
-.top-actions{display:flex;align-items:center;gap:12px}
-.btn-primary{background:var(--accent);color:white;border:none;padding:10px 16px;border-radius:10px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}
-.avatar{width:40px;height:40px;border-radius:50%;background:#eef2ff;display:flex;align-items:center;justify-content:center;font-weight:700}
-
-/* CONTENT */
-.content{padding:20px 28px 40px}
-.page-header h1{margin:0;font-size:28px}
-.page-header .sub{color:var(--muted);margin-top:6px}
-
-.panel{background:var(--panel);padding:16px;border-radius:12px;box-shadow:var(--shadow)}
-.panel-header{display:flex;justify-content:space-between;align-items:center}
-
-/* Table */
-.orders-table{width:100%;border-collapse:collapse;margin-top:12px}
-.orders-table th{text-align:left;color:var(--muted);font-size:13px;padding:8px 0}
-.orders-table td{padding:12px 0;border-top:1px solid #f3f6fb}
-
-/* Status Badges */
-.badge{padding:6px 10px;border-radius:999px;font-weight:700;font-size:13px;text-transform:capitalize}
-.badge.pending{background:#fffbeb;color:#92400e}
-.badge.delivering{background:#dbeafe;color:#1e40af}
-.badge.completed{background:#ecfdf5;color:#065f46}
-.badge.refunded{background:#fee2e2;color:#991b1b}
-
-/* Responsive */
-@media (max-width:1000px){
-  .sidebar{display:none}
+.content {
+  padding: 20px;
+  background: var(--bg-light);
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
 }
+
+.page-header {
+  margin-bottom: 25px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 5px;
+}
+
+.page-header .sub {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* =====================
+   PANEL & BUTTON
+===================== */
+.panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  padding: 20px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.panel-header h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.btn-primary:hover {
+  background: var(--accent);
+}
+
+/* =====================
+   TABLE STYLING
+===================== */
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.orders-table th,
+.orders-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+  color: #1f2937;
+}
+
+.orders-table th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #334155;
+}
+
+.orders-table tr:hover {
+  background-color: #f9fafb;
+}
+
+/* =====================
+   STATUS SELECT
+===================== */
+.status-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+.status-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* =====================
+   RESPONSIVE DESIGN
+===================== */
+@media (max-width: 768px) {
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .orders-table,
+  .orders-table thead,
+  .orders-table tbody,
+  .orders-table th,
+  .orders-table td,
+  .orders-table tr {
+    display: block;
+  }
+
+  .orders-table thead {
+    display: none;
+  }
+
+  .orders-table tr {
+    background: #fff;
+    margin-bottom: 15px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  }
+
+  .orders-table td {
+    border: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    padding: 8px 0;
+  }
+
+  .orders-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .orders-table td:last-child {
+    border-bottom: none;
+  }
+
+  .orders-table td select {
+    width: 100%;
+    margin-top: 5px;
+  }
+  
+  /* Add labels for mobile using data-labels dynamically */
+  .orders-table td:nth-child(1)::before { content: "Order ID"; }
+  .orders-table td:nth-child(2)::before { content: "Product"; }
+  .orders-table td:nth-child(3)::before { content: "Customer ID"; }
+  .orders-table td:nth-child(4)::before { content: "Amount"; }
+  .orders-table td:nth-child(5)::before { content: "Status"; }
+  .orders-table td:nth-child(6)::before { content: "Created At"; }
+}
+
 </style>
-</head>
-<body>
-<div class="app">
-  <!-- Sidebar -->
-  <aside class="sidebar">
-    <div class="brand">
-      <div class="logo">MA</div>
-      <div class="brand-text">Matrix AI</div>
-    </div>
-    <nav class="nav">
-      <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
-      <!-- <a class="nav-item" href="{% url 'back:c_dashboard' %}">💬 Conversations</a> -->
-      <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
-      <a class="nav-item active" href="{% url 'back:orders' %}">🧾 Orders</a>
-      {% comment %} <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a> {% endcomment %}
-      {% comment %} <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a> {% endcomment %}
-      <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
-    </nav>
-  </aside>
+{% endblock %}
 
-  <!-- Main -->
-  <main class="main">
-    <!-- Topbar -->
-    <div class="topbar">
-      <div class="search-wrap">
-        <input class="search" type="text" placeholder="Search orders...">
-      </div>
-      <div class="top-actions">
-        <div class="avatar">U</div>
-      </div>
-    </div>
+
+{% block content %}
+
+<!-- Main -->
+
+      
 
     <!-- Content -->
     <div class="content">
@@ -210,7 +316,7 @@ body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialia
 
 </style>
 
-  </main>
-</div>
-</body>
-</html>
+
+
+  
+{% endblock %}
