@@ -193,3 +193,163 @@
   }
 </style>
 {% endblock %}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{% comment %} 
+Extra CSS from dashboard.html for reference:
+
+
+
+      <!-- Product Update JS-->
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+  const modal = document.getElementById("productModal");
+  const closeModalBtn = document.querySelector(".close");
+  const productForm = document.getElementById("productForm");
+  const preview = document.getElementById("preview");
+  const imageInput = document.getElementById("imageUpload");
+  const modalTitle = document.querySelector(".modal-header h2");
+  const submitBtn = document.querySelector(".publish-btn");
+
+  let currentProductId = null; // store the product being edited
+
+  // --- Helper: get CSRF token ---
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let cookie of cookies) {
+        cookie = cookie.trim();
+        if (cookie.startsWith(name + "=")) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  const csrftoken = getCookie("csrftoken");
+
+  // --- Open modal for editing ---
+  document.querySelectorAll(".edit-product-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      currentProductId = btn.dataset.id;
+      modal.style.display = "flex";
+      document.body.style.overflow = "hidden";
+      modalTitle.textContent = "Edit Product";
+      submitBtn.textContent = "Update Product";
+
+      // Fetch product data to prefill
+      fetch(`dbproducts/${currentProductId}/edit/`)
+        .then((res) => res.json())
+        .then((data) => {
+          document.getElementById("name").value = data.name;
+          document.getElementById("price").value = data.price;
+          document.getElementById("discounted_price").value = data.discounted_price;
+          document.getElementById("stock_quantity").value = data.stock_quantity;
+          document.getElementById("description").value = data.description;
+          document.getElementById("status").value = data.status ? "True" : "False";
+
+          preview.innerHTML = "";
+          if (data.image) {
+            const img = document.createElement("img");
+            img.src = data.image;
+            preview.appendChild(img);
+          }
+        });
+    });
+  });
+
+  // --- Close modal ---
+  closeModalBtn.addEventListener("click", () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "auto";
+  });
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+      document.body.style.overflow = "auto";
+    }
+  });
+
+  // --- Image Preview ---
+  imageInput.addEventListener("change", function () {
+    preview.innerHTML = "";
+    const files = Array.from(this.files);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = document.createElement("img");
+        img.src = e.target.result;
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  // --- Submit Edit Form ---
+  productForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    const formData = new FormData(productForm);
+
+    // If editing an existing product
+    const url = currentProductId
+      ? `dbproducts/${currentProductId}/edit/`
+      : "{% url 'back:add_product' %}";
+
+    fetch(url, {
+      method: "POST",
+      headers: {
+        "X-CSRFToken": csrftoken,
+      },
+      body: formData,
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          alert("✅ Product updated successfully!");
+          modal.style.display = "none";
+          document.body.style.overflow = "auto";
+          productForm.reset();
+          preview.innerHTML = "";
+          currentProductId = null;
+          modalTitle.textContent = "Add Product";
+          submitBtn.textContent = "Publish Product";
+          // Optional: refresh product list or update product card live
+        } else {
+          alert("❌ Failed to update product.");
+        }
+      })
+      .catch((err) => {
+        console.error("Error:", err);
+        alert("⚠️ Something went wrong.");
+      });
+  });
+});
+
+  </script>
+
+
+
+
+
+
+
+
+
+
+{% endcomment %}

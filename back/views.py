@@ -7,7 +7,7 @@ from .models import Product, Conversation, Sale
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
-
+from django.shortcuts import get_object_or_404
 from django.http import JsonResponse
 from django.utils import timezone
 from datetime import timedelta
@@ -267,6 +267,8 @@ def add_product(request):
         discounted_price = request.POST.get("discounted_price")
         stock_quantity = request.POST.get("stock_quantity")
         upsell_enabled = request.POST.get("upsell_enabled") == "on"
+        image = request.FILES.get("image")
+
 
         # Create and save product for the logged-in user
         Product.objects.create(
@@ -277,7 +279,22 @@ def add_product(request):
             discounted_price=discounted_price if discounted_price else None,
             stock_quantity=stock_quantity,
             upsell_enabled=upsell_enabled,
+            image=image if image else "product.jpg",
         )
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": True,
+                "product": {
+                    "id": Product.id,
+                    "name": Product.name,
+                    "price": str(Product.price),
+                    "image": Product.image.url if Product.image else "",
+                },
+            })
+
+        # Otherwise, handle normal form submit
+        return redirect("back:products")
 
         return redirect("back:products")  # or wherever you want to go after saving
 
@@ -288,29 +305,38 @@ def add_product(request):
 #     return render(request, "front/pricing.html")
 
 @login_required
-def edit_product(request):
-    # product = Product.objects.get(pid=pid)
-    user = request.user
-    if request.method == "POST":
-        name = request.POST.get("name")
-        description = request.POST.get("description")
-        price = request.POST.get("price")
-        discounted_price = request.POST.get("discounted_price")
-        stock_quantity = request.POST.get("stock_quantity")
-        upsell_enabled = request.POST.get("upsell_enabled") == "on"
+def edit_product(request, pk):
 
-        # Create and save product for the logged-in user
-        Product.objects.create(
-            user=request.user,
-            name=name,
-            description=description,
-            price=price,
-            discounted_price=discounted_price if discounted_price else None,
-            stock_quantity=stock_quantity,
-            upsell_enabled=upsell_enabled,
-        )
+    product = get_object_or_404(Product, pk=pk, user=request.user)
+    print("Editing product:", product)
 
-        return redirect("back:products")  # or wherever you want to go after saving
+    if request.method == "GET":
+        # Return product data as JSON for prefill
+        return JsonResponse({
+            "id": product.id,
+            "name": product.name,
+            "price": float(product.price),
+            "discounted_price": float(product.discounted_price) if product.discounted_price else "",
+            "stock_quantity": product.stock_quantity,
+            "description": product.description,
+            "status": product.status,
+            "image": product.image.url if product.image else "",
+        })
 
-    return render(request, "back/edit_product.html", {"user": request.user})
+    elif request.method == "POST":
+        # Update product with submitted form data
+        product.name = request.POST.get("name")
+        product.price = request.POST.get("price")
+        product.discounted_price = request.POST.get("discounted_price") or None
+        product.stock_quantity = request.POST.get("stock_quantity")
+        product.description = request.POST.get("description")
+        product.status = request.POST.get("status") == "True"
 
+        if "image" in request.FILES:
+            product.image = request.FILES["image"]
+
+        product.save()
+
+        return JsonResponse({"success": True, "message": "Product updated successfully!"})
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
