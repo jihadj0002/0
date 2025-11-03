@@ -6,6 +6,7 @@
 {% endblock %}
 
 {% block content %}
+{% comment %} 
 <div class="edit-product-wrapper py-5">
   <div class="container">
     <div class="row justify-content-center">
@@ -93,106 +94,7 @@
     </div>
   </div>
 </div>
-
-<style>
-  /* === Layout & Container === */
-  body {
-    background: linear-gradient(135deg, #eef3ff, #f7faff);
-    font-family: "Poppins", sans-serif;
-  }
-
-  .edit-card {
-    background: #fff;
-    border-radius: 20px;
-  }
-
-  .edit-product-wrapper {
-    min-height: 100vh;
-  }
-
-  /* === Form Aesthetics === */
-  .form-control {
-    border-radius: 10px;
-    border: 1px solid #dee2f0;
-    background-color: #f9faff;
-    padding: 0.9rem 1rem;
-  }
-
-  .form-control:focus {
-    border-color: #4f46e5;
-    box-shadow: 0 0 0 0.15rem rgba(79, 70, 229, 0.25);
-    background-color: #fff;
-  }
-
-  label {
-    color: #5b5b5b;
-  }
-
-  /* === Image Preview === */
-  .preview-img {
-    max-width: 180px;
-    height: auto;
-    border-radius: 12px;
-    margin-bottom: 10px;
-    transition: transform 0.3s ease;
-  }
-
-  .preview-img:hover {
-    transform: scale(1.05);
-  }
-
-  /* === Switches === */
-  .form-switch .form-check-input {
-    width: 2.5em;
-    height: 1.3em;
-    cursor: pointer;
-  }
-
-  .toggles-container {
-    background: #f9faff;
-    border: 1px solid #e7ecf9;
-    padding: 1.2rem 1.5rem;
-    border-radius: 12px;
-  }
-
-  /* === Button === */
-  .btn-save {
-    background: linear-gradient(90deg, #6366f1, #4f46e5);
-    color: #fff;
-    border: none;
-    border-radius: 12px;
-    transition: all 0.3s ease;
-  }
-
-  .btn-save:hover {
-    background: linear-gradient(90deg, #4f46e5, #4338ca);
-    transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
-  }
-
-  /* === Spacing improvements === */
-  .form-floating > .form-control {
-    height: 56px;
-  }
-
-  .form-floating > label {
-    padding: 0.75rem 1rem;
-  }
-
-  .card-body {
-    padding: 2rem;
-  }
-
-  @media (max-width: 576px) {
-    .edit-card {
-      padding: 2rem 1.5rem;
-    }
-    .btn-save {
-      width: 100%;
-    }
-  }
-</style>
-{% endblock %}
+ {% endcomment %}
 
 
 
@@ -203,18 +105,67 @@
 
 
 
+ <!-- PopUp For Edit Product start -->
+<div class="product-page">
+  <!-- Modal -->
+  <div id="productModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Product</h2>
+        <span class="close">&times;</span>
+      </div>
+
+      <div class="form-section">
+        <form id="productForm" enctype="multipart/form-data" method="POST" action="{% url 'back:add_product' %}">
+          {% csrf_token %}
+          <div class="form-row">
+            <div>
+              <label for="name">Product Name</label>
+              <input type="text" id="name" name="name" required>
+            </div>
+            <div>
+              <label for="price">Price (bdt)</label>
+              <input type="number" step="0.01" id="price" name="price" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div>
+              <label for="discounted_price">Discounted Price (bdt)</label>
+              <input type="number" step="0.01" id="discounted_price" name="discounted_price">
+            </div>
+            <div>
+              <label for="stock_quantity">Stock Quantity</label>
+              <input type="number" id="stock_quantity" name="stock_quantity" required>
+            </div>
+          </div>
+
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="3" placeholder="Enter product description..."></textarea>
+
+          <label>Status</label>
+          <select id="status" name="status">
+            <option value="True" selected>Active</option>
+            <option value="False">Inactive</option>
+          </select>
+
+          <div class="image-upload">
+            <input type="file" id="imageUpload" name="image" accept="image/*" multiple>
+            <label for="imageUpload">📁 Click to upload product images</label>
+            <div class="preview" id="preview"></div>
+          </div>
+
+          <button type="submit" class="publish-btn">Publish Product</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- PopUp end -->
 
 
-
-
-
-
-{% comment %} 
-Extra CSS from dashboard.html for reference:
-
-
-
-      <!-- Product Update JS-->
+  <!-- Product Update JS-->
 <script>
   document.addEventListener("DOMContentLoaded", function () {
   const modal = document.getElementById("productModal");
@@ -343,6 +294,105 @@ Extra CSS from dashboard.html for reference:
 
   </script>
 
+<style>
+  /* === Layout & Container === */
+  body {
+    background: linear-gradient(135deg, #eef3ff, #f7faff);
+    font-family: "Poppins", sans-serif;
+  }
+
+  .edit-card {
+    background: #fff;
+    border-radius: 20px;
+  }
+
+  .edit-product-wrapper {
+    min-height: 100vh;
+  }
+
+  /* === Form Aesthetics === */
+  .form-control {
+    border-radius: 10px;
+    border: 1px solid #dee2f0;
+    background-color: #f9faff;
+    padding: 0.9rem 1rem;
+  }
+
+  .form-control:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 0.15rem rgba(79, 70, 229, 0.25);
+    background-color: #fff;
+  }
+
+  label {
+    color: #5b5b5b;
+  }
+
+  /* === Image Preview === */
+  .preview-img {
+    max-width: 180px;
+    height: auto;
+    border-radius: 12px;
+    margin-bottom: 10px;
+    transition: transform 0.3s ease;
+  }
+
+  .preview-img:hover {
+    transform: scale(1.05);
+  }
+
+  /* === Switches === */
+  .form-switch .form-check-input {
+    width: 2.5em;
+    height: 1.3em;
+    cursor: pointer;
+  }
+
+  .toggles-container {
+    background: #f9faff;
+    border: 1px solid #e7ecf9;
+    padding: 1.2rem 1.5rem;
+    border-radius: 12px;
+  }
+
+  /* === Button === */
+  .btn-save {
+    background: linear-gradient(90deg, #6366f1, #4f46e5);
+    color: #fff;
+    border: none;
+    border-radius: 12px;
+    transition: all 0.3s ease;
+  }
+
+  .btn-save:hover {
+    background: linear-gradient(90deg, #4f46e5, #4338ca);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(79, 70, 229, 0.3);
+  }
+
+  /* === Spacing improvements === */
+  .form-floating > .form-control {
+    height: 56px;
+  }
+
+  .form-floating > label {
+    padding: 0.75rem 1rem;
+  }
+
+  .card-body {
+    padding: 2rem;
+  }
+
+  @media (max-width: 576px) {
+    .edit-card {
+      padding: 2rem 1.5rem;
+    }
+    .btn-save {
+      width: 100%;
+    }
+  }
+</style>
+{% endblock %}
 
 
 
@@ -352,4 +402,21 @@ Extra CSS from dashboard.html for reference:
 
 
 
-{% endcomment %}
+
+
+
+
+
+
+
+      
+
+
+
+
+
+
+
+
+
+
