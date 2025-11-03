@@ -25,6 +25,11 @@ def dashboard(request):
     completed_sales = Sale.objects.filter(user=user, status="completed").count()
     total_conversations = Conversation.objects.filter(user=user).count()
     active_products = Product.objects.filter(user=user, stock_quantity__gt=0).count()
+
+    orders_count = Sale.objects.filter(user=user).count()
+
+    active_productss = Product.objects.filter(user=user, stock_quantity__gt=0)
+    top_products = active_productss.order_by('-stock_quantity')[:3]
     
     conversion_rate = (
         round((completed_sales / total_conversations) * 100, 2)
@@ -37,6 +42,9 @@ def dashboard(request):
         "total_conversations": total_conversations,
         "conversion_rate": conversion_rate,
         "active_products": active_products,
+        "top_products": top_products,
+        "orders_count": orders_count,
+
     }
     return render(request, "back/dashboard.html", context)
 

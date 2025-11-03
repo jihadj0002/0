@@ -114,9 +114,9 @@
       </svg>
     </div>
     <div class="sales-stats">
-      <div><div class="s-label">Avg Order</div><div class="s-value" id="avg-orders">$34.20</div></div>
-      <div><div class="s-label">Chat Sales</div><div class="s-value" id="chat-sales">42</div></div>
-      <div><div class="s-label">Response Time</div><div class="s-value" id="response-time">1h 12m</div></div>
+      <div><div class="s-label">Avg Order</div><div class="s-value" id="avg-orders">${{total_sales}}</div></div>
+      <div><div class="s-label">Chat Sales</div><div class="s-value" id="chat-sales">{{orders_count}}</div></div>
+      <div><div class="s-label">Response Time</div><div class="s-value" id="response-time">1 Min</div></div>
     </div>
   </div>
 </div>
@@ -126,10 +126,15 @@
   <div class="small-panel">
     <h3>Top Products (via Chatbot)</h3>
     <ol class="product-list">
-      <li>Wireless Headphones <span class="muted">— 12 sold</span></li>
-      <li>Smart Watch <span class="muted">— 9 sold</span></li>
-      <li>Yoga Mat <span class="muted">— 7 sold</span></li>
-    </ol>
+  {% for product in top_products %}
+    <li>
+      {{ product.name }}
+      <span class="muted">— {{ product.sold }} .</span>
+    </li>
+  {% empty %}
+    <li>No active products yet.</li>
+  {% endfor %}
+</ol>
   </div>
 
   <div class="small-panel">
@@ -226,6 +231,82 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 </script>
+
+
+<script>
+
+  // Sales & Revenue Analytics
+document.addEventListener("DOMContentLoaded", () => {
+  const salesButtons = document.querySelectorAll(".time-btn");
+  const salesChartLine = document.getElementById("sales-chart-line");
+  const salesRangeLabel = document.getElementById("sales-range-label");
+
+  const avgOrdersEl = document.getElementById("avg-orders");
+  const chatSalesEl = document.getElementById("chat-sales");
+  const responseTimeEl = document.getElementById("response-time");
+
+  // Default load (30D)
+  loadSalesAnalytics("30D");
+
+  // Handle time range clicks
+  salesButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      salesButtons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const range = btn.textContent.trim(); // "1D", "7D", etc.
+      const labels = {
+        "1D": "Last 24 Hours",
+        "7D": "Last 7 Days",
+        "30D": "Last 30 Days",
+        "6M": "Last 6 Months"
+      };
+      salesRangeLabel.textContent = labels[range] || "Last 30 Days";
+
+      loadSalesAnalytics(range);
+    });
+  });
+
+  function loadSalesAnalytics(range) {
+    // Set placeholders while loading
+    avgOrdersEl.textContent = "...";
+    chatSalesEl.textContent = "...";
+    responseTimeEl.textContent = "...";
+
+    fetch(`{% url 'back:sales_analytics' %}?range=${range}`)
+      .then(res => {
+        if (!res.ok) throw new Error("Network response was not ok");
+        return res.json();
+      })
+      .then(data => {
+        // Update values from backend data
+        const totalOrders = data.total_orders ?? 0;
+        const completed = data.completed ?? 0;
+        const pending = data.pending ?? 0;
+
+        // Example placeholders — customize as needed
+        avgOrdersEl.textContent = `$${totalOrders * 10}`; // fake avg revenue
+        chatSalesEl.textContent = completed;              // completed orders
+        responseTimeEl.textContent = pending + " mins";   // fake metric
+
+        // Update sparkline dynamically
+        const max = Math.max(...data.chart_data, 1);
+        const scaleY = 100 / max;
+        const points = data.chart_data
+          .map((v, i) => `${i * 25},${100 - v * scaleY}`)
+          .join(" ");
+        salesChartLine.setAttribute("points", points);
+      })
+      .catch(err => {
+        console.error("Error fetching sales analytics:", err);
+        avgOrdersEl.textContent = "–";
+        chatSalesEl.textContent = "–";
+        responseTimeEl.textContent = "–";
+      });
+  }
+});
+</script>
+
 
 
 {% endblock %}
