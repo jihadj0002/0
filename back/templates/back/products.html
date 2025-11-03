@@ -513,6 +513,25 @@ button:hover {
   box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
 }
 
+
+.delete-prod-btn {
+  background: linear-gradient(90deg, #f06593ff, #e5467bff);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.2rem;
+  width: 100%;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.delete-prod-btn:hover {
+  background: linear-gradient(90deg, #e5467bff, #9e3055ff);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+}
+
 @media (max-width: 576px) {
   .edit-form-row {
     flex-direction: column;
@@ -664,6 +683,9 @@ button:hover {
           </div>
 
           <button type="submit" class="edit-submit-btn">Update Product</button>
+          <button type="button" class="delete-prod-btn">Delete Product</button>
+          
+          
         </form>
       </div>
     </div>
@@ -774,6 +796,45 @@ document.addEventListener("DOMContentLoaded", function () {
   const submitBtn = document.querySelector(".edit-submit-btn");
 
   let currentEditId = null;
+
+  // --- DELETE PRODUCT LOGIC ---
+const deleteBtn = document.querySelector(".delete-prod-btn");
+
+
+deleteBtn.addEventListener("click", function () {
+  if (!currentEditId) {
+    alert("⚠️ Please select a product to delete.");
+    return;
+  }
+
+  const confirmDelete = confirm("Are you sure you want to delete this product?");
+  if (!confirmDelete) return;
+
+  fetch(`dbproducts/${currentEditId}/delete/`, {
+    method: "DELETE",
+    headers: {
+      "X-CSRFToken": csrftoken,
+    },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.success) {
+        alert("🗑️ " + data.message);
+        modal.style.display = "none";
+        document.body.style.overflow = "auto";
+        form.reset();
+        preview.innerHTML = "";
+        currentEditId = null;
+      } else {
+        alert("❌ " + data.message);
+      }
+    })
+    .catch((err) => {
+      console.error(err);
+      alert("⚠️ Something went wrong while deleting.");
+    });
+});
+  // --- DELETE PRODUCT LOGIC END ---
 
   // Helper: Get CSRF token
   function getCookie(name) {
@@ -886,6 +947,9 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   });
 });
+
+
+
 
 
     </script>

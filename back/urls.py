@@ -15,6 +15,7 @@ urlpatterns = [
     path("chats", views.c_dashboard, name="c_dashboard"),
 
     path("products/<int:pk>/edit/", views.edit_product, name='edit_product'),
+    path("products/<int:pk>/delete/", views.delete_product, name="delete_product"),
     
 
     path("orders/update-status/", views.update_order_status, name="update_order_status"),

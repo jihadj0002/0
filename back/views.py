@@ -340,3 +340,15 @@ def edit_product(request, pk):
         return JsonResponse({"success": True, "message": "Product updated successfully!"})
 
     return JsonResponse({"error": "Invalid request"}, status=400)
+
+
+@csrf_exempt
+def delete_product(request, pk):
+    if request.method == "DELETE":
+        try:
+            product = get_object_or_404(Product, pk=pk)
+            product.delete()
+            return JsonResponse({"success": True, "message": "Product deleted successfully."})
+        except Product.DoesNotExist:
+            return JsonResponse({"success": False, "message": "Product not found."}, status=404)
+    return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
