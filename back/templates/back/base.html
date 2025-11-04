@@ -9,55 +9,40 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 
   <style>
-    :root {
-      --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
-      --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
-      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;
-    }
-    .app{display:flex; min-height:100vh}
-
-    /* SIDEBAR */
-    .sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
-    .brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
-    .logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
-    .brand-text{font-weight:700}
-    .nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
-    .nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
-    .nav-item:hover{background:var(--soft)}
-    .nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
-
-    /* MAIN */
-    .main{flex:1; display:flex; flex-direction:column}
-    .topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px}
-    .search-wrap{flex:1; max-width:640px}
-    .search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
-    .top-actions{display:flex; align-items:center; gap:12px}
-    .btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700}
-    .avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
-
-    .content{padding:20px 28px 40px}
-    .footer{padding:18px 28px; color:var(--muted); display:flex; justify-content:space-between}
-
-    /* Responsive */
-    @media (max-width:1000px){.sidebar{display:none}}
-    @media (max-width:600px){.btn-primary{padding:8px}}
-  </style>
-
-  {% comment %} Css for header responsivness {% endcomment %}
-<style>
-  :root {
-  --accent: #3b82f6;
-  --soft: #f1f5f9;
+/* ==============================
+   ROOT VARIABLES & BASE STYLES
+============================== */
+:root {
+  --bg: #f7fbff;
+  --panel: #ffffff;
   --muted: #64748b;
-  --shadow: 0 2px 8px rgba(0,0,0,0.05);
+  --accent: #2563eb;
+  --soft: #f1f5f9;
+  --radius: 12px;
+  --shadow: 0 6px 20px rgba(16, 24, 40, 0.08);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
 }
 
-/* Existing Sidebar Styling */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ==============================
+   SIDEBAR
+============================== */
 .sidebar {
   width: 260px;
   background: linear-gradient(180deg, #fff, #fbfdff);
@@ -83,7 +68,7 @@
   height: 44px;
   border-radius: 10px;
   background: linear-gradient(135deg, var(--accent), #60a5fa);
-  color: white;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -92,6 +77,7 @@
 
 .brand-text {
   font-weight: 700;
+  font-size: 1.1rem;
 }
 
 .nav {
@@ -108,6 +94,7 @@
   text-decoration: none;
   font-weight: 600;
   opacity: 0.88;
+  transition: background 0.2s ease;
 }
 
 .nav-item:hover {
@@ -119,7 +106,9 @@
   box-shadow: var(--shadow);
 }
 
-/* MAIN */
+/* ==============================
+   MAIN LAYOUT
+============================== */
 .main {
   flex: 1;
   display: flex;
@@ -128,6 +117,9 @@
   transition: margin-left 0.3s ease;
 }
 
+/* ==============================
+   TOPBAR
+============================== */
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -155,14 +147,20 @@
   gap: 12px;
 }
 
+/* Buttons & Avatar */
 .btn-primary {
   background: var(--accent);
-  color: white;
+  color: #fff;
   border: none;
   padding: 10px 16px;
   border-radius: 10px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-primary:hover {
+  background: #1e4ed8;
 }
 
 .avatar {
@@ -177,6 +175,9 @@
   cursor: pointer;
 }
 
+/* ==============================
+   CONTENT & FOOTER
+============================== */
 .content {
   padding: 20px 28px 40px;
 }
@@ -188,7 +189,21 @@
   justify-content: space-between;
 }
 
-/* Overlay for mobile */
+/* ==============================
+   HAMBURGER MENU
+============================== */
+.menu-toggle {
+  background: none;
+  border: none;
+  font-size: 1.6rem;
+  cursor: pointer;
+  display: none;
+  padding: 6px 10px;
+}
+
+/* ==============================
+   OVERLAY (MOBILE BACKDROP)
+============================== */
 .overlay {
   position: fixed;
   top: 0;
@@ -207,22 +222,55 @@
   visibility: visible;
 }
 
-/* Responsive */
+/* ==============================
+   RESPONSIVE DESIGN
+============================== */
 @media (max-width: 1000px) {
+  .menu-toggle {
+    display: block; /* show hamburger */
+  }
+
   .sidebar {
     transform: translateX(-100%);
   }
+
   .sidebar.active {
     transform: translateX(0);
   }
+
   .main {
     margin-left: 0;
+  }
+
+  body.sidebar-open {
+    overflow: hidden; /* prevent scroll when sidebar open */
+  }
+
+  .search-wrap {
+    display: none; /* hide search if screen too small */
+  }
+}
+
+@media (max-width: 600px) {
+  .btn-primary {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+
+  .topbar {
+    padding: 16px;
+  }
+
+  .content {
+    padding: 16px;
   }
 }
 </style>
 
 
-  {% block extra_css %}{% endblock %}
+
+  {% block extra_css %}
+  {% endblock %}
 </head>
 
 <body>
@@ -241,18 +289,27 @@
     </nav>
   </aside>
 
+ <!-- Overlay -->
+    <div id="overlay" class="overlay"></div>
+
   <!-- Main -->
   <main class="main">
     <header class="topbar">
-      <div class="search-wrap">
-        <input class="search" placeholder="Search conversations, products..." />
-      </div>
-      <div class="top-actions">
-        <button id="connectBtn" class="btn-primary">Connect Messenger</button>
-        <!-- Avatar acts as mobile menu toggle -->
-        <div class="avatar" id="avatarMenu">{{ user.username|first|upper }}</div>
-      </div>
-    </header>
+        <div class="left-section">
+          <!-- Hamburger button (only visible on mobile) -->
+          <button id="menuToggle" class="menu-toggle">☰</button>
+
+          <div class="search-wrap">
+            <input class="search" placeholder="Search conversations, products..." />
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button id="connectBtn" class="btn-primary">Connect Messenger</button>
+          <div class="avatar" id="avatarMenu">{{ user.username|first|upper }}</div>
+        </div>
+      </header>
+
 
     <section class="content">
       {% block content %}{% endblock %}
@@ -297,6 +354,28 @@
     overlay.classList.remove('active');
   });
 </script>
+
+ <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('overlay');
+      const menuToggle = document.getElementById('menuToggle');
+
+      if (menuToggle && sidebar && overlay) {
+        menuToggle.addEventListener('click', () => {
+          sidebar.classList.toggle('active');
+          overlay.classList.toggle('active');
+          document.body.classList.toggle('sidebar-open');
+        });
+
+        overlay.addEventListener('click', () => {
+          sidebar.classList.remove('active');
+          overlay.classList.remove('active');
+          document.body.classList.remove('sidebar-open');
+        });
+      }
+    });
+  </script>
 
 
   {% block extra_js %}{% endblock %}
