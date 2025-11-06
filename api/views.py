@@ -8,11 +8,12 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
+from rest_framework import serializers
 
-from back.models import UserProfile, Product, Conversation, Sale, Setting
+from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
 from .serializers import (
     UserProfileSerializer, ProductSerializer,
-    ConversationSerializer, SaleSerializer, SettingSerializer
+    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer
 )
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -39,8 +40,21 @@ class UserProductListView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
         products = Product.objects.filter(user=user)
-        serializer = ProductSerializer(products, many=True)
+        serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
+    
+class ProductImagesSerializer(serializers.ModelSerializer):
+    images = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductImages
+        fields = ['id', 'images']
+
+    def get_images(self, obj):
+        request = self.context.get('request')
+        if obj.images:
+            return request.build_absolute_uri(obj.images.url) if request else obj.images.url
+        return ""
 
 class UserProductDataView(APIView):
     

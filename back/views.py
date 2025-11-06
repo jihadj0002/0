@@ -304,7 +304,7 @@ def add_product(request):
         # Otherwise, handle normal form submit
         return redirect("back:products")
 
-        return redirect("back:products")  # or wherever you want to go after saving
+        
 
     return render(request, "back/add_product.html", {"user": request.user})
 

@@ -1,15 +1,29 @@
 from rest_framework import serializers
-from back.models import UserProfile, Product, Conversation, Sale, Setting
+from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = '__all__'
 
+class ProductImagesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProductImages
+        fields = '__all__'
+
 class ProductSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    product_images = ProductImagesSerializer(source='productimages_set', many=True, read_only=True)
+
     class Meta:
         model = Product
         fields = '__all__'
+    
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.image:
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return ""
 
 class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
