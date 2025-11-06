@@ -171,6 +171,17 @@ class Sale(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        creating = self._state.adding  # only decrease stock on first save
+        super().save(*args, **kwargs)
+        if creating and self.product:
+            if self.product.stock_quantity > 0:
+                self.product.stock_quantity -= 1
+                self.product.save()
+            else:
+                # optional: raise an error if out of stock
+                raise ValueError("Cannot create sale: product out of stock")
+
     def __str__(self):
         return f"Sale {self.id} - {self.user.email} ({self.status})"
 
