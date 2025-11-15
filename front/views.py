@@ -22,6 +22,9 @@ def home(request):
 def pricing(request):
     return render(request, "front/pricing.html")
 
+def privacy_policy(request):
+    return render(request, "front/p_policy.html")
+
 def contact(request):
     if request.method == "POST":
         name = request.POST.get("name")

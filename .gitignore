@@ -1,0 +1,18 @@
+# Django local database
+db.sqlite3
+
+# Media files (user uploads)
+media/
+media/*
+
+# Python cache & environment
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+
+# IDE/editor stuff
+.vscode/
+.idea/
