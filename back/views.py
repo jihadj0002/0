@@ -216,12 +216,6 @@ def orders(request):
     all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
     return render(request, 'back/orders.html', {'all_orders': all_orders})
 
-# @login_required
-# def webhook_api(request):
-#     return render(request, 'back/webhook_api.html', {
-#         'api_token': 'b273036d044c0cdfb43e328d25e0a92'
-#     })
-
 
 @csrf_exempt  # because we manually include CSRF token in fetch()
 def update_order_status(request):
@@ -309,9 +303,6 @@ def add_product(request):
     return render(request, "back/add_product.html", {"user": request.user})
 
 
-# def pricing(request):
-#     return render(request, "front/pricing.html")
-
 @login_required
 def edit_product(request, pk):
 
@@ -356,7 +347,10 @@ def delete_product(request, pk):
         try:
             product = get_object_or_404(Product, pk=pk)
             product.delete()
-            return JsonResponse({"success": True, "message": "Product deleted successfully."})
+            return JsonResponse({"success": True, "message": "Product deleted successfully."}) 
         except Product.DoesNotExist:
             return JsonResponse({"success": False, "message": "Product not found."}, status=404)
     return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
+
+
+
