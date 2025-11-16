@@ -25,6 +25,7 @@ urlpatterns = [
     path("", include("front.urls")),
     path("db", include("back.urls")),
     path("api/", include("api.urls")),
+    path("msg/", include("msg.urls")),
 ]
 
 

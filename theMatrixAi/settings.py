@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "back",
     "api",
     "rest_framework",
+    "msg",
 
     "shortuuid",
     # "rest_framework.authtoken",
