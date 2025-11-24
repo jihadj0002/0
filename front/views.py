@@ -9,6 +9,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.conf import settings
 from django.core.mail import send_mail  # optional if you want email
+from .models import Survay
 
 # Create your views here.
 def home(request):
@@ -19,11 +20,37 @@ def home(request):
     return render(request, "front/home01.html", context)
 
 
+
 def pricing(request):
     return render(request, "front/pricing.html")
 
 def privacy_policy(request):
     return render(request, "front/p_policy.html")
+
+def forumm(request):
+    if request.method == "POST":
+        
+        name = request.POST.get("name")
+        phone = request.POST.get("phone")
+        business_name = request.POST.get("business_name")
+        business_type = request.POST.get("business_type")
+        customer_range = request.POST.get("customer_range")
+        email = request.POST.get("email")
+        social_page = request.POST.get("social_page")
+
+        Survay.objects.create(
+            name=name,
+            phone=phone,
+            business_name=business_name,
+            business_type=business_type,
+            customer_range=customer_range,
+            email=email,
+            social_page=social_page,
+        )
+
+        return redirect('front:home')
+
+    return render(request, "front/forum.html")
 
 def contact(request):
     if request.method == "POST":

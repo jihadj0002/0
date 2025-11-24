@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Your Demo — The Matrix</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-white via-purple-50 to-indigo-50 text-gray-900 overflow-x-hidden">
+  <!-- Background Glows -->
+  <div class="pointer-events-none absolute inset-0 -z-10">
+    <div class="absolute left-[-20%] top-[10%] w-[700px] h-[700px] rounded-full bg-purple-300/20 blur-[130px]"></div>
+    <div class="absolute right-[-20%] bottom-[-10%] w-[800px] h-[800px] rounded-full bg-cyan-300/20 blur-[150px]"></div>
+  </div>
+
+  <!-- Main -->
+  <main class="flex items-center justify-center py-20 px-6">
+    <div class="w-full max-w-2xl bg-white/60 backdrop-blur-2xl border border-white/40 shadow-2xl rounded-3xl p-10">
+      <div class="flex justify-center mb-6">
+        <h1 class="text-4xl font-bold text-purple-800">MatrixAi</h1>
+      </div>
+
+      <h1 class="text-center text-4xl md:text-5xl font-bold text-purple-900">Are You A Business <br>Owner</h1>
+      <p class="text-center text-gray-600 mt-2 mb-10 text-sm">Fill your details — Your data will be safe with us.</p>
+
+      <form method="post" class="space-y-6">
+  {% csrf_token %}
+
+  <div>
+    <label>Your Name</label>
+    <input name="name" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required />
+  </div>
+
+  <div>
+    <label>Phone Number</label>
+    <input name="phone" type="tel" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required />
+  </div>
+
+  <div>
+    <label>Business Name</label>
+    <input name="business_name" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required />
+  </div>
+
+  <div>
+    <label>Business Type</label>
+    <select name="business_type" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required>
+      <option disabled selected>Select Business Type</option>
+      <option value="ecommerce">E-commerce</option>
+      <option value="service">Service Business</option>
+      <option value="local_shop">Local Shop</option>
+      <option value="b2b">Wholesale / B2B</option>
+      <option value="personal_brand">Personal Brand</option>
+      <option value="education">Education</option>
+      <option value="health_beauty">Health & Beauty</option>
+      <option value="saas">Startup / SaaS</option>
+      <option value="corporate">Corporate</option>
+      <option value="other">Other</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Customer Range</label>
+    <select name="customer_range" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required>
+      <option disabled selected>Select Range</option>
+      <option value="1-5">1-5</option>
+      <option value="5-10">5-10</option>
+      <option value="10-50">10-50</option>
+      <option value="50-100">50-100</option>
+      <option value="100-500">100-500</option>
+      <option value="500-1000">500-1000</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Email Address</label>
+    <input name="email" type="email" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" required />
+  </div>
+
+  <div>
+    <label>Facebook / Instagram Page</label>
+    <input name="social_page" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" />
+  </div>
+
+  <button class="w-full mt-4 py-4 bg-purple-700 text-white text-lg rounded-2xl">Submit</button>
+</form>
+
+    </div>
+  </main>
+</body>
+</html>

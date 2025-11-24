@@ -7,6 +7,7 @@ app_name = "front"
 urlpatterns = [
     path("", views.home, name="home"),
     path("contact", views.contact, name="contact"),
+    path("form", views.forumm, name="forumm"),
     path("pricing", views.pricing, name="pricing"),
     path("privacy-policy", views.privacy_policy, name="p_policy"),
 
