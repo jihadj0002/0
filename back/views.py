@@ -352,5 +352,3 @@ def delete_product(request, pk):
             return JsonResponse({"success": False, "message": "Product not found."}, status=404)
     return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
 
-
-
