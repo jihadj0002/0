@@ -18,6 +18,9 @@ urlpatterns = [
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
     path('<str:username>/orders', views.UserOrderListCreateView.as_view(), name='user-order-list'),
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
+    path('<str:username>/conv', views.ConvoCreateView.as_view(), name='convo-create'),
+    path('<str:username>/conv/transfer/<str:customer_id>', views.ChatTransfer.as_view(), name='convo-transfer'),
+    path('<str:username>/conv/status/<str:customer_id>', views.ChatStatus.as_view(), name='convo-status'),
 
 
 ]

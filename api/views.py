@@ -110,4 +110,30 @@ class UserOrderCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+class ConvoCreateView(APIView):
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        data = request.data.copy()
+        data['user'] = user.id
+        serializer = ConversationSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class ChatTransfer(APIView):
+    def post(self, request, user, customer_id):
+        get_convo = get_object_or_404(Conversation, user=user, customer_id=customer_id)
+        get_convo.disable_ai()
+        return Response({"message": "AI disabled", "is_ai_enabled": get_convo.is_ai_enabled})
+
+        
+
+class ChatStatus(APIView):
+    def get(self, request, user, customer_id):
+        get_convo = get_object_or_404(Conversation, user=user, customer_id=customer_id)
+        
+        return Response({"message": "Check if AI Enabled", "is_ai_enabled": get_convo.is_ai_enabled})
+
+        
 
