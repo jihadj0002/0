@@ -9,6 +9,10 @@ from rest_framework import status
 from django.shortcuts import get_object_or_404
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from django.http import JsonResponse
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
+import json
 
 from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
 from .serializers import (
@@ -96,7 +100,7 @@ class UserOrderListCreateView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    
 
 
 class UserOrderCreateView(APIView):
@@ -109,8 +113,9 @@ class UserOrderCreateView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 
-class ConvoCreateView(APIView):
+class UserConvCreateView(APIView):
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
         data = request.data.copy()
@@ -120,20 +125,18 @@ class ConvoCreateView(APIView):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-class ChatTransfer(APIView):
-    def post(self, request, user, customer_id):
-        get_convo = get_object_or_404(Conversation, user=user, customer_id=customer_id)
-        get_convo.disable_ai()
-        return Response({"message": "AI disabled", "is_ai_enabled": get_convo.is_ai_enabled})
-
-        
-
-class ChatStatus(APIView):
-    def get(self, request, user, customer_id):
-        get_convo = get_object_or_404(Conversation, user=user, customer_id=customer_id)
-        
-        return Response({"message": "Check if AI Enabled", "is_ai_enabled": get_convo.is_ai_enabled})
-
-        
+    
+class DisableConvoAI(APIView):
+    def get(self, request, username, id):
+        user = get_object_or_404(User, username=username)
+        conversation = get_object_or_404(Conversation, id=id, user=user)
+        conversation.is_ai_enabled = False
+        conversation.save()
+        return Response({'status': 'AI disabled for this conversation'}, status=status.HTTP_200_OK)
+    
+class GetConvoAIStatus(APIView):
+    def get(self, request, username, id):
+        user = get_object_or_404(User, username=username)
+        conversation = get_object_or_404(Conversation, id=id, user=user)
+        return Response({'is_ai_enabled': conversation.is_ai_enabled}, status=status.HTTP_200_OK)
 

@@ -1,194 +1,294 @@
-{% load static %}
+{% extends 'back/base.html' %}
+{% block title %}Dashboard | Matrix AI{% endblock %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Conversations Module</title>
-  <style>
+{% block extra_css %}
+
+<style>
+/* ---------- ROOT ---------- */
 :root{
-  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
-  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+  --bg:#f5f7fb;
+  --white:#fff;
+  --primary:#7c3aed;
+  --primary-soft:#ede9fe;
+  --border:#e5e7eb;
+  --muted:#6b7280;
+  --radius:14px;
+  --shadow:0 4px 14px rgba(0,0,0,0.08);
+  font-family:Inter, system-ui;
 }
-*{box-sizing:border-box}
-html,body,#root{height:100%}
-body{
-  margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;
+*{box-sizing:border-box; margin:0; padding:0}
+body{background:var(--bg);}
+
+/* ---------- LAYOUT ---------- */
+.layout{
+  display:flex;
+  height:100vh;
 }
-.app{display:flex; min-height:100vh}
 
-/* SIDEBAR */
-.sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
-.brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
-.logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
-.brand-text{font-weight:700}
-.nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
-.nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
-.nav-item:hover{background:var(--soft)}
-.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
 
-/* MAIN */
-.main{flex:1; display:flex; flex-direction:column}
-.topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px; background:transparent}
-.search-wrap{flex:1; max-width:640px}
-.search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
-.top-actions{display:flex; align-items:center; gap:12px}
-.btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer}
-.avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
 
-/* CONTENT */
-.content{padding:20px 28px 40px}
-.page-header h1{margin:0; font-size:28px}
-.page-header .sub{color:var(--muted); margin-top:6px}
 
-.filters .mini-search{padding:8px 10px; border-radius:10px; border:1px solid #eef2f6}
 
-.layout-2cols{display:grid; grid-template-columns:1fr 420px; gap:18px; margin-top:20px}
-.panel{background:var(--panel); padding:16px; border-radius:12px; box-shadow:var(--shadow)}
-.panel-header{display:flex; justify-content:space-between; align-items:center}
-
-/* Table */
-.conversations-table{width:100%; border-collapse:collapse; margin-top:12px}
-.conversations-table th{text-align:left; color:var(--muted); font-size:13px; padding:8px 0}
-.conversations-table td{padding:12px 0; border-top:1px solid #f3f6fb}
-
-/* Status Badges */
-.badge{padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px}
-.badge.pending{background:#fffbeb; color:#92400e}
-.badge.success{background:#ecfdf5; color:#065f46}
-.badge.closed{background:#f1f5f9; color:#475569}
-
-/* Messages */
-.messages{display:flex; flex-direction:column; gap:10px}
-.msg{padding:10px 14px; border-radius:12px; max-width:80%; line-height:1.4}
-.msg.from{background:var(--soft); align-self:flex-start}
-.msg.to{background:var(--accent); color:white; align-self:flex-end}
-
-/* Input bar */
-.input-bar input{flex:1; padding:10px; border-radius:10px; border:1px solid #eef2f6}
-.input-bar button{padding:10px 16px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-weight:600; cursor:pointer}
-
-/* Responsive */
-@media (max-width:1000px){
-  .sidebar{display:none}
-  .layout-2cols{grid-template-columns:1fr}
+/* ---------- CHAT LIST PANEL ---------- */
+.chat-list{
+  width:340px;
+  background:var(--white);
+  border-right:1px solid var(--border);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
 }
+
+.chat-search{
+  padding:10px 14px;
+  width:100%;
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+}
+
+.chat-tabs{
+  display:flex;
+  gap:14px;
+  margin-top:14px;
+  font-size:14px;
+  font-weight:600;
+}
+
+.chat-item{
+  padding:12px;
+  border-radius:var(--radius);
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-top:10px;
+  cursor:pointer;
+  transition:0.2s;
+}
+
+.chat-item:hover,
+.chat-item.active{
+  background:var(--primary-soft);
+}
+
+.chat-avatar{
+  width:42px; height:42px;
+  border-radius:50%;
+  background:#ddd;
+}
+
+.chat-info .name{
+  font-weight:600;
+}
+.chat-info .preview{
+  font-size:13px;
+  color:var(--muted);
+}
+
+/* ---------- MESSAGES PANEL ---------- */
+.chat-window{
+  flex:1;
+  background:var(--white);
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid var(--border);
+}
+
+.chat-header{
+  padding:14px 20px;
+  border-bottom:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.header-avatar{
+  width:44px; height:44px;
+  border-radius:50%;
+  background:#ddd;
+}
+
+.chat-messages{
+  flex:1;
+  padding:20px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+
+.msg{
+  padding:10px 14px;
+  border-radius:10px;
+  max-width:75%;
+  line-height:1.4;
+}
+
+.msg.to{
+  align-self:flex-end;
+  background:var(--primary);
+  color:white;
+}
+
+.msg.from{
+  align-self:flex-start;
+  background:#f3f4f6;
+}
+
+.chat-input{
+  padding:16px;
+  border-top:1px solid var(--border);
+  display:flex;
+  gap:10px;
+}
+
+.chat-input input{
+  flex:1;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+}
+
+.chat-input button{
+  padding:10px 20px;
+  border:none;
+  background:var(--primary);
+  color:white;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+/* ---------- CUSTOMER PROFILE PANEL ---------- */
+.profile{
+  width:320px;
+  background:var(--white);
+  padding:22px;
+}
+
+.profile .avatar{
+  width:90px; height:90px;
+  border-radius:50%;
+  background:#ddd;
+  margin:auto;
+}
+
+.profile h3{
+  margin-top:12px;
+  text-align:center;
+}
+
+.profile small{
+  display:block;
+  margin:auto;
+  text-align:center;
+  color:var(--muted);
+  margin-bottom:20px;
+}
+
+.profile-btn{
+  width:100%;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  text-align:center;
+  font-weight:600;
+  cursor:pointer;
+  margin-top:10px;
+}
+
+.btn-primary{
+  background:var(--primary);
+  color:white;
+  border:none;
+}
+
 </style>
 
-</head>
-<body>
-  <div class="app">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo">MA</div>
-        <div class="brand-text">Matrix AI</div>
+
+{% endblock %}
+
+{% block content %}
+
+
+<div class="layout">
+
+  
+
+  <!-- CHAT LIST -->
+  <div class="chat-list">
+
+    <input type="text" class="chat-search" placeholder="Search…">
+
+    <div class="chat-tabs">
+      <span>All</span>
+      <span>Messenger</span>
+      <span>WhatsApp</span>
+    </div>
+
+    <!-- SAMPLE ITEM -->
+    <div class="chat-item active">
+      <div class="chat-avatar"></div>
+      <div class="chat-info">
+        <div class="name">Farhan Muhib Dhruba</div>
+        <div class="preview">Thanks you, Farhan! Your orde...</div>
       </div>
-      <nav class="nav">
-        <nav class="nav">
-        <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
-        <!-- <a class="nav-item active" href="{% url 'back:c_dashboard' %}">💬 Conversations</a> -->
-        <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
-        <a class="nav-item" href="{% url 'back:orders' %}">🧾 Orders</a>
-        {% comment %} <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a> {% endcomment %}
-        {% comment %} <a class="nav-item" href="{% url 'back:options' %}">⚙️ Settings</a> {% endcomment %}
-        <a class="nav-item" href="{% url 'front:logout' %}">⚙️ Logout</a>
-      </nav>
-      </nav>
-    </aside>
+    </div>
 
-    <!-- Main -->
-    <main class="main">
-      <!-- Topbar -->
-      <div class="topbar">
-        <div class="search-wrap">
-          <input class="search" type="text" placeholder="Search conversations by name...">
-        </div>
-        <div class="top-actions">
-          <button class="btn-primary">+ New Conversation</button>
-          <div class="avatar">U</div>
-        </div>
+    <div class="chat-item">
+      <div class="chat-avatar"></div>
+      <div class="chat-info">
+        <div class="name">Nazmus Sakib</div>
+        <div class="preview">Thanks for your order…</div>
       </div>
-
-      <!-- Content -->
-      <div class="content">
-        <div class="page-header">
-          <h1>Conversations</h1>
-          <p class="sub">List of conversations handled by chatbot</p>
-        </div>
-
-        <!-- Filters -->
-        <div class="filters" style="margin-top:16px; display:flex; gap:12px;">
-          <input class="mini-search" type="text" placeholder="Filter by customer name">
-          <input class="mini-search" type="date">
-          <select class="mini-search">
-            <option>Status</option>
-            <option value="pending">Pending</option>
-            <option value="success">Successful</option>
-            <option value="closed">Closed</option>
-          </select>
-        </div>
-
-        <!-- Layout -->
-        <div class="layout-2cols">
-          <!-- Conversations Table -->
-          <div class="panel">
-            <div class="panel-header">
-              <h3>All Conversations</h3>
-            </div>
-            <table class="conversations-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Last Message</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Jenny Wilson</td>
-                  <td>Order confirmed ✅</td>
-                  <td><span class="badge success">Successful</span></td>
-                  <td>22 Sept, 2025</td>
-                </tr>
-                <tr>
-                  <td>Robert Fox</td>
-                  <td>Still waiting for payment...</td>
-                  <td><span class="badge pending">Pending</span></td>
-                  <td>21 Sept, 2025</td>
-                </tr>
-                <tr>
-                  <td>Guy Hawkins</td>
-                  <td>Conversation closed</td>
-                  <td><span class="badge closed">Closed</span></td>
-                  <td>20 Sept, 2025</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <!-- Chat Log -->
-          <div class="panel">
-            <div class="panel-header">
-              <h3>Chat Log</h3>
-            </div>
-            <div class="messages" style="margin-top:12px; max-height:400px; overflow:auto">
-              <div class="msg from">Hello, I would like to order a Smart Watch.</div>
-              <div class="msg to">Sure, Jenny! How many units would you like?</div>
-              <div class="msg from">Just 1 please.</div>
-              <div class="msg to">Your order is confirmed ✅</div>
-            </div>
-            <div class="input-bar" style="margin-top:12px; display:flex; gap:8px;">
-              <input type="text" placeholder="Type a reply..." style="flex:1; padding:10px; border-radius:10px; border:1px solid #eef2f6;">
-              <button class="btn-primary">Send</button>
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </main>
+    </div>
   </div>
-</body>
-</html>
+
+  <!-- CHAT WINDOW -->
+  <div class="chat-window">
+
+    <div class="chat-header">
+      <div class="header-avatar"></div>
+      <div>
+        <strong>Farhan Muhib Dhruba</strong><br>
+        <small>AI Enabled ✨</small>
+      </div>
+    </div>
+
+    <div class="chat-messages">
+      <div class="msg from">Hello! I want to order 1 Boon Avocado Quilt.</div>
+      <div class="msg to">Thank you! Please confirm the quantity.</div>
+      <div class="msg from">1 piece.</div>
+      <div class="msg to">Order confirmed! 🎉</div>
+    </div>
+
+    <div class="chat-input">
+      <input type="text" placeholder="Type a message…">
+      <button>Send</button>
+    </div>
+  </div>
+
+  <!-- PROFILE PANEL -->
+  <div class="profile">
+
+    <div class="avatar"></div>
+    <h3>Farhan Muhib Dhruba</h3>
+    <small>01788508701 • Joined 3rd Dec, 2024</small>
+
+    <button class="profile-btn btn-primary">Manage Orders</button>
+    <button class="profile-btn">Create Order</button>
+
+    <h4 style="margin-top:22px;">Notes</h4>
+    <p style="color:var(--muted); font-size:14px;">No notes added yet.</p>
+
+    <h4 style="margin-top:22px;">Conversation Summary</h4>
+    <p style="color:var(--muted); font-size:14px;">
+      The customer inquired about Boon Avocado Quilt...
+    </p>
+
+  </div>
+
+</div>
+
+
+
+
+{% endblock %}
