@@ -16,7 +16,7 @@ import json
 
 from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
 from .serializers import (
-    UserProfileSerializer, ProductSerializer,
+    UserProfileSerializer, ProductSerializer,MessageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer
 )
 
@@ -118,14 +118,59 @@ class UserOrderCreateView(APIView):
 class UserConvCreateView(APIView):
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
+
+        customer_id = request.data.get("customer_id")
+        platform = request.data.get("platform")
+
+        if not customer_id:
+            return Response({"error": "customer_id is required"}, status=400)
+
+        # Check if conversation already exists for this user + customer_id + platform
+        existing_convo = Conversation.objects.filter(
+            user=user,
+            customer_id=customer_id,
+            platform=platform
+        ).first()
+
+        if existing_convo:
+            return Response({
+                "message": "Conversation already exists",
+                "conversation": ConversationSerializer(existing_convo).data
+            }, status=status.HTTP_200_OK)
+
+        # Create a new conversation
         data = request.data.copy()
-        data['user'] = user.id
+        data["user"] = user.id
+
         serializer = ConversationSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    
+class MessageCreateView(APIView):
+    def post(self, request, username, aid):
+        user = get_object_or_404(User, username=username)
+
+        # Only allow sending messages to conversations owned by user
+        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+
+        data = request.data.copy()
+        data["conversation"] = conversation.id  # attach to convo
+
+        serializer = MessageSerializer(data=data)
+        if serializer.is_valid():
+            message = serializer.save()
+
+            # optional: update conversation.last_message or auto_enable_ai()
+            conversation.auto_enable_ai()
+            
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 class DisableConvoAI(APIView):
     def get(self, request, username, id):
         user = get_object_or_404(User, username=username)
@@ -147,4 +192,20 @@ class GetConvoAIStatus(APIView):
         user = get_object_or_404(User, username=username)
         conversation = get_object_or_404(Conversation, id=id, user=user)
         return Response({'is_ai_enabled': conversation.is_ai_enabled}, status=status.HTTP_200_OK)
+
+class GetConvoStatus(APIView):
+    def get(self, request, id):
+        
+        convo = Conversation.objects.get(id=id)
+        return JsonResponse({
+            "id": convo.id,
+            "customer_id": convo.customer_id,
+            "message_text": convo.message_text,
+            "response_text": convo.response_text,
+            "chat_summary": convo.chat_summary,
+            "is_ai_enabled": convo.is_ai_enabled,
+            "timestamp": convo.timestamp.strftime("%d %b, %Y"),
+        })
+
+        
 

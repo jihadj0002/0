@@ -21,9 +21,12 @@ urlpatterns = [
 
     # Conversation AI Management
     path('<str:username>/conv/', views.UserConvCreateView.as_view(), name='convo-handler'),
+    path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
+    
     path('<str:username>/conv/disable/<str:id>', views.DisableConvoAI.as_view(), name='bot-disable'),
     path('<str:username>/conv/enable/<str:id>', views.EnableConvoAI.as_view(), name='bot-enable'),
-    path('<str:username>/conv/status/<str:id>', views.GetConvoAIStatus.as_view(), name='get-bot-status'),
+    path('<str:username>/conv/AIstatus/<str:id>', views.GetConvoAIStatus.as_view(), name='get-bot-status'),
+    path('conv/status/<str:id>', views.GetConvoStatus.as_view(), name='get-conv-status'),
     
 
 

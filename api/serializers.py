@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
+from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message
 
 
 
@@ -30,6 +30,11 @@ class ProductSerializer(serializers.ModelSerializer):
 class ConversationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Conversation
+        fields = '__all__'
+
+class MessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
         fields = '__all__'
 
 class SaleSerializer(serializers.ModelSerializer):

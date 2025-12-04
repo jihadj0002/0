@@ -239,7 +239,14 @@ def update_order_status(request):
 
 @login_required
 def c_dashboard(request):
-    return render(request, "back/c_dashboard.html", {"user": request.user})
+    all_convo = Conversation.objects.filter(user=request.user)
+    
+    context = {
+        "all_convo": all_convo,
+        "user": request.user,
+    }
+
+    return render(request, "back/c_dashboard.html", context)
 
 @login_required
 def products(request):
