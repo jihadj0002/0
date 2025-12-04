@@ -133,7 +133,15 @@ class DisableConvoAI(APIView):
         conversation.is_ai_enabled = False
         conversation.save()
         return Response({'status': 'AI disabled for this conversation'}, status=status.HTTP_200_OK)
-    
+
+class EnableConvoAI(APIView):
+    def get(self, request, username, id):
+        user = get_object_or_404(User, username=username)
+        conversation = get_object_or_404(Conversation, id=id, user=user)
+        conversation.is_ai_enabled = True
+        conversation.save()
+        return Response({'status': 'AI enabled for this conversation'}, status=status.HTTP_200_OK)
+
 class GetConvoAIStatus(APIView):
     def get(self, request, username, id):
         user = get_object_or_404(User, username=username)

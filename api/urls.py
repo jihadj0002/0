@@ -18,8 +18,11 @@ urlpatterns = [
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
     path('<str:username>/orders', views.UserOrderListCreateView.as_view(), name='user-order-list'),
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
+
+    # Conversation AI Management
     path('<str:username>/conv/', views.UserConvCreateView.as_view(), name='convo-handler'),
     path('<str:username>/conv/disable/<str:id>', views.DisableConvoAI.as_view(), name='bot-disable'),
+    path('<str:username>/conv/enable/<str:id>', views.EnableConvoAI.as_view(), name='bot-enable'),
     path('<str:username>/conv/status/<str:id>', views.GetConvoAIStatus.as_view(), name='get-bot-status'),
     
 
