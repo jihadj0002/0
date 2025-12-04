@@ -1,14 +1,15 @@
 from django.shortcuts import render, redirect
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
-from .models import Product, Conversation, Sale
+from .models import Product, Conversation, Sale, Message
 # Create your views here.
 
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.shortcuts import get_object_or_404
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
+from django.views.decorators.http import require_POST
 from django.utils import timezone
 from datetime import timedelta
 
@@ -240,13 +241,75 @@ def update_order_status(request):
 @login_required
 def c_dashboard(request):
     all_convo = Conversation.objects.filter(user=request.user)
-    
+
+    # Get selected conversation ID from URL query (?cid=123)
+    convo_id = request.GET.get("cid")
+
+    selected_convo = None
+    messages = None
+
+    if convo_id:
+        selected_convo = get_object_or_404(
+            Conversation, id=convo_id, user=request.user
+        )
+        messages = selected_convo.messages.all().order_by("timestamp")
+
     context = {
         "all_convo": all_convo,
-        "user": request.user,
+        "selected_convo": selected_convo,
+        "messages": messages,
     }
 
     return render(request, "back/c_dashboard.html", context)
+
+
+@login_required
+@require_POST
+def send_message_ajax(request):
+    try:
+        data = json.loads(request.body.decode('utf-8'))
+        convo_id = data.get('conversation_id')
+        text = data.get('text', '').strip()
+    except Exception:
+        return HttpResponseBadRequest("Invalid payload")
+
+    if not convo_id or not text:
+        return HttpResponseBadRequest("Missing conversation id or text")
+
+    convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+
+    # Create customer message
+    msg = Message.objects.create(
+        conversation=convo,
+        sender='agent',   # if messages created by the logged-in agent; change to 'customer' if appropriate
+        text=text,
+    )
+
+    # Update conversation last message_text for preview
+    convo.message_text = text
+    convo.save()
+
+    response_data = {
+        "status": "ok",
+        "sent_text": msg.text,
+        "sent_ts": timezone.localtime(msg.timestamp).strftime("%-d %b, %Y %H:%M"),
+    }
+
+    # If AI is enabled, simulate an immediate bot reply (replace with real AI call)
+    if convo.is_ai_enabled:
+        bot_text = f"Auto-reply: Received '{text[:200]}'"
+        bot_msg = Message.objects.create(
+            conversation=convo,
+            sender='bot',
+            text=bot_text,
+        )
+        response_data.update({
+            "bot_reply_html": bot_msg.text,
+            "bot_reply_ts": timezone.localtime(bot_msg.timestamp).strftime("%-d %b, %Y %H:%M"),
+        })
+    return JsonResponse(response_data)
+
+
 
 @login_required
 def products(request):

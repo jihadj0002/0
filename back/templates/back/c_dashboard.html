@@ -1,8 +1,8 @@
 {% extends 'back/base.html' %}
+{% load static %}
 {% block title %}Dashboard | Matrix AI{% endblock %}
 
 {% block extra_css %}
-
 <style>
 /* ---------- ROOT ---------- */
 :root{
@@ -14,36 +14,39 @@
   --muted:#6b7280;
   --radius:14px;
   --shadow:0 4px 14px rgba(0,0,0,0.08);
-  font-family:Inter, system-ui;
+  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
 }
 *{box-sizing:border-box; margin:0; padding:0}
 body{background:var(--bg);}
 
-/* ---------- LAYOUT ---------- */
-.layout{
-  display:flex;
-  height:100vh;
+/* LAYOUT as grid for responsive spacing */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 320px;
+  gap:18px;
+  height: calc(100vh - 40px);
+  padding:20px;
+  align-items: start;
 }
-
-
-
-
 
 /* ---------- CHAT LIST PANEL ---------- */
 .chat-list{
-  width:340px;
   background:var(--white);
-  border-right:1px solid var(--border);
+  border-radius:12px;
+  border:1px solid var(--border);
   padding:16px;
   display:flex;
   flex-direction:column;
+  height:100%;
+  overflow: hidden;
+  box-shadow: var(--shadow);
 }
 
 .chat-search{
   padding:10px 14px;
   width:100%;
   border:1px solid var(--border);
-  border-radius:var(--radius);
+  border-radius:12px;
 }
 
 .chat-tabs{
@@ -54,26 +57,35 @@ body{background:var(--bg);}
   font-weight:600;
 }
 
+.chat-list-body{
+  margin-top:12px;
+  overflow-y:auto;
+  padding-right:6px;
+}
+
+/* Chat item */
 .chat-item{
   padding:12px;
-  border-radius:var(--radius);
+  border-radius:12px;
   display:flex;
   align-items:center;
   gap:12px;
   margin-top:10px;
   cursor:pointer;
-  transition:0.2s;
+  transition:0.15s;
+  text-decoration:none;
+  color:inherit;
 }
-
 .chat-item:hover,
 .chat-item.active{
   background:var(--primary-soft);
 }
 
 .chat-avatar{
-  width:42px; height:42px;
+  width:44px; height:44px;
   border-radius:50%;
   background:#ddd;
+  flex-shrink:0;
 }
 
 .chat-info .name{
@@ -82,15 +94,22 @@ body{background:var(--bg);}
 .chat-info .preview{
   font-size:13px;
   color:var(--muted);
+  max-width:200px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
 }
 
 /* ---------- MESSAGES PANEL ---------- */
 .chat-window{
-  flex:1;
   background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
   display:flex;
   flex-direction:column;
-  border-right:1px solid var(--border);
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:hidden;
 }
 
 .chat-header{
@@ -102,7 +121,7 @@ body{background:var(--bg);}
 }
 
 .header-avatar{
-  width:44px; height:44px;
+  width:48px; height:48px;
   border-radius:50%;
   background:#ddd;
 }
@@ -114,13 +133,16 @@ body{background:var(--bg);}
   display:flex;
   flex-direction:column;
   gap:12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.9));
 }
 
 .msg{
   padding:10px 14px;
-  border-radius:10px;
+  border-radius:12px;
   max-width:75%;
   line-height:1.4;
+  word-wrap:break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
 }
 
 .msg.to{
@@ -132,24 +154,33 @@ body{background:var(--bg);}
 .msg.from{
   align-self:flex-start;
   background:#f3f4f6;
+  color:#111827;
 }
 
+/* nice timestamp small */
+.msg small {
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:6px;
+}
+
+/* input area */
 .chat-input{
-  padding:16px;
+  padding:14px;
   border-top:1px solid var(--border);
   display:flex;
   gap:10px;
+  align-items:center;
 }
-
 .chat-input input{
   flex:1;
   padding:10px 12px;
   border-radius:10px;
   border:1px solid var(--border);
 }
-
 .chat-input button{
-  padding:10px 20px;
+  padding:10px 18px;
   border:none;
   background:var(--primary);
   color:white;
@@ -157,11 +188,15 @@ body{background:var(--bg);}
   cursor:pointer;
 }
 
-/* ---------- CUSTOMER PROFILE PANEL ---------- */
+/* ---------- PROFILE PANEL ---------- */
 .profile{
-  width:320px;
   background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
   padding:22px;
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:auto;
 }
 
 .profile .avatar{
@@ -201,22 +236,20 @@ body{background:var(--bg);}
   border:none;
 }
 
+/* responsive */
+@media (max-width: 920px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .chat-list, .chat-window, .profile { height: auto; }
+}
 </style>
-
-
 {% endblock %}
 
 {% block content %}
-
-
 <div class="layout">
-
-  
 
   <!-- CHAT LIST -->
   <div class="chat-list">
-
-    <input type="text" class="chat-search" placeholder="Search…">
+    <input type="text" id="searchInput" class="chat-search" placeholder="Search conversations…">
 
     <div class="chat-tabs">
       <span>All</span>
@@ -224,72 +257,208 @@ body{background:var(--bg);}
       <span>WhatsApp</span>
     </div>
 
-    <!-- SAMPLE ITEM -->
-  
-    <div class="chat-item active">
-      <div class="chat-avatar"></div>
-      <div class="chat-info">
-        <div class="name">Farhan Muhib Dhruba</div>
-        <div class="preview">Thanks you, Farhan! Your orde...</div>
-      </div>
-    </div>
-
-    <div class="chat-item">
-      <div class="chat-avatar"></div>
-      <div class="chat-info">
-        <div class="name">Nazmus Sakib</div>
-        <div class="preview">Thanks for your order…</div>
-      </div>
+    <div class="chat-list-body">
+      {% if all_convo %}
+        {% for convo in all_convo %}
+          <a href="?cid={{ convo.id }}" style="text-decoration:none; color:inherit;">
+            <div class="chat-item {% if selected_convo and selected_convo.id == convo.id %}active{% endif %}">
+              <div class="chat-avatar"></div>
+              <div class="chat-info">
+                <div class="name">{{ convo.customer_id }}</div>
+                <div class="preview">
+                  {{ convo.message_text|default:"No messages" }}
+                </div>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      {% else %}
+        <p style="color:var(--muted); padding:10px;">No conversations yet.</p>
+      {% endif %}
     </div>
   </div>
 
   <!-- CHAT WINDOW -->
   <div class="chat-window">
-
-    <div class="chat-header">
-      <div class="header-avatar"></div>
-      <div>
-        <strong>Farhan Muhib Dhruba</strong><br>
-        <small>AI Enabled ✨</small>
+    {% if selected_convo %}
+      <div class="chat-header">
+        <div class="header-avatar"></div>
+        <div>
+          <strong>{{ selected_convo.customer_id }}</strong><br>
+          <small>
+            {% if selected_convo.is_ai_enabled %}
+              AI Enabled ✨
+            {% else %}
+              AI Disabled ❌
+            {% endif %}
+          </small>
+        </div>
       </div>
-    </div>
 
-    <div class="chat-messages">
-      <div class="msg from">Hello! I want to order 1 Boon Avocado Quilt.</div>
-      <div class="msg to">Thank you! Please confirm the quantity.</div>
-      <div class="msg from">1 piece.</div>
-      <div class="msg to">Order confirmed! 🎉</div>
-    </div>
+      <div class="chat-messages" id="chatMessages">
+        {% if messages %}
+          {% for msg in messages %}
+            <div class="msg {% if msg.sender == 'customer' %}from{% else %}to{% endif %}" data-msg-id="{{ msg.id }}">
+              {{ msg.text|linebreaksbr }}
+              <small>{{ msg.timestamp|date:"j M, Y H:i" }}</small>
+            </div>
+          {% endfor %}
+        {% else %}
+          <p style="color:var(--muted); padding:20px;">No messages in this conversation yet.</p>
+        {% endif %}
+      </div>
 
-    <div class="chat-input">
-      <input type="text" placeholder="Type a message…">
-      <button>Send</button>
-    </div>
+      <div class="chat-input">
+        {% csrf_token %}
+        <input type="text" id="messageInput" placeholder="Type a message…" autocomplete="off">
+        <button id="sendBtn">Send</button>
+      </div>
+
+    {% else %}
+      <p style="padding:20px;">Select a conversation to view messages.</p>
+    {% endif %}
   </div>
 
   <!-- PROFILE PANEL -->
   <div class="profile">
+    {% if selected_convo %}
+      <div class="avatar"></div>
+      <h3>{{ selected_convo.customer_id }}</h3>
+      <small>
+        Joined {{ selected_convo.timestamp|date:"j M, Y" }}
+      </small>
 
-    <div class="avatar"></div>
-    <h3>Farhan Muhib Dhruba</h3>
-    <small>01788508701 • Joined 3rd Dec, 2024</small>
+      <button class="profile-btn btn-primary">Manage Orders</button>
+      <button class="profile-btn">Create Order</button>
 
-    <button class="profile-btn btn-primary">Manage Orders</button>
-    <button class="profile-btn">Create Order</button>
+      <h4 style="margin-top:22px;">Summary</h4>
+      <p style="color:var(--muted); font-size:14px;">
+        {{ selected_convo.chat_summary|default:"No summary yet." }}
+      </p>
 
-    <h4 style="margin-top:22px;">Notes</h4>
-    <p style="color:var(--muted); font-size:14px;">No notes added yet.</p>
-
-    <h4 style="margin-top:22px;">Conversation Summary</h4>
-    <p style="color:var(--muted); font-size:14px;">
-      The customer inquired about Boon Avocado Quilt...
-    </p>
-
+      <h4 style="margin-top:22px;">Meta</h4>
+      <p style="color:var(--muted); font-size:14px;">
+        Platform: {{ selected_convo.get_platform_display }}<br>
+        AI Enabled: {{ selected_convo.is_ai_enabled }}
+      </p>
+    {% else %}
+      <p style="color:var(--muted);">Select a conversation</p>
+    {% endif %}
   </div>
 
 </div>
 
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  // Auto-scroll chat to bottom
+  const msgBox = document.getElementById("chatMessages");
+  if (msgBox) {
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
 
+  // simple search filter on client side
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll(".chat-list .chat-item").forEach(function(item) {
+        const name = item.querySelector(".name").textContent.toLowerCase();
+        const preview = item.querySelector(".preview").textContent.toLowerCase();
+        if (name.includes(q) || preview.includes(q)) {
+          item.style.display = "flex";
+        } else {
+          item.style.display = "none";
+        }
+      });
+    });
+  }
 
+  // CSRF helper for fetch
+  function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+              const cookie = cookies[i].trim();
+              if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                  cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                  break;
+              }
+          }
+      }
+      return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
 
+  const sendBtn = document.getElementById("sendBtn");
+  const input = document.getElementById("messageInput");
+
+  if (sendBtn && input) {
+    function sendMessage() {
+      const text = input.value.trim();
+      if (!text) return;
+
+      // find conversation id from URL ?cid=
+      const params = new URLSearchParams(window.location.search);
+      const cid = params.get('cid');
+      if (!cid) {
+        alert('Please select a conversation first.');
+        return;
+      }
+
+      // optimistic UI: append message to chat
+      const newMsg = document.createElement('div');
+      newMsg.className = 'msg to';
+      newMsg.innerHTML = text + '<small>Sending…</small>';
+      msgBox.appendChild(newMsg);
+      msgBox.scrollTop = msgBox.scrollHeight;
+      input.value = '';
+
+      fetch("{% url 'back:send_message' %}", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrftoken,
+        },
+        credentials: "same-origin",
+        body: JSON.stringify({ conversation_id: cid, text: text })
+      })
+      .then(resp => {
+        if (!resp.ok) throw new Error('Network response not ok');
+        return resp.json();
+      })
+      .then(data => {
+        // replace optimistic content by server-provided html/text
+        if (data.status === 'ok') {
+          // update last appended (assumes optimistic order)
+          newMsg.innerHTML = data.sent_text + '<small>' + data.sent_ts + '</small>';
+
+          if (data.bot_reply_html) {
+            const botEl = document.createElement('div');
+            botEl.className = 'msg from';
+            botEl.innerHTML = data.bot_reply_html + '<small>' + data.bot_reply_ts + '</small>';
+            msgBox.appendChild(botEl);
+          }
+
+          msgBox.scrollTop = msgBox.scrollHeight;
+        } else {
+          newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
+      });
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+  }
+});
+</script>
 {% endblock %}
