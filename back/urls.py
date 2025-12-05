@@ -13,6 +13,7 @@ urlpatterns = [
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),
     path("chats", views.c_dashboard, name="c_dashboard"),
+    
     path('send_message', views.send_message_ajax, name='send_message'),
 
     path("products/<int:pk>/edit/", views.edit_product, name='edit_product'),

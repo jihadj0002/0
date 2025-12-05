@@ -864,7 +864,7 @@ deleteBtn.addEventListener("click", function () {
       submitBtn.textContent = "Update Product";
 
       // Fetch data to prefill
-      fetch(`dbproducts/${currentEditId}/edit/`)
+      fetch("{% url 'back:edit_product' 0 %}".replace("0", currentEditId))
         .then((res) => res.json())
         .then((data) => {
           document.getElementById("edit_name").value = data.name;

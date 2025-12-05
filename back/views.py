@@ -381,6 +381,7 @@ def edit_product(request, pk):
     print("Editing product:", product)
 
     if request.method == "GET":
+        # print("GET request for product data")
         # Return product data as JSON for prefill
         return JsonResponse({
             "id": product.id,
