@@ -328,6 +328,42 @@ body{background:var(--bg);}
         Joined {{ selected_convo.timestamp|date:"j M, Y" }}
       </small>
 
+      {% if selected_convo.is_ai_enabled %}
+    <button class="profile-btn" 
+            onclick="toggleAI('{% url 'bot-disable' username=user id=selected_convo.id %}')">
+        Disable AI
+    </button>
+{% else %}
+    <button class="profile-btn"
+            onclick="toggleAI('{% url 'bot-enable' username=user id=selected_convo.id %}')">
+        Enable AI
+    </button>
+{% endif %}
+
+{% comment %} 
+AJAX function to toggle AI
+ 
+{% endcomment %}
+ <script>
+function toggleAI(url) {
+    fetch(url, {
+        method: "GET",
+        headers: {
+            "X-Requested-With": "XMLHttpRequest"
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log("AI toggled:", data);
+        // Optional: update the button text without reloading
+        location.reload();  // remove this if you will update UI manually
+    })
+    .catch(err => console.error("Error:", err));
+}
+</script>
+
+      
+
       <button class="profile-btn btn-primary">Manage Orders</button>
       <button class="profile-btn">Create Order</button>
 

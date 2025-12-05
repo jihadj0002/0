@@ -255,6 +255,7 @@ def c_dashboard(request):
         messages = selected_convo.messages.all().order_by("timestamp")
 
     context = {
+        "user": request.user,
         "all_convo": all_convo,
         "selected_convo": selected_convo,
         "messages": messages,
