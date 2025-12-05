@@ -1,0 +1,153 @@
+{% extends 'back/base.html' %}
+{% load static %}
+
+{% block title %}Import & Export Products | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+    .page-container {
+        max-width: 650px;
+        margin: 40px auto;
+        padding: 20px;
+    }
+
+    .card {
+        background: #fff;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.08);
+        margin-bottom: 25px;
+    }
+
+    .card h3 {
+        margin-bottom: 15px;
+        font-size: 22px;
+    }
+
+    /* Upload box FIXED and improved */
+    .upload-box {
+        border: 2px dashed #ccc;
+        padding: 35px;
+        border-radius: 10px;
+        text-align: center;
+        cursor: pointer;
+        background: #fafafa;
+        transition: 0.2s;
+        font-size: 16px;
+        font-weight: 500;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 140px; /* <-- FIXED SIZE */
+    }
+
+    .upload-box:hover {
+        border-color: #4285f4;
+        background: #f2f8ff;
+    }
+
+    .upload-box input {
+        display: none;
+    }
+
+    .btn-primary {
+        background: #4285f4;
+        color: #fff;
+        padding: 10px 20px;
+        border-radius: 6px;
+        border: none;
+        cursor: pointer;
+        transition: 0.2s;
+    }
+
+    .btn-primary:hover {
+        background: #2f6fe3;
+    }
+
+    .btn-export,
+    .btn-sample {
+        display: inline-block;
+        padding: 10px 20px;
+        background: #1abc9c;
+        color: #fff;
+        border-radius: 6px;
+        text-decoration: none;
+        margin-right: 10px;
+        transition: 0.2s;
+    }
+
+    .btn-export:hover,
+    .btn-sample:hover {
+        background: #159a80;
+    }
+
+    .alert {
+        padding: 12px;
+        border-radius: 6px;
+        margin-top: 10px;
+        font-size: 14px;
+    }
+
+    .alert-success {
+        background: #e8f9e9;
+        color: #2e7d32;
+        border: 1px solid #b6e3b9;
+    }
+
+    .alert-error {
+        background: #ffe8e8;
+        color: #b71c1c;
+        border: 1px solid #f3b5b5;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-container">
+
+    <!-- IMPORT CARD -->
+    <div class="card">
+        <h3>Import Products (CSV)</h3>
+        <p>Select a CSV file to upload your products.</p>
+
+        <form action="" method="POST" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <label class="upload-box">
+                <span>📁 Click here to upload CSV file</span>
+                <input type="file" name="file" accept=".csv" required>
+            </label>
+
+            <br>
+
+            <button class="btn-primary" type="submit">Import Products</button>
+
+            <a class="btn-sample" href="{% url 'back:import_products' %}">
+                Download Sample CSV
+            </a>
+        </form>
+    </div>
+
+    <!-- EXPORT CARD -->
+    <div class="card">
+        <h3>Export Products</h3>
+        <p>Download all your product data as a CSV file.</p>
+
+        <a class="btn-export" href="{% url 'back:export_products' %}">
+            Download Export CSV
+        </a>
+    </div>
+
+    <!-- MESSAGE ALERTS -->
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+
+</div>
+
+{% endblock %}

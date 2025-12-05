@@ -13,6 +13,9 @@ urlpatterns = [
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),
     path("chats", views.c_dashboard, name="c_dashboard"),
+
+    path("products/import", views.import_products, name="import_products"),
+    path("products/export", views.export_products, name="export_products"),
     
     path('send_message', views.send_message_ajax, name='send_message'),
 

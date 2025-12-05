@@ -4,14 +4,16 @@ from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale, Message
 # Create your views here.
 
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-import json
+import json, csv, requests
+from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from datetime import timedelta
+from django.contrib import messages
 
 @login_required
 def dashboard(request):
@@ -424,3 +426,98 @@ def delete_product(request, pk):
             return JsonResponse({"success": False, "message": "Product not found."}, status=404)
     return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
 
+
+# Export Products as CSV
+@login_required
+def export_products(request):
+    # Fetch products for current user
+    products = Product.objects.filter(user=request.user)
+
+    # Prepare CSV file
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="products_export.csv"'
+
+    writer = csv.writer(response)
+
+    # CSV Header
+    writer.writerow([
+        "Name", "Description", "Price",
+        "Discounted Price", "Stock Quantity",
+        "Status", "Image URL"
+    ])
+
+    # CSV Rows
+    for p in products:
+        writer.writerow([
+            p.name,
+            p.description,
+            p.price,
+            p.discounted_price or "",
+            p.stock_quantity,
+            "Active" if p.status else "Inactive",
+            p.image.url if p.image else "",
+        ])
+
+    return response
+
+
+# Import Products from CSV
+
+@login_required
+def import_products(request):
+    if request.method == "POST":
+        file = request.FILES.get("file")
+
+        if not file:
+            messages.error(request, "Please upload a CSV file.")
+            return redirect("import_products")
+
+        try:
+            decoded_file = file.read().decode("utf-8").splitlines()
+            reader = csv.DictReader(decoded_file)
+        except:
+            messages.error(request, "Invalid CSV format.")
+            return redirect("import_products")
+
+        imported = 0
+        skipped = 0
+
+        for row in reader:
+            name = row.get("name")
+            if not name:
+                skipped += 1
+                continue
+
+            # Prevent duplicate product names for the same user
+            if Product.objects.filter(user=request.user, name=name).exists():
+                skipped += 1
+                continue
+
+            product = Product(
+                user=request.user,
+                name=name,
+                description=row.get("description") or "",
+                price=row.get("price") or 0,
+                discounted_price=row.get("discounted_price") or None,
+                stock_quantity=int(row.get("stock_quantity") or 0),
+                status=row.get("status", "").lower() == "true",
+            )
+
+            # Handle image downloading from URL
+            image_url = row.get("image")
+            if image_url:
+                try:
+                    r = requests.get(image_url)
+                    if r.status_code == 200:
+                        file_name = image_url.split("/")[-1]
+                        product.image.save(file_name, ContentFile(r.content), save=False)
+                except:
+                    pass
+
+            product.save()
+            imported += 1
+
+        messages.success(request, f"Imported: {imported}, Skipped: {skipped}")
+        return redirect("back:products")
+
+    return render(request, "back/import_products.html")

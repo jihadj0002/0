@@ -567,7 +567,7 @@ button:hover {
             <div style="display:flex; gap:10px;">
               {% comment %} <button class="btn-primary" >Sync Shopify</button> {% endcomment %}
               <button id="openModal">Add New Product</button>
-              <button class="btn-primary">Sync WooCommerce</button>
+              <button class="btn-primary" onclick="window.location.href='{% url 'back:import_products' %}';">Export/Import</button>
             </div>
           </div>
 
