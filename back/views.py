@@ -380,7 +380,7 @@ def add_product(request):
 def edit_product(request, pk):
 
     product = get_object_or_404(Product, pk=pk, user=request.user)
-    # print("Editing product:", product)
+    
 
     if request.method == "GET":
         # print("GET request for product data")
