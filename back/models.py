@@ -129,12 +129,25 @@ class Conversation(models.Model):
         ("whatsapp", "WhatsApp"),
         ("telegram", "Telegram"),
     ]
+    
+    GENDER_CHOICES = [
+        ("male", "Male"),
+        ("female", "Female"),
+        ("other", "Other"),
+    ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations")
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
     customer_id = models.CharField(max_length=255)  # external ID
+    
+    customer_name = models.CharField(max_length=255, blank=True, null=True)  # external ID
+    
+    customer_gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default="male")
+    refer_customer_with = models.CharField(max_length=20, default="Sir")
+
     message_text = models.TextField(blank=True, null=True)
     response_text = models.TextField(blank=True, null=True)
+
     is_ai_generated = models.BooleanField(default=True)
     is_ai_enabled = models.BooleanField(default=True)
     ai_disabled_at = models.DateTimeField(null=True, blank=True)   # Time when AI was turned off

@@ -114,6 +114,9 @@ class UserOrderCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
     def post(self, request, username):
@@ -149,6 +152,27 @@ class UserConvCreateView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+
+@method_decorator(csrf_exempt, name='dispatch')
+class UserConvUpdateView(APIView):
+    def put(self, request, username, aid):
+        user = get_object_or_404(User, username=username)
+
+
+        # Only allow sending messages to conversations owned by user
+        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+        serializer = ConversationSerializer(
+            conversation, data=request.data, partial=True
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
 @method_decorator(csrf_exempt, name='dispatch')    
 class MessageCreateView(APIView):
     def post(self, request, username, aid):
