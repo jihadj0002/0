@@ -228,7 +228,7 @@ class GetConvoAIStatus(APIView):
 class GetConvoStatus(APIView):
     def get(self, request, id):
         
-        convo = Conversation.objects.get(id=id)
+        convo = Conversation.objects.get(customer_id=id)
         return JsonResponse({
             "id": convo.id,
             "customer_id": convo.customer_id,
