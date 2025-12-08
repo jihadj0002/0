@@ -226,9 +226,10 @@ class GetConvoAIStatus(APIView):
         return Response({'is_ai_enabled': conversation.is_ai_enabled}, status=status.HTTP_200_OK)
 
 class GetConvoStatus(APIView):
-    def get(self, request, id):
-        
-        convo = Conversation.objects.get(customer_id=id)
+    def get(self, request,username, id):
+
+        user = get_object_or_404(User, username=username)
+        convo = get_object_or_404(Conversation, customer_id=id, user=user)
         return JsonResponse({
             "id": convo.id,
             "customer_id": convo.customer_id,
