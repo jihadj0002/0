@@ -232,11 +232,14 @@ class GetConvoStatus(APIView):
         return JsonResponse({
             "id": convo.id,
             "customer_id": convo.customer_id,
-            "message_text": convo.message_text,
-            "response_text": convo.response_text,
+            "customer_name": convo.customer_name,
+            "refer_customer_with": convo.refer_customer_with,
+            "customer_gender": convo.customer_gender,
+
             "chat_summary": convo.chat_summary,
             "is_ai_enabled": convo.is_ai_enabled,
             "timestamp": convo.timestamp.strftime("%d %b, %Y"),
+
         })
 
         
