@@ -235,7 +235,7 @@ class GetConvoStatus(APIView):
             "customer_id": convo.customer_id,
             "customer_name": convo.customer_name,
             "refer_customer_with": convo.refer_customer_with,
-            "customer_gender": convo.customer_gender,
+            # "customer_gender": convo.customer_gender,
 
             "chat_summary": convo.chat_summary,
             "is_ai_enabled": convo.is_ai_enabled,
