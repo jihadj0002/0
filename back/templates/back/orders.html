@@ -1,8 +1,7 @@
 {% extends 'back/base.html' %}
 {% load static %}
 
-
-{% block title %}Dashboard | Matrix AI{% endblock %}
+{% block title %}Orders | Matrix AI{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -122,201 +121,409 @@
   border-color: var(--accent);
 }
 
+.view-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  color: white;
+  background: #059669;
+  font-size: 13px;
+  cursor: pointer;
+  border: none;
+}
+.view-btn:hover {
+  background: #0d9f73;
+}
+
 /* =====================
-   RESPONSIVE DESIGN
+   POPUP MODAL
 ===================== */
-@media (max-width: 768px) {
-  .panel-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
+.order-modal {
+  display: none;
+  position: fixed;
+  z-index: 2000;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 100%;
+  background: rgba(0,0,0,0.45);
+  justify-content: center;
+  align-items: center;
+}
 
-  .orders-table,
-  .orders-table thead,
-  .orders-table tbody,
-  .orders-table th,
-  .orders-table td,
-  .orders-table tr {
-    display: block;
-  }
+.order-modal-body {
+  background: #fff;
+  border-radius: 14px;
+  padding: 25px;
+  width: 90%;
+  max-width: 520px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+}
 
-  .orders-table thead {
-    display: none;
-  }
+.order-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
 
-  .orders-table tr {
-    background: #fff;
-    margin-bottom: 15px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
-  }
+.order-close-btn {
+  font-size: 22px;
+  cursor: pointer;
+  color: #333;
+}
 
-  .orders-table td {
-    border: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 15px;
-    padding: 8px 0;
-  }
+.order-field {
+  margin-top: 12px;
+}
 
-  .orders-table td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    color: var(--muted);
-  }
+.order-field label {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 5px;
+}
 
-  .orders-table td:last-child {
-    border-bottom: none;
-  }
+.order-field input,
+.order-field select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
 
-  .orders-table td select {
-    width: 100%;
-    margin-top: 5px;
-  }
-  
-  /* Add labels for mobile using data-labels dynamically */
-  .orders-table td:nth-child(1)::before { content: "Order ID"; }
-  .orders-table td:nth-child(2)::before { content: "Product"; }
-  .orders-table td:nth-child(3)::before { content: "Customer ID"; }
-  .orders-table td:nth-child(4)::before { content: "Amount"; }
-  .orders-table td:nth-child(5)::before { content: "Status"; }
-  .orders-table td:nth-child(6)::before { content: "Created At"; }
+.order-save-btn {
+  width: 100%;
+  margin-top: 15px;
+  padding: 12px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.order-save-btn:hover {
+  background: var(--accent);
+}
+
+.order-section {
+  margin-top: 20px;
+  border-top: 1px solid #e5e5e5;
+  padding-top: 15px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.order-info-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.order-info-row .label {
+  font-weight: 600;
+  color: #333;
+}
+
+.order-info-row .value {
+  color: #555;
+}
+
+.value-input {
+  width: 55%;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.order-product-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.order-product-table th,
+.order-product-table td {
+  padding: 8px 5px;
+  border-bottom: 1px solid #eee;
+}
+
+.status-select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 </style>
 {% endblock %}
 
-
 {% block content %}
 
-<!-- Main -->
+<div class="content">
 
-      
+  <div class="page-header">
+    <h1>Orders</h1>
+    <p class="sub">View and manage your customer orders</p>
+  </div>
 
-    <!-- Content -->
-    <div class="content">
-      <div class="page-header">
-        <h1>Orders</h1>
-        <p class="sub">View and manage your customer orders</p>
-      </div>
-
-      <!-- Orders Table -->
-      <div class="panel" style="margin-top:20px;">
-        <div class="panel-header">
-          <h3>All Orders</h3>
-          <button class="btn-primary">Export CSV</button>
-        </div>
-
-        <table class="orders-table">
-          <thead>
-            <tr>
-              <th>Order ID</th>
-              <th>Product</th>
-              <th>Customer ID</th>
-              <th>Amount</th>
-              <th>Status</th>
-              <th>Created At</th>
-            </tr>
-          </thead>
-          <tbody>
-  {% for order in all_orders %}
-  <tr data-order-id="{{ order.id }}">
-    <td>#{{ order.id }}</td>
-    <td>{{ order.product.name|default:"N/A" }}</td>
-    <td>{{ order.customer_id }}</td>
-    <td>${{ order.amount }}</td>
-    <td>
-      <select class="status-select" data-order-id="{{ order.id }}">
-        {% for key, value in order.STATUS_CHOICES %}
-          <option value="{{ key }}" {% if order.status == key %}selected{% endif %}>
-            {{ value }}
-          </option>
-        {% endfor %}
-      </select>
-    </td>
-    <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
-  </tr>
-  {% empty %}
-  <tr>
-    <td colspan="6" style="text-align:center; color:var(--muted); padding:20px;">No orders yet.</td>
-  </tr>
-  {% endfor %}
-</tbody>
-
-        </table>
-      </div>
+  <div class="panel">
+    <div class="panel-header">
+      <h3>All Orders</h3>
+      <button class="btn-primary">Export CSV</button>
     </div>
 
-    <script>
-  // CSRF helper
-  function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== '') {
-      const cookies = document.cookie.split(';');
-      for (let i = 0; i < cookies.length; i++) {
-        const cookie = cookies[i].trim();
-        if (cookie.substring(0, name.length + 1) === (name + '=')) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
-        }
-      }
-    }
-    return cookieValue;
-  }
-  const csrftoken = getCookie('csrftoken');
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order ID</th>
+          <th>Product</th>
+          <th>Customer ID</th>
+          <th>Amount</th>
+          <th>Status</th>
+          <th>Created At</th>
+          <th>View</th>
+        </tr>
+      </thead>
 
-  document.querySelectorAll('.status-select').forEach(select => {
-    select.addEventListener('change', function() {
-      const orderId = this.dataset.orderId;
-      const newStatus = this.value;
+      <tbody>
+        {% for order in all_orders %}
+        <tr>
+          <td>#{{ order.id }}</td>
+          <td>{{ order.product.name|default:"N/A" }}</td>
+          <td>{{ order.customer_id }}</td>
+          <td>${{ order.amount }}</td>
 
-      fetch("{% url 'back:update_order_status' %}", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrftoken,
-        },
-        body: JSON.stringify({
-          order_id: orderId,
-          status: newStatus,
-        }),
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          this.style.border = "2px solid #22c55e"; // green border to indicate success
-          setTimeout(() => this.style.border = "", 1000);
-        } else {
-          alert("Failed to update order status!");
-        }
-      })
-      .catch(err => console.error(err));
-    });
-  });
-</script>
+          <td>
+            <select class="status-select" data-order-id="{{ order.id }}">
+              {% for key, value in order.STATUS_CHOICES %}
+                <option value="{{ key }}" {% if order.status == key %}selected{% endif %}>
+                  {{ value }}
+                </option>
+              {% endfor %}
+            </select>
+          </td>
 
-<style>
-.status-select {
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  font-weight: 600;
-  cursor: pointer;
-}
-.status-select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
+          <td>{{ order.created_at|date:"Y-m-d H:i" }}</td>
+
+          <td>
+            <button class="view-btn view-order-btn"
+              data-id="{{ order.id }}">
+              View
+            </button>
+          </td>
+        </tr>
+
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">
+            No orders found.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ================================
+     ORDER POPUP MODAL
+================================ -->
+<div id="orderModal" class="order-modal">
+  <div class="order-modal-body">
+
+    <!-- HEADER -->
+    <div class="order-modal-header">
+      <h2>Order #<span id="edit_order_number"></span></h2>
+      <span class="order-close-btn">&times;</span>
+    </div>
+
+    <form id="orderEditForm">
+      {% csrf_token %}
+      <input type="hidden" id="edit_order_id">
+
+      <!-- BILLING DETAILS -->
+      <div class="order-section">
+        <h3 class="section-title">Billing details</h3>
+
+        <div class="order-info-row">
+          <span class="label">Customer Name</span>
+          <input id="edit_customer_name" class="value-input">
+        </div>
+
+        <div class="order-info-row">
+          <span class="label">Address</span>
+          <input id="edit_customer_address" class="value-input">
+        </div>
+
+        <div class="order-info-row">
+          <span class="label">Phone</span>
+          <input id="edit_customer_phone" class="value-input">
+        </div>
+
+        <div class="order-info-row">
+          <span class="label">Email</span>
+          <input id="edit_customer_email" class="value-input">
+        </div>
+
+        <div class="order-info-row">
+          <span class="label">Payment Method</span>
+          <span class="value" id="edit_payment_method">Cash on delivery</span>
+        </div>
+      </div>
+
+      <!-- PRODUCT DETAILS -->
+      <div class="order-section">
+        <h3 class="section-title">Product</h3>
+
+        <table class="order-product-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th style="text-align:center;">Qty</th>
+              <th style="text-align:right;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="edit_product_table">
+            <!-- JS will insert product rows here -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- STATUS -->
+      <div class="order-section">
+        <h3 class="section-title">Status</h3>
+
+        <select id="edit_order_status" class="status-select">
+          <option value="pending">Pending</option>
+          <option value="processing">Processing</option>
+          <option value="delivering">Delivering</option>
+          <option value="completed">Completed</option>
+          <option value="refunded">Refunded</option>
+        </select>
+      </div>
+
+      <button type="submit" class="order-save-btn">
+        Save Changes
+      </button>
+    </form>
+
+  </div>
+</div>
 
 
-</style>
 
 
+<script>
 
   
+// ===============================
+// CSRF TOKEN
+// ===============================
+function getCookie(name) {
+  let cookieValue = null;
+  const cookies = document.cookie.split(';');
+  for (let cookie of cookies) {
+    cookie = cookie.trim();
+    if (cookie.startsWith(name + "=")) {
+      cookieValue = decodeURIComponent(cookie.slice(name.length + 1));
+    }
+  }
+  return cookieValue;
+}
+const csrftoken = getCookie("csrftoken");
+
+// ===============================
+// OPEN POPUP (FETCH ORDER DATA)
+// ===============================
+const modal = document.getElementById("orderModal");
+const closeModal = document.querySelector(".order-close-btn");
+
+document.querySelectorAll(".view-order-btn").forEach(btn => {
+  btn.addEventListener("click", function () {
+    const order_id = this.dataset.id;
+
+    modal.style.display = "flex";
+
+    fetch("{% url 'back:order_json' 0 %}".replace("0", order_id))
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById("edit_order_id").value = data.id;
+        document.getElementById("edit_customer_name").value = data.customer_name;
+        document.getElementById("edit_customer_address").value = data.customer_address;
+        document.getElementById("edit_customer_phone").value = data.customer_phone;
+        document.getElementById("edit_customer_phone").value = data.customer_phone;
+        document.getElementById("edit_order_status").value = data.status;
+      });
+  });
+});
+
+// ===============================
+// SAVE EDITED ORDER
+// ===============================
+document.getElementById("orderEditForm").addEventListener("submit", function (e) {
+  e.preventDefault();
+
+  const id = document.getElementById("edit_order_id").value;
+
+  fetch(`/back/order/${id}/update/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrftoken
+    },
+    body: JSON.stringify({
+      customer_name: document.getElementById("edit_customer_name").value,
+      customer_address: document.getElementById("edit_customer_address").value,
+      customer_phone: document.getElementById("edit_customer_phone").value,
+      status: document.getElementById("edit_order_status").value,
+    })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        alert("Order updated!");
+        modal.style.display = "none";
+      } else {
+        alert("Update failed.");
+      }
+    });
+});
+
+// ===============================
+// CLOSE POPUP
+// ===============================
+closeModal.addEventListener("click", () => modal.style.display = "none");
+
+window.addEventListener("click", e => {
+  if (e.target === modal) modal.style.display = "none";
+});
+
+// ===============================
+// INLINE STATUS UPDATE (TABLE)
+// ===============================
+document.querySelectorAll(".status-select").forEach(select => {
+  select.addEventListener("change", function () {
+    const order_id = this.dataset.order_id;
+    const newStatus = this.value;
+
+    fetch("{% url 'back:update_order_status' %}", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRFToken": csrftoken,
+      },
+      body: JSON.stringify({
+        order_id: order_id,
+        status: newStatus,
+      }),
+    });
+  });
+});
+</script>
+
 {% endblock %}
