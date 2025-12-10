@@ -12,6 +12,14 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import dj_database_url
+from environ import Env
+
+env = Env()
+Env.read_env()
+
+ENVIROMNENT = env("ENVIROMNENT", default="development")
+POSTGRES_LOCALLY  = env.bool('POSTGRES_LOCALLY ', default=False)
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,12 +29,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-j6$gdcb_mkyg)(u)*4fi=e1yqwkw7f#)g=__*#u1-$5q6ltl=$"
+SECRET_KEY = env("SECRET_KEY", default="django-insecure-!$#k@v1z&2e3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0")
+ENCRYPT_KEY = env("ENCRYPT_KEY", default="default_encrypt_key_please_change_me_1234567890")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+
+if ENVIROMNENT == "development":
+    DEBUG = True
+else:
+    DEBUG = False
+
 
 ALLOWED_HOSTS = ['*']
+
 CSRF_TRUSTED_ORIGINS = [
     "https://matrix-production-867a.up.railway.app",
     "http://matrix-production-867a.up.railway.app",
@@ -96,6 +111,11 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+
+if ENVIROMNENT == 'production' or POSTGRES_LOCALLY  == True:
+    DATABASES['default'] = dj_database_url.parse(env('DATABASE_URL'))
+
 
 
 
