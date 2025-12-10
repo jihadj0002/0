@@ -1,7 +1,0 @@
-Django==5.1.6
-rest_framework
-pillow
-requests
-django-cors-headers
-python-dotenv
-django-cleanup

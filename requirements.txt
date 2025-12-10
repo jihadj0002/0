@@ -1,0 +1,11 @@
+Django==5.1.6
+djangorestframework
+pillow
+requests
+django-cors-headers
+python-dotenv
+django-cleanup
+gunicorn
+whitenoise
+dj-database-url
+psycopg2-binary
