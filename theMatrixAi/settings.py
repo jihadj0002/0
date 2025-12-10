@@ -27,6 +27,13 @@ SECRET_KEY = "django-insecure-j6$gdcb_mkyg)(u)*4fi=e1yqwkw7f#)g=__*#u1-$5q6ltl=$
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
+CSRF_TRUSTED_ORIGINS = [
+    "https://matrix-production-867a.up.railway.app",
+    "http://matrix-production-867a.up.railway.app",
+    "https://thematrixai.xyz",
+    "http://thematrixai.xyz"
+]
+
 
 
 # Application definition
