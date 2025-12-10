@@ -91,7 +91,7 @@ class Product(models.Model):
 
     pid = ShortUUIDField(
         length=6,
-        max_length=10,
+        max_length=15,
         prefix="sku_",
         alphabet="abcdefg1234"
     )
@@ -212,7 +212,7 @@ class Sale(models.Model):
 
     oid = ShortUUIDField(
         length=6,
-        max_length=10,
+        max_length=15,
         prefix="ord_",
         alphabet="abcdefg1234"
     )
