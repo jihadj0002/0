@@ -1,5 +1,7 @@
 Django==5.1.6
-mongoengine==4.15.3
 rest_framework
 pillow
 requests
+django-cors-headers
+python-dotenv
+django-cleanup

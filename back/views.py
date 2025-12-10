@@ -217,41 +217,7 @@ def get_dashboard_metrics(request):
 @login_required
 def orders(request):
     all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
-
-    context = {
-        "user": request.user,
-        "all_orders": all_orders
-    }
-    return render(request, 'back/orders.html', context)
-
-@login_required
-def order_json(request, order_id):
-    order = get_object_or_404(Sale, id=order_id, user=request.user)
-    products = Product.objects.filter(user=request.user)
-    
-
-    return JsonResponse({
-        "id": order.id,
-        "customer_name": order.customer_name,
-        "customer_address": order.customer_address,
-        "customer_phone": order.customer_phone,
-        "status": order.status,
-    })
-
-@login_required
-def update_order(request, order_id):
-    order = get_object_or_404(Sale, id=order_id, user=request.user)
-
-    data = json.loads(request.body)
-
-    order.customer_name = data.get("customer_name")
-    order.customer_address = data.get("customer_address")
-    order.customer_phone = data.get("customer_phone")
-    order.status = data.get("status")
-    order.save()
-
-    return JsonResponse({"success": True})
-
+    return render(request, 'back/orders.html', {'all_orders': all_orders})
 
 
 @csrf_exempt  # because we manually include CSRF token in fetch()
