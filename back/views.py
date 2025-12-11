@@ -364,7 +364,7 @@ def add_product(request):
                     "id": Product.id,
                     "name": Product.name,
                     "price": str(Product.price),
-                    "image": Product.image.url if Product.image else "",
+                    "image": Product.image.url if Product.image and hasattr(Product.image, "url") else "",
                 },
             })
 
@@ -393,7 +393,7 @@ def edit_product(request, pk):
             "stock_quantity": product.stock_quantity,
             "description": product.description,
             "status": product.status,
-            "image": product.image.url if product.image else "",
+            "image": product.image.url if product.image and hasattr(product.image, "url") else ""
         })
 
     elif request.method == "POST":
@@ -455,7 +455,7 @@ def export_products(request):
             p.discounted_price or "",
             p.stock_quantity,
             "Active" if p.status else "Inactive",
-            p.image.url if p.image else "",
+            p.image.url if p.image and hasattr(p.image, "url") else "",
         ])
 
     return response

@@ -78,7 +78,7 @@ class Product(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
     
     name = models.CharField(max_length=255)
-    image = models.ImageField(upload_to="user_directory_path", default="product.jpg")
+    image = models.ImageField(upload_to="products", default="product.jpg")
     description = models.TextField(blank=True, null=True)
 
     price = models.DecimalField(max_digits=10, decimal_places=2)
