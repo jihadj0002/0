@@ -177,9 +177,11 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Detect Railway environment
 
 if os.environ.get("MOUNT_MEDIA"):
-    MEDIA_ROOT = "/data"
+    MEDIA_ROOT = "/app/media"
+    print("Using Railway mounted volume for MEDIA_ROOT")
 else:
     MEDIA_ROOT = BASE_DIR / "media"
+    print("Using local folder for MEDIA_ROOT")
 
 MEDIA_URL = "/media/"
 
