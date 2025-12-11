@@ -179,9 +179,32 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 if os.environ.get("MOUNT_MEDIA"):
     MEDIA_ROOT = "/app/media"
     print("Using Railway mounted volume for MEDIA_ROOT")
+    print(MEDIA_ROOT)
+    print("Files in MEDIA_ROOT:")
+    print(os.listdir(MEDIA_ROOT))
+
+    product_dir = os.path.join(MEDIA_ROOT, "products")
+    if os.path.exists(product_dir):
+        print("Files in products/:")
+        print(os.listdir(product_dir))
+    else:
+        print("products/ directory does not exist")
+
 else:
     MEDIA_ROOT = BASE_DIR / "media"
     print("Using local folder for MEDIA_ROOT")
+    print(MEDIA_ROOT)
+    print("Using LocalHost mounted volume for MEDIA_ROOT")
+    print(MEDIA_ROOT)
+    print("Files in MEDIA_ROOT:")
+    print(os.listdir(MEDIA_ROOT))
+
+    product_dir = os.path.join(MEDIA_ROOT, "products")
+    if os.path.exists(product_dir):
+        print("Files in products/:")
+        print(os.listdir(product_dir))
+    else:
+        print("products/ directory does not exist")
 
 MEDIA_URL = "/media/"
 
