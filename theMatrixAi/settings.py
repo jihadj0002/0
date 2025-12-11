@@ -163,9 +163,16 @@ STATICFILES_DIRS = [
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
+
+# In production, MEDIA_ROOT should point to the mounted volume path
+# In development, it can point to a local 'media' folder
+if os.environ.get('MOUNT_MEDIA', 'False') == 'True':
+    MEDIA_ROOT = "/app/media"
+else:
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 MEDIA_URL = '/media/'
 
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
