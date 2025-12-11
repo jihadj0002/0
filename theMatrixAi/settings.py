@@ -175,13 +175,10 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # In development, it can point to a local 'media' folder
 
 # Detect Railway environment
-ON_RAILWAY = os.environ.get("MOUNT_MEDIA") is not None
 
-if ON_RAILWAY:
-    # Use the mounted volume
+if os.environ.get("MOUNT_MEDIA"):
     MEDIA_ROOT = "/data"
 else:
-    # Local development
     MEDIA_ROOT = BASE_DIR / "media"
 
 MEDIA_URL = "/media/"
