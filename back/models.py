@@ -140,8 +140,7 @@ class Conversation(models.Model):
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
     customer_id = models.CharField(max_length=255)  # external ID
     
-    customer_name = models.CharField(max_length=255, blank=True, null=True)  # external ID
-    
+    customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default="unknown")
     refer_customer_with = models.CharField(max_length=20, default="Sir")
 
@@ -155,6 +154,49 @@ class Conversation(models.Model):
 
     timestamp = models.DateTimeField(auto_now_add=True)
     chat_summary = models.TextField(blank=True, null=True)
+
+    # -----------------------------------------------------
+    # EXTENDED VARIABLES (all new fields added here)
+    # -----------------------------------------------------
+
+    customer_phone = models.CharField(max_length=50, blank=True, null=True)
+    customer_city = models.CharField(max_length=100, blank=True, null=True)
+
+    is_returning = models.BooleanField(default=False)
+    preferred_tone = models.CharField(max_length=50, blank=True, null=True)
+
+    last_viewed_product = models.CharField(max_length=255, blank=True, null=True)
+    detected_intent = models.CharField(max_length=100, blank=True, null=True)
+    current_product = models.CharField(max_length=255, blank=True, null=True)
+
+    language_detected = models.CharField(max_length=20, blank=True, null=True)
+
+    order_status = models.CharField(max_length=100, blank=True, null=True)
+    order_total = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+
+    missing_order_fields = models.JSONField(blank=True, null=True)
+
+    greeted = models.BooleanField(default=False)
+    image_allowed = models.BooleanField(default=True)
+    last_message_type = models.CharField(max_length=50, blank=True, null=True)
+
+    user_category = models.CharField(max_length=100, blank=True, null=True)
+    related_products = models.JSONField(blank=True, null=True)
+
+    interest_score = models.FloatField(blank=True, null=True)
+    estimated_budget = models.DecimalField(max_digits=10, decimal_places=2, blank=True, null=True)
+
+
+    # NEW COUNTERS
+    bot_sent_count = models.IntegerField(default=0)
+    bot_received_count = models.IntegerField(default=0)
+    customer_sent_count = models.IntegerField(default=0)
+    agent_sent_count = models.IntegerField(default=0)
+
+
+    # -----------------------------------------------------
+    # END EXTENDED VARIABLES
+    # -----------------------------------------------------
 
     def __str__(self):
         return f"{self.platform} - {self.customer_id} ({self.timestamp})"
@@ -173,8 +215,9 @@ class Conversation(models.Model):
                 self.is_ai_enabled = True
                 self.ai_disabled_at = None
                 self.save()
-        return self.is_ai_enabled    
+        return self.is_ai_enabled   
     
+
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     

@@ -61,6 +61,8 @@ INSTALLED_APPS = [
     "msg",
 
     "shortuuid",
+
+    # "back.apps.BackConfig",
     # "rest_framework.authtoken",
     # "mysql",
     "django.contrib.admin",
@@ -114,7 +116,7 @@ DATABASES = {
 
 
 if ENVIROMNENT == 'production' or POSTGRES_LOCALLY  == True:
-    DATABASES['default'] = dj_database_url.parse(env('DATABASE_URL'))
+    DATABASES['default'] = dj_database_url.parse(env('DATABASE_PUBLIC_URL'))
 
 
 
