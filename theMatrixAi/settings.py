@@ -39,6 +39,9 @@ if ENVIROMNENT == "development":
 else:
     DEBUG = False
 
+if not DEBUG:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
 
 ALLOWED_HOSTS = ['*']
 
@@ -168,6 +171,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # In development, it can point to a local 'media' folder
 if os.environ.get('MOUNT_MEDIA', 'False') == 'True':
     MEDIA_ROOT = "/app/media"
+    os.makedirs(MEDIA_ROOT, exist_ok=True)
 else:
     MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
