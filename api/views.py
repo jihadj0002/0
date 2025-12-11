@@ -138,6 +138,7 @@ class UserConvCreateView(APIView):
         if existing_convo:
             return Response({
                 "message": "Conversation already exists",
+                "sessionId": customer_id,
                 "conversation": ConversationSerializer(existing_convo).data
             }, status=status.HTTP_200_OK)
 
