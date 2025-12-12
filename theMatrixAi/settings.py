@@ -118,10 +118,12 @@ POSTGRES_LOCALLY = os.environ.get("POSTGRES_LOCALLY", "False") == "True"
 
 # Default SQLite configuration
 if ENVIRONMENT == "production" or POSTGRES_LOCALLY:
+    print("Using Postgres Database")
     DATABASES = {
         "default": dj_database_url.parse(os.environ.get("DATABASE_URL"))
     }
 else:
+    print("Using SQLite Database")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
@@ -176,6 +178,28 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # --------------------
 # MEDIA FILES
 # --------------------
+
+
+
+
+
+# USE_FTP = os.environ.get("USE_FTP", "false").lower() == "true"
+
+# if USE_FTP:
+#     print("Using FTP Storage for media files")
+#     DEFAULT_FILE_STORAGE = "back.ftp_storage.FTPStorage"
+#     MEDIA_URL = os.environ.get("FTP_BASE_URL")
+#     MEDIA_ROOT = ""        # Not used locally
+#     print("MEDIA_URL:", MEDIA_URL)
+#     print("MEDIA_ROOT:", MEDIA_ROOT)
+
+# else:
+#     print("Using Local Storage for media files")
+#     MEDIA_URL = "/media/"
+#     MEDIA_ROOT = BASE_DIR / "media"
+
+
+
 # In production, MEDIA_ROOT should point to the mounted volume path
 # In development, it can point to a local 'media' folder
 
