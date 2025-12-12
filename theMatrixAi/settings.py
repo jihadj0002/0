@@ -78,7 +78,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -236,7 +237,7 @@ else:
     else:
         print("products/ directory does not exist")
 
-MEDIA_URL = "/media/data/"
+MEDIA_URL = "/media/"
 
 
 # Default primary key field type
