@@ -167,7 +167,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
-STATIC_URL = "static/"
+
 
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),  # where your "front/main.css" lives
@@ -207,37 +207,43 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Detect Railway environment
 
-if os.environ.get("MOUNT_MEDIA"):
-    MEDIA_ROOT = "/app/media"
-    print("Using Railway mounted volume for MEDIA_ROOT")
-    print(MEDIA_ROOT)
-    print("Files in MEDIA_ROOT:")
-    # print(os.listdir(MEDIA_ROOT))
 
-    # product_dir = os.path.join(MEDIA_ROOT, "products")
-    # if os.path.exists(product_dir):
-    #     print("Files in products/:")
-    #     print(os.listdir(product_dir))
-    # else:
-    #     print("products/ directory does not exist")
 
-else:
-    MEDIA_ROOT = BASE_DIR / "media"
-    print("Using local folder for MEDIA_ROOT")
-    print(MEDIA_ROOT)
-    print("Using LocalHost mounted volume for MEDIA_ROOT")
-    print(MEDIA_ROOT)
-    print("Files in MEDIA_ROOT:")
-    print(os.listdir(MEDIA_ROOT))
+CLOUDFLARE_R2_BUCKET=os.environ.get("CLOUDFLARE_R2_BUCKET")
+CLOUDFLARE_R2_ACCESS_KEY=os.environ.get("CLOUDFLARE_R2_ACCESS_KEY")
+CLOUDFLARE_R2_SECRET_KEY=os.environ.get("CLOUDFLARE_R2_SECRET_KEY")
+CLOUDFLARE_R2_BUCKET_ENDPOINT=os.environ.get("CLOUDFLARE_R2_BUCKET_ENDPOINT")
 
-    product_dir = os.path.join(MEDIA_ROOT, "products")
-    if os.path.exists(product_dir):
-        print("Files in products/:")
-        print(os.listdir(product_dir))
-    else:
-        print("products/ directory does not exist")
+CLOUDFLARE_R2_CONFIG_OPTIONS = {
+    "bucket_name": CLOUDFLARE_R2_BUCKET,
+    "access_key": CLOUDFLARE_R2_ACCESS_KEY,
+    "secret_key": CLOUDFLARE_R2_SECRET_KEY,
+    "endpoint_url": CLOUDFLARE_R2_BUCKET_ENDPOINT,
+    "default_acl": "public-read",
+    "signature_version": "s3v4",
+}
 
-MEDIA_URL = "/media/"
+STORAGES = {
+    "default": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
+    },
+    "staticfiles": {
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
+    },
+}
+
+AWS_S3_CUSTOM_DOMAIN = os.environ.get("CLOUDFLARE_R2_PUBLIC_DOMAIN")
+
+MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+
+STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
+
+# Working
+# https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/products/maxresdefault.jpg
+
+# https://https//pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/products/maxresdefault.jpg
 
 
 # Default primary key field type

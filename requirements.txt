@@ -12,3 +12,5 @@ dj-database-url
 psycopg2-binary
 django-environ
 dj-database-url
+django-storages[s3]
+boto3
