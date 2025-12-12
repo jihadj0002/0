@@ -66,8 +66,6 @@ INSTALLED_APPS = [
     "msg",
 
     "shortuuid",
-
-    # "back.apps.BackConfig",
     # "rest_framework.authtoken",
     # "mysql",
     "django.contrib.admin",
@@ -130,6 +128,7 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
