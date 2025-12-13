@@ -169,9 +169,9 @@ USE_TZ = True
 
 
 
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),  # where your "front/main.css" lives
-]
+# STATICFILES_DIRS = [
+#     os.path.join(BASE_DIR, 'static'),  # where your "front/main.css" lives
+# ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 

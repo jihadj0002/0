@@ -133,7 +133,7 @@ class Conversation(models.Model):
     GENDER_CHOICES = [
         ("male", "Male"),
         ("female", "Female"),
-        ("Unknown", "unknown"),
+        ("unknown", "Unknown"),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations")
@@ -141,7 +141,7 @@ class Conversation(models.Model):
     customer_id = models.CharField(max_length=255)  # external ID
     
     customer_name = models.CharField(max_length=255, blank=True, null=True)
-    customer_gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default="unknown")
+    customer_gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default="unknown", null=True, blank=True)
     refer_customer_with = models.CharField(max_length=20, default="Sir")
 
     message_text = models.TextField(blank=True, null=True)

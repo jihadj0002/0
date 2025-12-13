@@ -28,6 +28,16 @@ class ProductSerializer(serializers.ModelSerializer):
         return ""
 
 class ConversationSerializer(serializers.ModelSerializer):
+
+    def to_internal_value(self, data):
+        data = data.copy()
+
+        for key, value in data.items():
+            if value == "":
+                data[key] = None
+
+        return super().to_internal_value(data)
+
     class Meta:
         model = Conversation
         fields = '__all__'
