@@ -252,6 +252,7 @@ class GetLastMessages(APIView):
             customer_id=id,
             user=user
         )
+        is_ai_enabled = convo.is_ai_enabled
 
         messages_qs = (
             Message.objects
@@ -269,6 +270,7 @@ class GetLastMessages(APIView):
         return JsonResponse(
             {
                 "conversation_id": convo.id,
+                "is_ai_enabled": is_ai_enabled,
                 "customer_id": convo.customer_id,
                 "conversation": conversation_text
             },
