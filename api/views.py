@@ -14,7 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
 
-from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
+from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer
@@ -243,6 +243,35 @@ class GetConvoStatus(APIView):
             "timestamp": convo.timestamp.strftime("%d %b, %Y"),
 
         })
+    
+class GetLastMessages(APIView):
+    def get(self, request, username, id):
+        user = get_object_or_404(User, username=username)
+        convo = get_object_or_404(
+            Conversation,
+            customer_id=id,
+            user=user
+        )
+
+        messages_qs = (
+            Message.objects
+            .filter(conversation=convo)
+            .order_by('-timestamp')[:10]
+        )
+
+        messages = reversed(messages_qs)
+
+        conversation_text = "\n".join(
+            f"{msg.sender.capitalize()}: {msg.text}"
+            for msg in messages
+        )
+
+        return JsonResponse({
+            "conversation_id": convo.id,
+            "customer_id": convo.customer_id,
+            "conversation": conversation_text
+        })
+
 
         
 
