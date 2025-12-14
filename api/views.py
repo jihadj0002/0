@@ -266,11 +266,15 @@ class GetLastMessages(APIView):
             for msg in messages
         )
 
-        return JsonResponse({
-            "conversation_id": convo.id,
-            "customer_id": convo.customer_id,
-            "conversation": conversation_text
-        })
+        return JsonResponse(
+            {
+                "conversation_id": convo.id,
+                "customer_id": convo.customer_id,
+                "conversation": conversation_text
+            },
+            json_dumps_params={"ensure_ascii": False}
+        )
+
 
 
         
