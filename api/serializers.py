@@ -49,36 +49,26 @@ class MessageSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class SaleSerializer(serializers.ModelSerializer):
+    oid = serializers.ReadOnlyField()
+
     class Meta:
         model = Sale
         fields = "__all__"
-
-    def validate(self, data):
-        product = data.get("product")
-        quantity = data.get("quantity", 1)
-
-        if product and product.stock_quantity < quantity:
-            raise serializers.ValidationError("Not enough stock")
-
-        return data
-
-    @transaction.atomic
-    def create(self, validated_data):
-        product = validated_data.get("product")
-        quantity = validated_data.get("quantity", 1)
-
-        sale = super().create(validated_data)
-
-        if product:
-            product.stock_quantity -= quantity
-            product.save(update_fields=["stock_quantity"])
-
-        return sale
-    
+        
 class OrderItemSerializer(serializers.ModelSerializer):
+    order = serializers.SlugRelatedField(
+        slug_field="oid",
+        read_only=True   # 👈 IMPORTANT
+    )
+    product = serializers.SlugRelatedField(
+        queryset=Product.objects.all(),
+        slug_field="pid"
+    )
+
     class Meta:
         model = OrderItem
-        fields = "__all__"
+        fields = ["id", "order", "product", "quantity", "price"]
+        read_only_fields = ["price"]
 
     def validate(self, data):
         product = data["product"]
@@ -88,6 +78,25 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Not enough stock")
 
         return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        order = self.context["order"]  # 👈 trusted order
+        product = validated_data["product"]
+        quantity = validated_data["quantity"]
+
+        validated_data["order"] = order
+        validated_data["price"] = (
+            product.discounted_price or product.price
+        )
+
+        item = super().create(validated_data)
+
+        product.stock_quantity -= quantity
+        product.save(update_fields=["stock_quantity"])
+
+        return item
+
 
 
 class SettingSerializer(serializers.ModelSerializer):

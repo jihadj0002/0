@@ -133,28 +133,62 @@ class OrderStartView(APIView):
         )
     
 class AddOrderItemView(APIView):
+
+    def get(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+
+        order = get_object_or_404(
+            Sale,
+            oid=order_id,
+            user=user
+        )
+
+        items = order.items.select_related("product")
+
+        data = {
+            "order_id": order.oid,
+            "status": order.status,
+            "amount": order.amount,
+            "items": [
+                {
+                    "id": item.id,
+                    "pid": item.product.pid,
+                    "quantity": item.quantity,
+                    "price": item.price,
+                    "line_total": item.price * item.quantity
+                }
+                for item in items
+            ]
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+
     def post(self, request, username, order_id):
         user = get_object_or_404(User, username=username)
-        order = get_object_or_404(Sale, oid=order_id, user=user, status="pending")
+        
 
-        serializer = OrderItemSerializer(data={
-            "order": order.id,
-            "product": request.data.get("product"),
-            "quantity": request.data.get("quantity"),
-            "price": request.data.get("price"),
-        })
+        order = get_object_or_404(
+            Sale,
+            oid=order_id,
+            user=user,
+            status="draft"
+        )
+        
+
+        serializer = OrderItemSerializer(
+            data={
+                "product": request.data.get("pid"),
+                "quantity": request.data.get("quantity"),
+            },
+            context={"order": order}
+        )
 
         if serializer.is_valid():
-            item = serializer.save()
-
-            # reduce stock
-            product = item.product
-            product.stock_quantity -= item.quantity
-            product.save(update_fields=["stock_quantity"])
-
+            serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 class OrderItemUpdateDeleteView(APIView):
