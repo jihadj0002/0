@@ -1,5 +1,6 @@
 from rest_framework import serializers
-from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message
+from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
+from django.db import transaction
 
 
 
@@ -50,7 +51,44 @@ class MessageSerializer(serializers.ModelSerializer):
 class SaleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Sale
-        fields = '__all__'
+        fields = "__all__"
+
+    def validate(self, data):
+        product = data.get("product")
+        quantity = data.get("quantity", 1)
+
+        if product and product.stock_quantity < quantity:
+            raise serializers.ValidationError("Not enough stock")
+
+        return data
+
+    @transaction.atomic
+    def create(self, validated_data):
+        product = validated_data.get("product")
+        quantity = validated_data.get("quantity", 1)
+
+        sale = super().create(validated_data)
+
+        if product:
+            product.stock_quantity -= quantity
+            product.save(update_fields=["stock_quantity"])
+
+        return sale
+    
+class OrderItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderItem
+        fields = "__all__"
+
+    def validate(self, data):
+        product = data["product"]
+        quantity = data["quantity"]
+
+        if product.stock_quantity < quantity:
+            raise serializers.ValidationError("Not enough stock")
+
+        return data
+
 
 class SettingSerializer(serializers.ModelSerializer):
     class Meta:

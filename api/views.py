@@ -13,11 +13,11 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
-
-from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages
+from django.db import transaction
+from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
-    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer
+    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer
 )
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -114,6 +114,115 @@ class UserOrderCreateView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+class OrderStartView(APIView):
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        customer_id = request.data.get("customer_id")
+        sale = Sale.objects.create(
+            user=user,
+            customer_id=customer_id,
+            status="draft"
+        )
+
+        return Response(
+            {
+                "order_id": sale.oid,
+                "message": "Order started"
+            },
+            status=status.HTTP_201_CREATED
+        )
+    
+class AddOrderItemView(APIView):
+    def post(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+        order = get_object_or_404(Sale, oid=order_id, user=user, status="pending")
+
+        serializer = OrderItemSerializer(data={
+            "order": order.id,
+            "product": request.data.get("product"),
+            "quantity": request.data.get("quantity"),
+            "price": request.data.get("price"),
+        })
+
+        if serializer.is_valid():
+            item = serializer.save()
+
+            # reduce stock
+            product = item.product
+            product.stock_quantity -= item.quantity
+            product.save(update_fields=["stock_quantity"])
+
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class OrderItemUpdateDeleteView(APIView):
+
+    def patch(self, request, pk):
+        item = get_object_or_404(OrderItem, pk=pk)
+        new_quantity = request.data.get("quantity")
+
+        if not new_quantity or int(new_quantity) <= 0:
+            return Response(
+                {"error": "Quantity must be greater than 0"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        diff = int(new_quantity) - item.quantity
+
+        if item.product.stock_quantity < diff:
+            return Response(
+                {"error": "Not enough stock"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item.product.stock_quantity -= diff
+        item.product.save(update_fields=["stock_quantity"])
+
+        item.quantity = new_quantity
+        item.save(update_fields=["quantity"])
+
+        return Response(OrderItemSerializer(item).data)
+
+    def delete(self, request, pk):
+        item = get_object_or_404(OrderItem, pk=pk)
+
+        # restore stock
+        product = item.product
+        product.stock_quantity += item.quantity
+        product.save(update_fields=["stock_quantity"])
+
+        item.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class ConfirmOrderView(APIView):
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = get_object_or_404(Sale, oid=order_id, status="pending")
+
+        items = order.items.all()
+        if not items.exists():
+            return Response(
+                {"error": "Order has no items"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        total = sum(item.price * item.quantity for item in items)
+
+        order.amount = total
+        order.status = "delivering"
+        order.save(update_fields=["amount", "status"])
+
+        return Response(
+            {
+                "order_id": order.oid,
+                "total": total,
+                "status": order.status
+            },
+            status=status.HTTP_200_OK
+        )
+
 
 
 
@@ -247,12 +356,11 @@ class GetConvoStatus(APIView):
 class GetLastMessages(APIView):
     def get(self, request, username, id):
         user = get_object_or_404(User, username=username)
-        convo = get_object_or_404(
-            Conversation,
-            customer_id=id,
-            user=user
-        )
+        convo = get_object_or_404(Conversation, customer_id=id, user=user)
+        # orders = get_object_or_404(Sale, customer_id=id, user=user)
+        current_product = convo.current_product
         is_ai_enabled = convo.is_ai_enabled
+
 
         messages_qs = (
             Message.objects
@@ -260,6 +368,9 @@ class GetLastMessages(APIView):
             .order_by('-timestamp')[:10]
         )
 
+        orders_qs = Sale.objects.filter(customer_id=id, user=user)
+        last_orders_qs = orders_qs.order_by('-created_at')[:2]
+        
         messages = reversed(messages_qs)
 
         conversation_text = "\n".join(
@@ -267,17 +378,35 @@ class GetLastMessages(APIView):
             for msg in messages
         )
 
+        orders_data = []
+        for order in last_orders_qs:
+            items = [
+                {
+                    "product_pid": item.product.pid,
+                    "product_name": item.product.name,
+                    "quantity": item.quantity,
+                    "price": str(item.price),
+                }
+                for item in order.items.all()
+            ]
+
+            orders_data.append({
+                "order_id": order.oid,
+                "status": order.status,
+                "amount": str(order.amount),
+                "created_at": order.created_at,
+                "items": items,
+            })
+
         return JsonResponse(
             {
                 "conversation_id": convo.id,
-                "is_ai_enabled": is_ai_enabled,
+                "is_ai_enabled": convo.is_ai_enabled,
                 "customer_id": convo.customer_id,
-                "conversation": conversation_text
+                "conversation": conversation_text,
+                "last_orders": orders_data,
+                "current_product": current_product,
             },
-            json_dumps_params={"ensure_ascii": False}
+            json_dumps_params={"ensure_ascii": False},
+            safe=False
         )
-
-
-
-        
-
