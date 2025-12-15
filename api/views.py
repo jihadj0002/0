@@ -297,13 +297,20 @@ class ConfirmOrderView(APIView):
 
         order.amount = total
         order.status = "pending"
-        order.save(update_fields=["amount", "status"])
+        order.customer_name = request.data.get("customer_name")
+        order.customer_address = request.data.get("customer_address")
+        order.customer_phone = request.data.get("customer_phone")
+
+        order.save(update_fields=["amount", "status", "customer_name", "customer_address", "customer_phone"])
 
         return Response(
             {
                 "order_id": order.oid,
                 "total": total,
-                "status": order.status
+                "status": order.status,
+                "customer_name": order.customer_name,
+                "customer_address": order.customer_address,
+                "customer_phone": order.customer_phone,
             },
             status=status.HTTP_200_OK
         )
@@ -480,6 +487,9 @@ class GetLastMessages(APIView):
                 "status": order.status,
                 "amount": str(order.amount),
                 "created_at": order.created_at,
+                "customer_name": order.customer_name,
+                "customer_address": order.customer_address,
+                "customer_phone": order.customer_phone,
                 "items": items,
             })
 
