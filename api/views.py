@@ -190,12 +190,33 @@ class AddOrderItemView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class OrderItemUpdateDeleteView(APIView):
 
-    def patch(self, request, pk):
-        item = get_object_or_404(OrderItem, pk=pk)
+    @transaction.atomic
+    def patch(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+
+        order = get_object_or_404(
+            Sale,
+            oid=order_id,
+            user=user,
+            status__in=["draft", "pending"]
+        )
+
+        pid = request.data.get("pid")
         new_quantity = request.data.get("quantity")
+
+        if not pid:
+            return Response(
+                {"error": "pid is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item = get_object_or_404(
+            OrderItem,
+            order=order,
+            product__pid=pid
+        )
 
         if not new_quantity or int(new_quantity) <= 0:
             return Response(
@@ -205,7 +226,7 @@ class OrderItemUpdateDeleteView(APIView):
 
         diff = int(new_quantity) - item.quantity
 
-        if item.product.stock_quantity < diff:
+        if diff > 0 and item.product.stock_quantity < diff:
             return Response(
                 {"error": "Not enough stock"},
                 status=status.HTTP_400_BAD_REQUEST
@@ -214,26 +235,56 @@ class OrderItemUpdateDeleteView(APIView):
         item.product.stock_quantity -= diff
         item.product.save(update_fields=["stock_quantity"])
 
-        item.quantity = new_quantity
+        item.quantity = int(new_quantity)
         item.save(update_fields=["quantity"])
 
-        return Response(OrderItemSerializer(item).data)
+        return Response(
+            {
+                "order_id": order.oid,
+                "pid": pid,
+                "quantity": item.quantity,
+                "price": item.price,
+                "line_total": item.price * item.quantity
+            },
+            status=status.HTTP_200_OK
+        )
 
-    def delete(self, request, pk):
-        item = get_object_or_404(OrderItem, pk=pk)
+    @transaction.atomic
+    def delete(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
 
-        # restore stock
-        product = item.product
-        product.stock_quantity += item.quantity
-        product.save(update_fields=["stock_quantity"])
+        order = get_object_or_404(
+            Sale,
+            oid=order_id,
+            user=user,
+            status__in=["draft", "pending"]
+        )
+
+        pid = request.data.get("pid")
+        if not pid:
+            return Response(
+                {"error": "pid is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item = get_object_or_404(
+            OrderItem,
+            order=order,
+            product__pid=pid
+        )
+
+        item.product.stock_quantity += item.quantity
+        item.product.save(update_fields=["stock_quantity"])
 
         item.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
 class ConfirmOrderView(APIView):
     @transaction.atomic
-    def post(self, request, order_id):
-        order = get_object_or_404(Sale, oid=order_id, status="pending")
+    def post(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+        order = get_object_or_404(Sale, user=user, oid=order_id, status="draft")
 
         items = order.items.all()
         if not items.exists():
@@ -245,7 +296,7 @@ class ConfirmOrderView(APIView):
         total = sum(item.price * item.quantity for item in items)
 
         order.amount = total
-        order.status = "delivering"
+        order.status = "pending"
         order.save(update_fields=["amount", "status"])
 
         return Response(
