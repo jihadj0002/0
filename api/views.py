@@ -453,6 +453,44 @@ class ConfirmOrderView(APIView):
         )
 
 
+class NewOrder(APIView):
+    @transaction.atomic
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        customer_id = request.data.get("customer_id")
+        product_id = request.data.get("pid")
+        quantity = request.data.get("quantity", 1)
+        customer_name = request.data.get("customer_name")
+        customer_address = request.data.get("customer_address")
+        customer_phone = request.data.get("customer_phone")
+        product = get_object_or_404(Product, pid=product_id)
+
+        sale = Sale.objects.create(
+            user=user,
+            customer_id=customer_id,
+            status="draft",
+            product="product",
+            quantity="quantity",
+            customer_name="customer_name",
+            customer_address="customer_address",
+            customer_phone="customer_phone",
+        )
+        order = sale
+        total = order.amount
+
+        return Response(
+            {
+                "order_id": order.oid,
+                "total": total,
+                "status": order.status,
+                "product": product,
+                "customer_name": order.customer_name,
+                "customer_address": order.customer_address,
+                "customer_phone": order.customer_phone,
+            },
+            status=status.HTTP_200_OK
+        )
+
 
 
 @method_decorator(csrf_exempt, name='dispatch')
