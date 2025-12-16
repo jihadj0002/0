@@ -444,6 +444,23 @@ class GetConvoStatus(APIView):
             "timestamp": convo.timestamp.strftime("%d %b, %Y"),
 
         })
+class SelectProductView(APIView):
+    def post(self, request, username, aid):
+        user = get_object_or_404(User, username=username)
+
+        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+
+        current_product = request.data.get("current_product")
+        
+
+        conversation.current_product = current_product
+        conversation.save(update_fields=["current_product"])
+
+        return Response({
+            "status": "success",
+            "message": f"Product {current_product} selected for conversation.",
+            "conversation_id": conversation.id,
+        }, status=status.HTTP_200_OK)
     
 class GetLastMessages(APIView):
     def get(self, request, username, id):

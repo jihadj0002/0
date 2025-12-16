@@ -28,6 +28,7 @@ urlpatterns = [
 
     # Conversation AI Management
     path('<str:username>/conv/', views.UserConvCreateView.as_view(), name='convo-handler'),
+    path('<str:username>/conv/<str:aid>/select_p', views.SelectProductView.as_view(), name='select-product'),
     path('<str:username>/conv/<str:aid>/update', views.UserConvUpdateView.as_view(), name='chat-convo-update'),
     path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
     path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
