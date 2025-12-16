@@ -132,6 +132,26 @@ class OrderStartView(APIView):
             status=status.HTTP_201_CREATED
         )
     
+class AddOrderItem(APIView):
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+
+        order, created = Sale.objects.get_or_create(user=user, status="draft", defaults={"customer_id": request.data.get("customer_id")})
+
+        serializer = OrderItemSerializer(
+            data={
+                "product": request.data.get("pid"),
+                "quantity": request.data.get("quantity"),
+            },
+            context={"order": order}
+        )
+
+        if serializer.is_valid(raise_exception=True):
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
 class AddOrderItemView(APIView):
 
     def get(self, request, username, order_id):
@@ -480,7 +500,7 @@ class GetLastMessages(APIView):
         )
 
         orders_qs = Sale.objects.filter(customer_id=id, user=user)
-        last_orders_qs = orders_qs.order_by('-created_at')[:2]
+        last_orders_qs = orders_qs.order_by('-created_at')[:1]
         
         messages = reversed(messages_qs)
 

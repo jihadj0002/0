@@ -20,6 +20,7 @@ urlpatterns = [
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
     
     path('<str:username>/orders/start', views.OrderStartView.as_view(), name='user-order-start'),
+    path('<str:username>/orders/items', views.AddOrderItemView.as_view(), name='user-order-add'),
     path('<str:username>/orders/<str:order_id>/items', views.AddOrderItemView.as_view(), name='user-order-add-item'),
     path('<str:username>/orders/<str:order_id>/edit', views.OrderItemUpdateDeleteView.as_view(), name='user-order-update-delete-item'),
     path('<str:username>/orders/<str:order_id>/confirm', views.ConfirmOrderView.as_view(), name='user-order-confirm'),
