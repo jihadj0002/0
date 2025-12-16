@@ -471,7 +471,7 @@ class NewOrder(APIView):
         sale = Sale.objects.create(
             user=user,
             customer_id=customer_id,
-            status="draft",
+            status="pending",
             customer_name=customer_name,
             customer_address=customer_address,
             customer_phone=customer_phone,
