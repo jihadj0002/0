@@ -273,8 +273,6 @@ class OrderItem(models.Model):
     quantity = models.PositiveIntegerField(default=1)
     price = models.DecimalField(max_digits=10, decimal_places=2)
 
-    
-
 
 
 # -----------------------

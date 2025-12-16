@@ -459,7 +459,7 @@ class NewOrder(APIView):
         user = get_object_or_404(User, username=username)
 
         customer_id = request.data.get("customer_id")
-        product_id = request.data.get("pid")
+        product_id = request.data.get("product_id")
         quantity = int(request.data.get("quantity", 1))
         customer_name = request.data.get("customer_name")
         customer_address = request.data.get("customer_address")
