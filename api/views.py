@@ -142,6 +142,7 @@ class AddOrderItemView(APIView):
             oid=order_id,
             user=user
         )
+        
 
         items = order.items.select_related("product")
 
@@ -167,12 +168,13 @@ class AddOrderItemView(APIView):
         user = get_object_or_404(User, username=username)
         
 
-        order = get_object_or_404(
-            Sale,
-            oid=order_id,
-            user=user,
-            status="draft"
-        )
+        # order = get_object_or_404(
+        #     Sale,
+        #     oid=order_id,
+        #     user=user,
+        #     status="draft"
+        # )
+        order, created = Sale.objects.get_or_create(user=user, status="draft", defaults={"customer_id": request.data.get("customer_id")})
         
 
         serializer = OrderItemSerializer(
@@ -183,7 +185,7 @@ class AddOrderItemView(APIView):
             context={"order": order}
         )
 
-        if serializer.is_valid():
+        if serializer.is_valid(raise_exception=True):
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
