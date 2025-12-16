@@ -152,6 +152,86 @@ class AddOrderItem(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
+    def get(self, request, username):
+        user = get_object_or_404(User, username=username)
+        customer_id = request.data.get("customer_id")
+
+        order = get_object_or_404(user=user, status="draft", customer_id=customer_id)
+        
+
+        items = order.items.select_related("product")
+
+        data = {
+            "order_id": order.oid,
+            "status": order.status,
+            "amount": order.amount,
+            "items": [
+                {
+                    "id": item.id,
+                    "pid": item.product.pid,
+                    "quantity": item.quantity,
+                    "price": item.price,
+                    "line_total": item.price * item.quantity
+                }
+                for item in items
+            ]
+        }
+
+        return Response(data, status=status.HTTP_200_OK)
+    
+    @transaction.atomic
+    def patch(self, request, username):
+        user = get_object_or_404(User, username=username)
+        customer_id = request.data.get("customer_id")
+
+        order = get_object_or_404(user=user, status="draft", customer_id=customer_id)
+        
+        pid = request.data.get("pid")
+        new_quantity = request.data.get("quantity")
+
+        if not pid:
+            return Response(
+                {"error": "pid is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item = get_object_or_404(
+            OrderItem,
+            order=order,
+            product__pid=pid
+        )
+
+        if not new_quantity or int(new_quantity) <= 0:
+            return Response(
+                {"error": "Quantity must be greater than 0"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        diff = int(new_quantity) - item.quantity
+
+        if diff > 0 and item.product.stock_quantity < diff:
+            return Response(
+                {"error": "Not enough stock"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        item.product.stock_quantity -= diff
+        item.product.save(update_fields=["stock_quantity"])
+
+        item.quantity = int(new_quantity)
+        item.save(update_fields=["quantity"])
+
+        return Response(
+            {
+                "order_id": order.oid,
+                "pid": pid,
+                "quantity": item.quantity,
+                "price": item.price,
+                "line_total": item.price * item.quantity
+            },
+            status=status.HTTP_200_OK
+        )
+    
 class AddOrderItemView(APIView):
 
     def get(self, request, username, order_id):
