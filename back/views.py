@@ -131,6 +131,7 @@ def get_sales_analytics(request):
 
 
 @login_required
+
 def get_chat_metrics(request):
     user = request.user
     range_key = request.GET.get("range", "30D")
@@ -144,26 +145,28 @@ def get_chat_metrics(request):
     }
     start_date = now - ranges.get(range_key, timedelta(days=30))
 
-    conversations = Conversation.objects.filter(
-        user=user,
-        messages__timestamp__gte=start_date
-    ).distinct()
+    # -------------------------------------------------
+    # TOTAL CONVERSATIONS (ALL, USER-BASED)
+    # -------------------------------------------------
+    total_conversations = Conversation.objects.filter(user=user).count()
 
-    total_conversations = conversations.count()
-
-    replied_conversations = conversations.filter(
-        messages__sender__in=["bot", "agent"]
-    ).distinct().count()
-
-    avg_messages = Message.objects.filter(
-        conversation__in=conversations
+    # -------------------------------------------------
+    # TOTAL SENT MESSAGES (ALL CONVERSATIONS)
+    # -------------------------------------------------
+    total_messages = Message.objects.filter(
+        conversation__user=user, sender='bot', timestamp__gte=start_date
     ).count()
 
+    # -------------------------------------------------
+    # AVERAGE MESSAGES PER CONVERSATION
+    # -------------------------------------------------
     average_messages = round(
-        avg_messages / total_conversations, 1
+        total_messages / total_conversations, 1
     ) if total_conversations else 0
 
-    # ---- Chart Data (messages per day) ----
+    # -------------------------------------------------
+    # CHART DATA (MESSAGES PER DAY IN RANGE)
+    # -------------------------------------------------
     chart_qs = (
         Message.objects.filter(
             conversation__user=user,
@@ -179,11 +182,10 @@ def get_chat_metrics(request):
 
     return JsonResponse({
         "total_conversations": total_conversations,
-        "replied_messages": replied_conversations,
+        "replied_messages": total_messages,  # rename in frontend if you want
         "average_messages": average_messages,
         "chart_data": chart_data,
     })
-
 
 @login_required
 def orders(request):
