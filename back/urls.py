@@ -26,6 +26,7 @@ urlpatterns = [
     
 
 
+    path("chat-metrics/", views.get_chat_metrics, name="chat_metrics"),
     path("order-analytics/", views.get_order_analytics, name="order_analytics"),
     path("sales-analytics/", views.get_sales_analytics, name="sales_analytics"),
     

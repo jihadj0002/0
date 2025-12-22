@@ -81,9 +81,12 @@
     <div class="panel-header">
       <div><h2>Message Status Analytics</h2><div class="panel-sub" id="msg-range-label">Overview</div></div>
       <div class="time-range">
-        <button class="time-btn active">1D</button><button class="time-btn">7D</button>
-        <button class="time-btn">30D</button><button class="time-btn">6M</button>
-      </div>
+  <button class="time-btn active" data-range="1D">1D</button>
+  <button class="time-btn" data-range="7D">7D</button>
+  <button class="time-btn" data-range="30D">30D</button>
+  <button class="time-btn" data-range="6M">6M</button>
+</div>
+
     </div>
     <div class="chart-wrap">
       <svg viewBox="0 0 300 120" class="sparkline" preserveAspectRatio="none">
@@ -92,9 +95,9 @@
       </svg>
     </div>
     <div class="sales-stats">
-      <div><div class="s-label">Total Messages</div><div class="s-value">3,242</div></div>
-      <div><div class="s-label">Replied</div><div class="s-value">3,020</div></div>
-      <div><div class="s-label">Pending</div><div class="s-value">222</div></div>
+      <div><div class="s-label">Total Conversations</div><div class="s-value" id="total-conversations">{{ total_conversations }}</div></div>
+      <div><div class="s-label">Total Sent Messages</div><div class="s-value" id="replied-messages">{{ replied_messages }}</div></div>
+      <div><div class="s-label">Average</div><div class="s-value" id="average-messages">{{ average_messages }}</div></div>
     </div>
   </div>
 
@@ -231,7 +234,90 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 </script>
+{% comment %} Chat Analytics {% endcomment %}
+{% comment %} Chat Analytics {% endcomment %}
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const buttons = document.querySelectorAll(".time-btn");
 
+  const totalEl = document.getElementById("total-conversations");
+  const repliedEl = document.getElementById("replied-messages");
+  const avgEl = document.getElementById("average-messages");
+  const chartLine = document.getElementById("msg-chart-line");
+  const rangeLabel = document.getElementById("msg-range-label");
+
+  const labels = {
+    "1D": "Last 24 Hours",
+    "7D": "Last 7 Days",
+    "30D": "Last 30 Days",
+    "6M": "Last 6 Months"
+  };
+
+  loadChatAnalytics("30D");
+
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      const range = btn.dataset.range;
+      rangeLabel.textContent = labels[range] || "Overview";
+      loadChatAnalytics(range);
+    });
+  });
+
+  function loadChatAnalytics(range) {
+    totalEl.textContent = "...";
+    repliedEl.textContent = "...";
+    avgEl.textContent = "...";
+
+    fetch(`{% url 'back:chat_metrics' %}?range=${range}`)
+      .then(res => {
+        if (!res.ok) throw new Error("Request failed");
+        return res.json();
+      })
+      .then(data => {
+        totalEl.textContent = data.total_conversations;
+        repliedEl.textContent = data.replied_messages;
+        avgEl.textContent = data.average_messages;
+
+        updateSparkline(data.chart_data || []);
+      })
+      .catch(err => {
+        console.error(err);
+        totalEl.textContent = "–";
+        repliedEl.textContent = "–";
+        avgEl.textContent = "–";
+      });
+  }
+
+  function updateSparkline(values) {
+    if (!values.length) {
+      chartLine.setAttribute("points", "0,100 300,100");
+      return;
+    }
+
+    const max = Math.max(...values, 1);
+    const width = 300;
+    const height = 100;
+    const step = width / (values.length - 1);
+
+    const points = values
+      .map((v, i) => {
+        const x = i * step;
+        const y = height - (v / max) * height;
+        return `${x},${y}`;
+      })
+      .join(" ");
+
+    chartLine.setAttribute("points", points);
+  }
+});
+</script>
+
+
+
+{% comment %} End Msg analytics {% endcomment %}
 
 <script>
 
@@ -306,6 +392,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 </script>
+
 
 
 

@@ -3,6 +3,7 @@ from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale, Message
 # Create your views here.
+from django.db.models.functions import TruncDay
 
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -130,87 +131,57 @@ def get_sales_analytics(request):
 
 
 @login_required
-def get_dashboard_metrics(request):
-    """Return dashboard summary metrics as JSON.
-
-    Metrics returned:
-      - avg_order: average completed order amount in the selected range (string formatted)
-      - chat_sales: number of completed sales in range (int)
-      - response_time: approximate average response time as 'Hh Mm' based on matching sale times (or 'N/A')
-      - total_messages: count of Conversation objects in range (int)
-      - replied: conversations with non-empty response_text (int)
-      - pending: conversations without a response_text (int)
-
-    Notes/assumptions:
-      - There is no explicit response timestamp on Conversation; to approximate response time we match
-        Conversations to Sales by `customer_id` and compute the delta between conversation.timestamp and
-        the earliest Sale.created_at that occurs after the conversation. If no matches found the response_time
-        is returned as 'N/A'. This is a pragmatic heuristic given existing models.
-    """
+def get_chat_metrics(request):
     user = request.user
     range_key = request.GET.get("range", "30D")
 
     now = timezone.now()
-    if range_key == "1D":
-        start_date = now - timedelta(days=1)
-    elif range_key == "7D":
-        start_date = now - timedelta(days=7)
-    elif range_key == "30D":
-        start_date = now - timedelta(days=30)
-    elif range_key == "6M":
-        start_date = now - timedelta(days=180)
-    else:
-        start_date = now - timedelta(days=30)
+    ranges = {
+        "1D": timedelta(days=1),
+        "7D": timedelta(days=7),
+        "30D": timedelta(days=30),
+        "6M": timedelta(days=180),
+    }
+    start_date = now - ranges.get(range_key, timedelta(days=30))
 
-    # Sales-based metrics
-    sales = Sale.objects.filter(user=user, created_at__gte=start_date)
-    completed_sales_qs = sales.filter(status__iexact="completed")
-    chat_sales = completed_sales_qs.count()
-    avg_order_val = completed_sales_qs.aggregate(avg=Avg('amount'))['avg'] or 0
+    conversations = Conversation.objects.filter(
+        user=user,
+        messages__timestamp__gte=start_date
+    ).distinct()
 
-    # Conversation-based metrics
-    conversations = Conversation.objects.filter(user=user, timestamp__gte=start_date)
-    total_messages = conversations.count()
-    replied_qs = conversations.filter(response_text__isnull=False).exclude(response_text="")
-    replied = replied_qs.count()
-    pending = total_messages - replied
+    total_conversations = conversations.count()
 
-    # Approximate response time by matching conversations to sales (by customer_id)
-    response_deltas = []
-    # iterate over replied conversations and try to find a sale occurring after the conversation timestamp
-    for conv in replied_qs:
-        # find earliest sale by the same customer that occurred after the conversation
-        sale = (
-            Sale.objects.filter(user=user, customer_id=conv.customer_id, created_at__gte=conv.timestamp)
-            .order_by('created_at')
-            .first()
+    replied_conversations = conversations.filter(
+        messages__sender__in=["bot", "agent"]
+    ).distinct().count()
+
+    avg_messages = Message.objects.filter(
+        conversation__in=conversations
+    ).count()
+
+    average_messages = round(
+        avg_messages / total_conversations, 1
+    ) if total_conversations else 0
+
+    # ---- Chart Data (messages per day) ----
+    chart_qs = (
+        Message.objects.filter(
+            conversation__user=user,
+            timestamp__gte=start_date
         )
-        if sale:
-            delta = sale.created_at - conv.timestamp
-            if delta.total_seconds() >= 0:
-                response_deltas.append(delta)
+        .annotate(day=TruncDay("timestamp"))
+        .values("day")
+        .annotate(count=Count("id"))
+        .order_by("day")
+    )
 
-    if response_deltas:
-        avg_seconds = sum(d.total_seconds() for d in response_deltas) / len(response_deltas)
-        hours = int(avg_seconds // 3600)
-        minutes = int((avg_seconds % 3600) // 60)
-        response_time_str = f"{hours}h {minutes}m"
-    else:
-        response_time_str = "N/A"
-
-    # Format average order to two decimals with currency-like formatting
-    try:
-        avg_order_formatted = f"{float(avg_order_val):.2f}"
-    except Exception:
-        avg_order_formatted = str(avg_order_val)
+    chart_data = [row["count"] for row in chart_qs]
 
     return JsonResponse({
-        "avg_order": avg_order_formatted,
-        "chat_sales": chat_sales,
-        "response_time": response_time_str,
-        "total_messages": total_messages,
-        "replied": replied,
-        "pending": pending,
+        "total_conversations": total_conversations,
+        "replied_messages": replied_conversations,
+        "average_messages": average_messages,
+        "chart_data": chart_data,
     })
 
 
