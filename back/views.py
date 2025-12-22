@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
-from .models import Product, Conversation, Sale, Message
+from .models import Product, Conversation, Sale, Message, Integration
 # Create your views here.
 from django.db.models.functions import TruncDay
 
@@ -304,7 +304,28 @@ def stats(request):
 
 @login_required
 def sett(request):
-    return render(request, "back/options.html", {"user": request.user})
+    user = request.user
+
+    integration, created = Integration.objects.get_or_create(
+        user=user,
+        platform="messenger",
+        defaults={
+            "is_enabled": False,
+            "is_connected": False,
+        }
+    )
+
+    if request.method == "POST":
+        integration.webhook_url = request.POST.get("webhook_url")
+        integration.access_token = request.POST.get("access_token")
+        integration.is_enabled = request.POST.get("is_enabled") == "on"
+        integration.save()
+
+        return redirect("back:options")  # update with your URL name
+
+    return render(request, "back/options.html", {
+        "integration": integration
+    })
 
 @login_required
 def add_product(request):

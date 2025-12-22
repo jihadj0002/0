@@ -70,6 +70,29 @@ class UserProfile(models.Model):
     def __str__(self):
         return f"{self.user.username} ({self.plan})"
 
+# -----------------------
+# User Profile Integrations
+# -----------------------
+class Integration(models.Model):
+    PLATFORM_CHOICES = [
+        ("messenger", "Messenger"),
+        ("whatsapp", "WhatsApp"),
+        ("instagram", "Instagram"),
+        ("telegram", "Telegram"),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="integrations")
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
+
+    webhook_url = models.URLField(blank=True, null=True)
+    access_token = models.TextField(blank=True, null=True)
+
+    is_enabled = models.BooleanField(default=False)
+    is_connected = models.BooleanField(default=False)
+
+    last_verified_at = models.DateTimeField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
 
 # -----------------------
 # Products
