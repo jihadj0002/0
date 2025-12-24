@@ -116,6 +116,7 @@ body{background:var(--bg);}
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 14px 20px;
   gap: 12px;
 }
 
@@ -146,11 +147,38 @@ body{background:var(--bg);}
 }
 
 
-.header-avatar{
-  width:48px; height:48px;
-  border-radius:50%;
-  background:#ddd;
+.header-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
 }
+
+.header-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
+.chat-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
+}
+
+.chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
 
 .chat-messages{
   flex:1;
@@ -413,7 +441,10 @@ body{background:var(--bg);}
         {% for convo in all_convo %}
           <a href="?cid={{ convo.id }}" onclick="openChat()" style="text-decoration:none; color:inherit;">
             <div class="chat-item {% if selected_convo and selected_convo.id == convo.id %}active{% endif %}">
-              <div class="chat-avatar"></div>
+              <div class="chat-avatar">
+                <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg"
+                  alt="Avatar">
+              </div>
               <div class="chat-info">
                 <div class="name">{{ convo.customer_id }}</div>
                 <div class="preview">
@@ -436,7 +467,10 @@ body{background:var(--bg);}
       <div class="mobile-back" onclick="closeChat()">← Back</div>
 
       <div class="header-left">
-        <div class="header-avatar"></div>
+        <div class="header-avatar">
+        <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg"
+            alt="Avatar">
+        </div>
         <div class="header-info">
           <strong>{{ selected_convo.customer_id }}</strong><br>
           <small>

@@ -39,7 +39,7 @@
 </div>
 
 <div class="cards">
-  <div class="card"><div class="card-title">Sales</div><div class="card-value">${{ total_sales|floatformat:2 }}</div></div>
+  <div class="card"><div class="card-title">Sales</div><div class="card-value">৳{{ total_sales|floatformat:2 }}</div></div>
   <div class="card"><div class="card-title">Total Conversations</div><div class="card-value">{{ total_conversations }}</div></div>
   <div class="card"><div class="card-title">Conversion Rate</div><div class="card-value">{{ conversion_rate }}</div></div>
   <div class="card"><div class="card-title">Active Products</div><div class="card-value">{{ active_products }}</div></div>
@@ -117,7 +117,7 @@
       </svg>
     </div>
     <div class="sales-stats">
-      <div><div class="s-label">Avg Order</div><div class="s-value" id="avg-orders">${{total_sales}}</div></div>
+      <div><div class="s-label">Avg Order</div><div class="s-value" id="avg-orders">৳{{total_sales}}</div></div>
       <div><div class="s-label">Chat Sales</div><div class="s-value" id="chat-sales">{{orders_count}}</div></div>
       <div><div class="s-label">Response Time</div><div class="s-value" id="response-time">1 Min</div></div>
     </div>
@@ -373,7 +373,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const pending = data.pending ?? 0;
 
         // Example placeholders — customize as needed
-        avgOrdersEl.textContent = `$${totalOrders * 10}`; // fake avg revenue
+        avgOrdersEl.textContent = `৳${totalOrders * 10}`; // fake avg revenue
         chatSalesEl.textContent = completed;              // completed orders
         responseTimeEl.textContent = pending + " mins";   // fake metric
 
