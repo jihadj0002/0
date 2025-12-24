@@ -112,13 +112,39 @@ body{background:var(--bg);}
   overflow:hidden;
 }
 
-.chat-header{
-  padding:14px 20px;
-  border-bottom:1px solid var(--border);
-  display:flex;
-  align-items:center;
-  gap:12px;
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-info strong {
+  font-size: 16px;
+}
+
+.header-info small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.header-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
 
 .header-avatar{
   width:48px; height:48px;
@@ -235,12 +261,137 @@ body{background:var(--bg);}
   color:white;
   border:none;
 }
+  /* Back button */
+  .mobile-back {
+    display: none;
+  }
 
 /* responsive */
 @media (max-width: 920px) {
   .layout { grid-template-columns: 1fr; height: auto; }
   .chat-list, .chat-window, .profile { height: auto; }
 }
+
+
+/* ---------- MOBILE VIEW FIRST ---------- */
+@media (max-width: 768px) {
+
+  body {
+    overflow: hidden;
+    margin: 0;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    height: 100vh;
+    padding: 0;
+  }
+
+  .chat-list,
+  .chat-window {
+    border-radius: 0;
+    height: 100vh;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .profile {
+    display: none;
+  }
+
+  /* Chat window visibility */
+  .chat-list  {
+    display: flex;
+  }
+
+  .layout.chat-open .chat-list {
+    display: none;
+  }
+
+  .layout.chat-open .chat-window  .chat-input {
+    display: flex;
+  }
+  .header-btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Header sticky */
+  .chat-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 10px;
+    flex-shrink: 0;
+  }
+
+  /* Messages scrollable */
+  .chat-messages {
+    flex: 1;               /* take remaining height */
+    overflow-y: auto;      /* scroll if overflow */
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .msg {
+    max-width: 90%;
+    font-size: 15px;
+    word-wrap: break-word;
+  }
+
+  /* Footer (input area) sticky at bottom */
+.chat-input {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+  .chat-input button {
+    padding: 8px 12px;
+    font-size: 14px;
+    
+    border-radius: 10px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+  }
+
+  /* Touch-friendly chat items */
+  .chat-item {
+    padding: 16px;
+  }
+
+  /* Back button for mobile */
+  .mobile-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+}
+
+
 </style>
 {% endblock %}
 
@@ -260,7 +411,7 @@ body{background:var(--bg);}
     <div class="chat-list-body">
       {% if all_convo %}
         {% for convo in all_convo %}
-          <a href="?cid={{ convo.id }}" style="text-decoration:none; color:inherit;">
+          <a href="?cid={{ convo.id }}" onclick="openChat()" style="text-decoration:none; color:inherit;">
             <div class="chat-item {% if selected_convo and selected_convo.id == convo.id %}active{% endif %}">
               <div class="chat-avatar"></div>
               <div class="chat-info">
@@ -282,8 +433,11 @@ body{background:var(--bg);}
   <div class="chat-window">
     {% if selected_convo %}
       <div class="chat-header">
+      <div class="mobile-back" onclick="closeChat()">← Back</div>
+
+      <div class="header-left">
         <div class="header-avatar"></div>
-        <div>
+        <div class="header-info">
           <strong>{{ selected_convo.customer_id }}</strong><br>
           <small>
             {% if selected_convo.is_ai_enabled %}
@@ -294,6 +448,20 @@ body{background:var(--bg);}
           </small>
         </div>
       </div>
+
+      {% if selected_convo.is_ai_enabled %}
+        <button class="header-btn"
+                onclick="toggleAI('{% url 'bot-disable' username=user id=selected_convo.id %}')">
+          Disable AI
+        </button>
+      {% else %}
+        <button class="header-btn"
+                onclick="toggleAI('{% url 'bot-enable' username=user id=selected_convo.id %}')">
+          Enable AI
+        </button>
+      {% endif %}
+    </div>
+
 
       <div class="chat-messages" id="chatMessages">
         {% if messages %}
@@ -497,4 +665,27 @@ document.addEventListener("DOMContentLoaded", function() {
   }
 });
 </script>
+
+
+{% comment %} Mobile view adjustments {% endcomment %}
+
+<script>
+function openChat() {
+  document.querySelector('.layout')?.classList.add('chat-open');
+}
+
+function closeChat() {
+  document.querySelector('.layout')?.classList.remove('chat-open');
+  history.pushState({}, "", window.location.pathname);
+}
+
+/* Auto open chat if cid exists (refresh / direct link) */
+document.addEventListener("DOMContentLoaded", function () {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('cid')) {
+    document.querySelector('.layout')?.classList.add('chat-open');
+  }
+});
+</script>
+
 {% endblock %}
