@@ -1,150 +1,161 @@
+{% extends 'back/base.html' %}
 {% load static %}
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Settings</title>
-  <style>
-/* Panel body */
-.panel-body{margin-top:12px; display:flex; flex-direction:column; gap:16px}
-.form label{font-weight:600; margin-top:8px; margin-bottom:4px; display:block}
-.form input, .form textarea{
-  width:100%; padding:10px 12px; border:1px solid #e6eefc;
-  border-radius:10px; font-size:14px; resize:vertical;
-}
-textarea{min-height:100px}
 
-/* Toggles */
-.toggle-row{display:flex; align-items:center; justify-content:space-between; margin-top:12px}
-.switch{position:relative; display:inline-block; width:44px; height:24px}
-.switch input{display:none}
-.slider{position:absolute; cursor:pointer; inset:0; background:#e6eefc; border-radius:999px; transition:0.3s}
-.slider:before{content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:white; border-radius:50%; transition:transform .3s}
-.switch input:checked + .slider{background:linear-gradient(90deg,var(--accent),#60a5fa)}
-.switch input:checked + .slider:before{transform:translateX(20px)}
+{% block title %}Dashboard | Matrix AI{% endblock %}
 
-/* Tabs */
-.tabs{display:flex; gap:8px; margin:10px 0}
-.tab{padding:8px 14px; border-radius:8px; border:1px solid #e6eefc; background:var(--soft); cursor:pointer; font-weight:600}
-.tab.active{background:var(--accent); color:#fff}
-.tab-content{margin-top:14px}
-.tab-content.hidden{display:none}
 
-/* Buttons */
-.form-actions{margin-top:16px; display:flex; gap:12px}
-.btn-secondary{background:#f1f5f9; color:#475569; border:none; padding:10px 16px; border-radius:10px; cursor:pointer; font-weight:600}
-.btn-secondary:hover{background:#e2e8f0}
 
-/* Integrations */
-.integrations-list{list-style:none; padding:0; margin-top:8px}
-.integrations-list li{padding:6px 0; font-weight:600}
-.dot{margin-left:8px; font-size:14px}
-.dot.off{color:#9ca3af}
-.dot.connected{color:green}
-</style>
+{% block extra_css %}
+
 
 <style>
-:root{
-  --bg:#f7fbff; --panel:#ffffff; --muted:#6b7280; --accent:#2563eb; --soft:#eef2ff;
-  --radius:12px; --shadow:0 6px 20px rgba(16,24,40,0.08);
-  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+
+/* ==============================
+   FORM STYLES
+============================== */
+.form label {
+  font-weight: 600;
+  margin-bottom: 6px;
+  display: block;
 }
-*{box-sizing:border-box}
-html,body,#root{height:100%}
-body{
-  margin:0; background:var(--bg); color:#0f172a; -webkit-font-smoothing:antialiased;
+
+.form input,
+.form textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border, #e6eefc);
+  border-radius: 10px;
+  font-size: 14px;
 }
-.app{display:flex; min-height:100vh}
 
-/* SIDEBAR */
-.sidebar{width:260px; background:linear-gradient(180deg,#fff,#fbfdff); padding:28px; border-right:1px solid #eef2f6}
-.brand{display:flex; align-items:center; gap:12px; margin-bottom:18px}
-.logo{width:44px; height:44px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#60a5fa); color:white; display:flex; align-items:center; justify-content:center; font-weight:700}
-.brand-text{font-weight:700}
-.nav{display:flex; flex-direction:column; gap:6px; margin-top:18px}
-.nav-item{padding:10px 12px; border-radius:8px; color:#0f172a; text-decoration:none; font-weight:600; opacity:0.88}
-.nav-item:hover{background:var(--soft)}
-.nav-item.active{background:linear-gradient(90deg,#eef2ff,#f5faff); box-shadow:var(--shadow)}
-
-/* MAIN */
-.main{flex:1; display:flex; flex-direction:column}
-.topbar{display:flex; justify-content:space-between; align-items:center; padding:20px 28px; background:transparent}
-.search-wrap{flex:1; max-width:640px}
-.search{width:100%; padding:10px 14px; border-radius:10px; border:1px solid #e6eefc}
-.top-actions{display:flex; align-items:center; gap:12px}
-.btn-primary{background:var(--accent); color:white; border:none; padding:10px 16px; border-radius:10px; font-weight:700; cursor:pointer}
-.avatar{width:40px; height:40px; border-radius:50%; background:#eef2ff; display:flex; align-items:center; justify-content:center; font-weight:700}
-
-/* CONTENT */
-.content{padding:20px 28px 40px}
-.page-header h1{margin:0; font-size:28px}
-.page-header .sub{color:var(--muted); margin-top:6px}
-
-.filters .mini-search{padding:8px 10px; border-radius:10px; border:1px solid #eef2f6}
-
-.layout-2cols{display:grid; grid-template-columns:1fr 420px; gap:18px; margin-top:20px}
-.panel{background:var(--panel); padding:16px; border-radius:12px; box-shadow:var(--shadow)}
-.panel-header{display:flex; justify-content:space-between; align-items:center}
-
-/* Table */
-.conversations-table{width:100%; border-collapse:collapse; margin-top:12px}
-.conversations-table th{text-align:left; color:var(--muted); font-size:13px; padding:8px 0}
-.conversations-table td{padding:12px 0; border-top:1px solid #f3f6fb}
-
-/* Status Badges */
-.badge{padding:6px 10px; border-radius:999px; font-weight:700; font-size:13px}
-.badge.pending{background:#fffbeb; color:#92400e}
-.badge.success{background:#ecfdf5; color:#065f46}
-.badge.closed{background:#f1f5f9; color:#475569}
-
-/* Messages */
-.messages{display:flex; flex-direction:column; gap:10px}
-.msg{padding:10px 14px; border-radius:12px; max-width:80%; line-height:1.4}
-.msg.from{background:var(--soft); align-self:flex-start}
-.msg.to{background:var(--accent); color:white; align-self:flex-end}
-
-/* Input bar */
-.input-bar input{flex:1; padding:10px; border-radius:10px; border:1px solid #eef2f6}
-.input-bar button{padding:10px 16px; border-radius:10px; border:none; background:var(--accent); color:#fff; font-weight:600; cursor:pointer}
-
-/* Responsive */
-@media (max-width:1000px){
-  .sidebar{display:none}
-  .layout-2cols{grid-template-columns:1fr}
-
-  
+.form input:focus,
+.form textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
+
+.form textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+/* Read-only webhook input */
+.readonly-input {
+  background: #f1f5f9;
+  cursor: pointer;
+}
+
+/* ==============================
+   TOGGLE SWITCH
+============================== */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input {
+  display: none;
+}
+
+.slider {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #e5e7eb;
+  cursor: pointer;
+  transition: 0.25s;
+}
+
+.slider::before {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  top: 3px;
+  left: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: 0.25s;
+}
+
+.switch input:checked + .slider {
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+}
+
+.switch input:checked + .slider::before {
+  transform: translateX(20px);
+}
+
+/* ==============================
+   INTEGRATIONS LIST
+============================== */
+.future-integrations h4 {
+  margin-bottom: 6px;
+}
+
+.integrations-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.integrations-list li {
+  padding: 6px 0;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dot {
+  font-size: 14px;
+}
+
+.dot.off {
+  color: #9ca3af;
+}
+
+.dot.connected {
+  color: #22c55e;
+}
+
+/* ==============================
+   RESPONSIVE TWEAKS
+============================== */
+@media (max-width: 600px) {
+  .panel {
+    padding: 14px;
+  }
+
+  .form input,
+  .form textarea {
+    font-size: 15px;
+  }
+}
+
+
 </style>
-</head>
-<body>
-  <div class="app">
-    <!-- Sidebar -->
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="logo">MA</div>
-        <div class="brand-text">Matrix AI</div>
-      </div>
-      <nav class="nav">
-        <a class="nav-item" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
-        <!-- <a class="nav-item" href="{% url 'back:c_dashboard' %}">💬 Conversations</a> -->
-        <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a>
-        <a class="nav-item" href="{% url 'back:orders' %}">🧾 Orders</a>
-        {% comment %} <a class="nav-item" href="{% url 'back:stats' %}">📊 Stats</a> {% endcomment %}
-        {% comment %} <a class="nav-item active" href="{% url 'back:options' %}">⚙️ Settings</a> {% endcomment %}
-        <a class="nav-item" href="{% url 'front:logout' %}">⚙️ Logout</a>
-      </nav>
-    </aside>
 
-    <!-- Main -->
-    <main class="main">
-      <!-- Topbar -->
-      <div class="topbar">
-        <div class="search-wrap"></div>
-        <div class="top-actions">
-          <div class="avatar">U</div>
-        </div>
-      </div>
+
+
+
+{% endblock %}
+
+
+{% block content %}
+
+<!-- Main -->
+    
+      
 
       <!-- Content -->
       <div class="content">
@@ -211,9 +222,14 @@ body{
   </div>
 </div>
 
-    </main>
-  </div>
-</body>
+    
+
+
+{% endblock %}
+
+
+{% block extra_js %}
+
 <script>
   function copyWebhook(input) {
     input.select();
@@ -229,4 +245,5 @@ body{
       });
   }
 </script>
-</html>
+
+{% endblock %}

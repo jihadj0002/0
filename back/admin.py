@@ -1,8 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import UserProfile, Product, Conversation, Sale, Setting, ProductImages
-
+from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration
 # -----------------------
 # Custom User Admin
 # -----------------------
@@ -71,6 +70,13 @@ class ConversationAdmin(admin.ModelAdmin):
     search_fields = ("customer_id", "user__email", "message_text")
     ordering = ("-timestamp",)
 
+
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ("conversation", "sender", "text", "timestamp")
+    list_filter = ("sender",)
+    search_fields = ("sender", "conversation", "text")
+    ordering = ("-timestamp",)
+
 # -----------------------
 # Sale Admin
 # -----------------------
@@ -81,7 +87,16 @@ class SaleAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 
 # -----------------------
-# Setting Admin
+# IntegrationAdmin Admin
+# -----------------------
+class IntegrationAdmin(admin.ModelAdmin):
+    list_display = ("platform", "user", "webhook_url", "access_token", "created_at", "is_enabled")
+    list_filter = ("platform",)
+    search_fields = ("user",)
+    ordering = ("-created_at",)
+
+# -----------------------
+# SettingAdmin Admin
 # -----------------------
 class SettingAdmin(admin.ModelAdmin):
     list_display = ("platform", "user", "webhook_url", "created_at", "updated_at")
@@ -98,4 +113,6 @@ admin.site.register(Product, ProductAdmin)
 admin.site.register(Conversation, ConversationAdmin)
 admin.site.register(Sale, SaleAdmin)
 admin.site.register(Setting, SettingAdmin)
+admin.site.register(Integration, IntegrationAdmin)
+admin.site.register(Message, MessageAdmin)
 # admin.site.register(ProductImages, ProductImagesAdmin)
