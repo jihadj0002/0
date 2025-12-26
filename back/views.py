@@ -215,7 +215,7 @@ def update_order_status(request):
 
 @login_required
 def c_dashboard(request):
-    all_convo = Conversation.objects.filter(user=request.user)
+    all_convo = Conversation.objects.filter(user=request.user).order_by('-timestamp')
 
     # Get selected conversation ID from URL query (?cid=123)
     convo_id = request.GET.get("cid")
