@@ -128,6 +128,22 @@
   color: #22c55e;
 }
 
+/* Buttons & Avatar */
+.btn-danger {
+  background: #8d3232ff;
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-danger:hover {
+  background: #770000ff;
+}
+
 /* ==============================
    RESPONSIVE TWEAKS
 ============================== */
@@ -161,6 +177,9 @@
       <div class="content">
   <div class="page-header">
     <h1>Settings</h1>
+    
+          <button id="connectBtn" class="btn-danger">Disable All Bots</button>
+          
     <p class="sub">Configure integrations & preferences</p>
   </div>
 

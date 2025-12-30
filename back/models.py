@@ -243,7 +243,15 @@ class Conversation(models.Model):
 
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
-    
+
+    # 🔹 Platform message id (mid / wamid / etc.)
+    mid = models.CharField(max_length=255, unique=True, blank=True, null=True, db_index=True)
+    # Send image video anything as attachments (JSON)
+    attachments = models.JSONField(blank=True, null=True)
+    # Replied To Message
+    replied_to = models.ForeignKey("self", null=True, blank=True, to_field="mid", on_delete=models.SET_NULL, related_name="replies")
+
+
     SENDER_CHOICES = [
         ("customer", "Customer"),
         ("bot", "Bot"),
