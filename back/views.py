@@ -315,6 +315,9 @@ def sett(request):
         }
     )
 
+    active_conversations = Conversation.objects.filter(user=user, is_ai_enabled=True).count()
+    deactivated_conversations = Conversation.objects.filter(user=user, is_ai_enabled=False).count()
+
     if request.method == "POST":
         integration.webhook_url = request.POST.get("webhook_url")
         integration.access_token = request.POST.get("access_token")
@@ -323,9 +326,27 @@ def sett(request):
 
         return redirect("back:options")  # update with your URL name
 
-    return render(request, "back/options.html", {
-        "integration": integration
-    })
+    context = {
+        "integration": integration,
+        "active_conversations": active_conversations,
+        "deactivated_conversations": deactivated_conversations,
+    }
+
+    return render(request, "back/options.html", context)
+
+
+@login_required
+def disable_all_bots(request):
+    Conversation.objects.filter(user=request.user, is_ai_enabled=True).update(is_ai_enabled=False)
+    print("All bots disabled for user:", request.user.username)
+    # return JsonResponse({"success": True, "message": "All bots disabled."})
+    return redirect("back:options")  # update with your URL name
+@login_required
+def enable_all_bots(request):
+    Conversation.objects.filter(user=request.user, is_ai_enabled=False).update(is_ai_enabled=True)
+    print("All bots enabled for user:", request.user.username)
+    # return JsonResponse({"success": True, "message": "All bots enabled."})
+    return redirect("back:options")  # update with your URL name
 
 @login_required
 def add_product(request):

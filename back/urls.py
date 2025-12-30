@@ -18,6 +18,8 @@ urlpatterns = [
     path("orders", views.orders, name="orders"),
     path("orders/update-status/", views.update_order_status, name="update_order_status"),
     path("chats", views.c_dashboard, name="c_dashboard"),
+    path("chats/disable-all", views.disable_all_bots, name="disable_all_bots"),
+    path("chats/enable-all", views.enable_all_bots, name="enable_all_bots"),
 
     path("stats", views.stats, name="stats"),
     path("options", views.sett, name="options"),

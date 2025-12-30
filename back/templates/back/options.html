@@ -144,6 +144,7 @@
   background: #770000ff;
 }
 
+
 /* ==============================
    RESPONSIVE TWEAKS
 ============================== */
@@ -159,7 +160,66 @@
 }
 
 
+.bot-control .buttons {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.bot-control button {
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+}
+
+
+.disable-btn {
+  background: #dc2626;
+}
+
+.disable-btn:hover {
+  background: #b91c1c;
+}
+
+.enable-btn {
+  background: #16a34a;
+}
+
+.enable-btn:hover {
+  background: #15803d;
+}
+
+.bot-count {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 10px;
+}
+
+.bot-count strong {
+  color: #0f172a;
+}
+
+
+@media (max-width: 480px) {
+  .bot-count {
+    flex-direction: column;
+    gap: 6px;
+  }
+}
+
+
+
 </style>
+
+
 
 
 
@@ -178,7 +238,25 @@
   <div class="page-header">
     <h1>Settings</h1>
     
-          <button id="connectBtn" class="btn-danger">Disable All Bots</button>
+    <form method="POST" class="form">
+        {% csrf_token %}
+
+        <div class="bot-control">
+        <div class="buttons">
+        
+          <button type="submit" formaction="{% url 'back:disable_all_bots' %}" class="disable-btn">Disable All Bots</button>
+        <button type="submit" formaction="{% url 'back:enable_all_bots' %}" class="enable-btn">Enable All Bots</button>
+
+      </div>
+    </form>
+    
+
+      <div class="bot-count">
+        <span>Active bots in convo: <strong>{{ active_conversations}}</strong></span>
+        <span>Deactivated bots in convo: <strong>{{deactivated_conversations}}</strong></span>
+      </div>
+
+
           
     <p class="sub">Configure integrations & preferences</p>
   </div>
