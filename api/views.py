@@ -580,13 +580,13 @@ class MessageCreateView(APIView):
             message = serializer.save()
 
             # optional: update conversation.last_message or auto_enable_ai()
-            conversation.auto_enable_ai()
+            # conversation.auto_enable_ai()
             
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    
+
 
 class DisableConvoAI(APIView):
     def get(self, request, username, id):

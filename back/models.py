@@ -259,7 +259,7 @@ class Message(models.Model):
     ]
 
     sender = models.CharField(max_length=20, choices=SENDER_CHOICES)
-    text = models.TextField()
+    text = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

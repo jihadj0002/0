@@ -44,10 +44,44 @@ class ConversationSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class MessageSerializer(serializers.ModelSerializer):
+
+    replied_to = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+
+    text = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+
+    attachments = serializers.JSONField(required=False,allow_null=True)
+
+    mid = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+
     class Meta:
         model = Message
-        fields = '__all__'
+        fields = [
+            "id",
+            "conversation",
+            "mid",
+            "sender",
+            "text",
+            "attachments",
+            "replied_to",
+            "timestamp",
+        ]
+        read_only_fields = ["id", "timestamp"]
 
+    def validate(self, data):
+        """
+        Require at least text OR attachments
+        """
+        text = data.get("text")
+        attachments = data.get("attachments")
+
+        if not text and not attachments:
+            raise serializers.ValidationError(
+                "Either text or attachments must be provided."
+            )
+
+        return data
+    
+    
 class SaleSerializer(serializers.ModelSerializer):
     oid = serializers.ReadOnlyField()
 
