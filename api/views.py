@@ -587,6 +587,29 @@ class MessageCreateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
+# Get Message by mid (platform message id)
+@method_decorator(csrf_exempt, name='dispatch')
+class MessageRetrieveView(APIView):
+    """
+    Retrieve a single message by mid (platform message id)
+    """
+
+    def get(self, request, username, aid, mid):
+        # 1️⃣ Get the user
+        user = get_object_or_404(User, username=username)
+
+        # 2️⃣ Get the conversation
+        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+
+        # 3️⃣ Get the message by mid within this conversation
+        message = get_object_or_404(Message, conversation=conversation, mid=mid)
+
+        # 4️⃣ Serialize and return
+        serializer = MessageSerializer(message)
+        return Response(serializer.data)
+
+    
+
 
 class DisableConvoAI(APIView):
     def get(self, request, username, id):

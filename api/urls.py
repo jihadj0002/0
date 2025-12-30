@@ -33,7 +33,7 @@ urlpatterns = [
     path('<str:username>/conv/<str:aid>/select_p', views.SelectProductView.as_view(), name='select-product'),
     path('<str:username>/conv/<str:aid>/update', views.UserConvUpdateView.as_view(), name='chat-convo-update'),
     path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
-    # path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
+    path('<str:username>/conv/<str:aid>/msg/<str:mid>', views.MessageRetrieveView.as_view(), name='chat-msg-retrieve'),
     path('<str:username>/conv/msg/<str:id>', views.GetLastMessages.as_view(), name='get-last-messages'),
 
     
