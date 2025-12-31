@@ -464,7 +464,8 @@ class NewOrder(APIView):
         customer_name = request.data.get("customer_name", "")
         customer_address = request.data.get("customer_address", "")
         customer_phone = request.data.get("customer_phone", "")
-
+        customer_city = request.data.get("customer_city", "")
+        customer_state = request.data.get("customer_state", "")
         if not customer_id or not product_id:
             return Response(
                 {"error": "customer_id and product_id are required"},
@@ -482,6 +483,8 @@ class NewOrder(APIView):
             customer_name=customer_name,
             customer_address=customer_address,
             customer_phone=customer_phone,
+            customer_city=customer_city,
+            customer_state=customer_state,
         )
 
         # 2️⃣ Create OrderItem
@@ -516,14 +519,14 @@ class NewOrder(APIView):
         )
 
         #Test Order JSON
-#         {
-#   "customer_id": "CUST-001",
-#   "product_id": "sku_ab12cd",
-#   "quantity": 3,
-#   "customer_name": "John Doe",
-#   "customer_address": "123 Main Street, Lagos",
-#   "customer_phone": "+2348012345678"
-# }
+        {
+  "customer_id": "CUST-001",
+  "product_id": "sku_ab12cd",
+  "quantity": 3,
+  "customer_name": "John Doe",
+  "customer_address": "123 Main Street, Lagos",
+  "customer_phone": "+2348012345678"
+}
 
     
 
@@ -559,6 +562,9 @@ class NewOrderExternal(APIView):
                     customer_name=data.get("customer_name", ""),
                     customer_address=data.get("customer_address", ""),
                     customer_phone=data.get("customer_phone", ""),
+                    customer_city=data.get("customer_city", ""),
+                    customer_state=data.get("customer_state", ""),
+                    delivered_to=data.get("delivered_to", "inside_dhaka"),
                     status="pending",
                 )
 
@@ -585,6 +591,7 @@ class NewOrderExternal(APIView):
                         product=default_product,  # required FK
                         internal_product=None,
                         external_product_id=item.get("external_product_id"),
+                        external_variation_id=item.get("external_variation_id"),
                         product_name=item.get("product_name"),
                         price=price,
                         quantity=quantity,

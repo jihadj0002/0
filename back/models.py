@@ -284,14 +284,28 @@ class Sale(models.Model):
             ("internal", "Internal"),
             ("external", "External"),
         ]
+    
+    DELIVERED_CHOICES = [
+            ("inside_dhaka", "Inside Dhaka"),
+            ("outside_dhaka", "Outside Dhaka"),
+        ]
+
+    UPDATE_CHOICES = [
+            ("updated", "Updated"),
+            ("failed", "Failed"),
+        ]
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
+    delivered_to = models.CharField(max_length=20, choices=DELIVERED_CHOICES, default="inside_dhaka")
+    updated_to_web = models.CharField(max_length=20, choices=UPDATE_CHOICES, default="failed")
     external_order_id = models.CharField(max_length=255, blank=True, null=True)
 
     # product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
     
     customer_name = models.CharField(max_length=150, blank=True)
     customer_address = models.CharField(max_length=150, blank=True)
+    customer_city = models.CharField(max_length=150, blank=True)
+    customer_state = models.CharField(max_length=150, blank=True)
     customer_phone = models.CharField(max_length=15, blank=True)
     customer_id = models.CharField(max_length=255)
 
@@ -322,6 +336,7 @@ class OrderItem(models.Model):
     internal_product = models.ForeignKey(Product,on_delete=models.SET_NULL,null=True,blank=True,related_name="order_items")
 
     external_product_id = models.CharField(max_length=255, blank=True, null=True)
+    external_variation_id = models.CharField(max_length=255, blank=True, null=True)
 
     raw_product_data = models.JSONField(blank=True, null=True)
 
