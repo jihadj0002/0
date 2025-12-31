@@ -452,8 +452,8 @@ class ConfirmOrderView(APIView):
             status=status.HTTP_200_OK
         )
 
-
 class NewOrder(APIView):
+
     @transaction.atomic
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
@@ -461,15 +461,22 @@ class NewOrder(APIView):
         customer_id = request.data.get("customer_id")
         product_id = request.data.get("product_id")
         quantity = int(request.data.get("quantity", 1))
-        customer_name = request.data.get("customer_name")
-        customer_address = request.data.get("customer_address")
-        customer_phone = request.data.get("customer_phone")
+        customer_name = request.data.get("customer_name", "")
+        customer_address = request.data.get("customer_address", "")
+        customer_phone = request.data.get("customer_phone", "")
+
+        if not customer_id or not product_id:
+            return Response(
+                {"error": "customer_id and product_id are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         product = get_object_or_404(Product, pid=product_id)
 
-        # 1️⃣ Create Sale
+        # 1️⃣ Create Sale (Internal)
         sale = Sale.objects.create(
             user=user,
+            source="internal",
             customer_id=customer_id,
             status="pending",
             customer_name=customer_name,
@@ -481,8 +488,10 @@ class NewOrder(APIView):
         order_item = OrderItem.objects.create(
             order=sale,
             product=product,
+            internal_product=product,
+            product_name=product.name,
+            price=product.price,
             quantity=quantity,
-            price=product.price
         )
 
         # 3️⃣ Update total amount
@@ -492,11 +501,12 @@ class NewOrder(APIView):
         return Response(
             {
                 "order_id": sale.oid,
-                "total": sale.amount,
                 "status": sale.status,
+                "total": sale.amount,
                 "items": [
                     {
-                        "product": product.pid,
+                        "product_id": product.pid,
+                        "product_name": order_item.product_name,
                         "quantity": order_item.quantity,
                         "price": order_item.price,
                     }
@@ -504,7 +514,84 @@ class NewOrder(APIView):
             },
             status=status.HTTP_201_CREATED
         )
+    
 
+
+
+class NewOrderExternal(APIView):
+    @transaction.atomic
+    
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        
+        data = request.data
+        customer_id = data.get("customer_id")
+
+        # Required fields
+        items = data.get("items", [])
+
+        if not customer_id or not items:
+            return Response(
+                {"error": "customer_id and items are required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            with transaction.atomic():
+
+                # Create Sale
+                sale = Sale.objects.create(
+                    user=user,
+                    source="external",
+                    external_order_id=data.get("external_order_id"),
+                    customer_id=customer_id,
+                    customer_name=data.get("customer_name", ""),
+                    customer_address=data.get("customer_address", ""),
+                    customer_phone=data.get("customer_phone", ""),
+                    status="pending",
+                )
+
+                total_amount = 0
+
+                # A default internal product for external items
+                default_product = Product.objects.get(slug="external-product")
+
+                for item in items:
+                    price = item.get("price", 0)
+                    quantity = int(item.get("quantity", 1))
+
+                    OrderItem.objects.create(
+                        order=sale,
+                        product=default_product,  # required FK
+                        internal_product=None,
+                        external_product_id=item.get("external_product_id"),
+                        product_name=item.get("product_name"),
+                        price=price,
+                        quantity=quantity,
+                        raw_product_data=item.get("raw_product_data", {}),
+                    )
+
+                    total_amount += price * quantity
+
+                # Update total amount
+                sale.amount = total_amount
+                sale.save()
+
+            return Response(
+                {
+                    "message": "External order created successfully",
+                    "order_id": sale.id,
+                    "oid": sale.oid,
+                    "amount": sale.amount,
+                },
+                status=status.HTTP_201_CREATED,
+            )
+
+        except Product.DoesNotExist:
+            return Response(
+                {"error": "Default external product not found"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 @method_decorator(csrf_exempt, name='dispatch')

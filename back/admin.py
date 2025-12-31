@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration
+from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem
 # -----------------------
 # Custom User Admin
 # -----------------------
@@ -80,11 +80,41 @@ class MessageAdmin(admin.ModelAdmin):
 # -----------------------
 # Sale Admin
 # -----------------------
+
+class OrderItemInline(admin.TabularInline):
+    model = OrderItem
+    extra = 0
+    readonly_fields = ("product_name", "price", "quantity")
+
+
 class SaleAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "product", "customer_id", "amount", "status", "created_at")
-    list_filter = ("status",)
-    search_fields = ("customer_id", "user__email", "product__name")
+    list_display = (
+        "id",
+        "user",
+        "get_products",
+        "customer_id",
+        "amount",
+        "status",
+        "created_at",
+    )
+    inlines = [OrderItemInline]
+    list_filter = ("status", "source")
     ordering = ("-created_at",)
+
+    search_fields = (
+        "customer_id",
+        "user__email",
+        "items__product_name",
+        "items__external_product_id",
+    )
+
+    def get_products(self, obj):
+        return ", ".join(
+            item.product_name for item in obj.items.all()
+        )
+
+    get_products.short_description = "Products"
+
 
 # -----------------------
 # IntegrationAdmin Admin

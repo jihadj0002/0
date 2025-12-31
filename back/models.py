@@ -11,6 +11,7 @@ from django.utils.html import mark_safe
 from shortuuid.django_fields import ShortUUIDField
 
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from datetime import timedelta
 
 # -----------------------
@@ -279,7 +280,16 @@ class Sale(models.Model):
     # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sales")
-    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
+    SOURCE_CHOICES = [
+            ("internal", "Internal"),
+            ("external", "External"),
+        ]
+
+    source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
+    external_order_id = models.CharField(max_length=255, blank=True, null=True)
+
+    # product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
+    
     customer_name = models.CharField(max_length=150, blank=True)
     customer_address = models.CharField(max_length=150, blank=True)
     customer_phone = models.CharField(max_length=15, blank=True)
@@ -300,9 +310,28 @@ class Sale(models.Model):
     
 class OrderItem(models.Model):
     order = models.ForeignKey(Sale, related_name="items", on_delete=models.CASCADE)
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
-    quantity = models.PositiveIntegerField(default=1)
+
+    # Editable product data
+    product_name = models.CharField(max_length=255, default="Unknown Product")
     price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.PositiveIntegerField(default=1)
+
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+
+    # Optional references
+    internal_product = models.ForeignKey(Product,on_delete=models.SET_NULL,null=True,blank=True,related_name="order_items")
+
+    external_product_id = models.CharField(max_length=255, blank=True, null=True)
+
+    raw_product_data = models.JSONField(blank=True, null=True)
+
+
+    def save(self, *args, **kwargs):
+        if self.pk and self.order.status in ["completed", "refunded"]:
+            raise ValidationError(
+                "Completed or refunded orders cannot be modified."
+            )
+        super().save(*args, **kwargs)
 
 
 
