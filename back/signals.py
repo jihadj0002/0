@@ -9,7 +9,10 @@ import requests
 
 
 
+WEBHOOK_URL = "https://n8n.srv915514.hstgr.cloud/webhook/9346a62a-a008-40a6-a2eb-84a7badd2d26"
 EXTERNAL_UPDATE_URL = "https://erp.monowamart.com/api/v1/1/ai/order"
+
+
 
 @receiver(post_save, sender=Sale)
 def external_order_post_request(sender, instance, created, **kwargs):
@@ -58,18 +61,23 @@ def external_order_post_request(sender, instance, created, **kwargs):
 
         print("Payload:", payload)
 
-        response = requests.post(
-            EXTERNAL_UPDATE_URL,
-            json=payload,
-            headers=headers,
-            timeout=10
-        )
+        
+        try:
+            response = requests.post(
+                WEBHOOK_URL,
+                json=payload,      # ✅ webhook body
+                headers=headers,
+                timeout=5,
+            )
+            print("Webhook delivered successfully.")
 
-        response.raise_for_status()
+            # Print response status and content
+            print("Webhook response status:", response.status_code)
 
-        if response.status_code in [200, 201]:
-            instance.updated_to_web = "updated"
-            instance.save(update_fields=["updated_to_web"])
+            # You can also print the response body (if any)
+            print("Response content:", response.text)
+        except requests.RequestException as e:
+            print("Webhook delivery failed:", e)
 
     except requests.RequestException as e:
         print("External order sync failed:", e)
@@ -77,7 +85,8 @@ def external_order_post_request(sender, instance, created, **kwargs):
 
 
 
-        response = requests.post(EXTERNAL_UPDATE_URL, json=payload, timeout=10)
+        response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+        print("External order update response status:", response.status_code)
         response.raise_for_status()  # Raise exception for HTTP errors
 
         if response.status_code == 200:
