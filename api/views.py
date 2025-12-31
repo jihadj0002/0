@@ -612,7 +612,6 @@ class NewOrderExternal(APIView):
 
                 # A default internal product for external items
                 default_product, created = Product.objects.get_or_create(
-                    pid="EXTERNAL_DEFAULT",
                     user=user,
                     defaults={
                         "name": "External Order Placeholder",
