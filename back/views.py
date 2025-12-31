@@ -189,7 +189,11 @@ def get_chat_metrics(request):
 
 @login_required
 def orders(request):
-    all_orders = Sale.objects.filter(user=request.user).select_related('product').order_by('-created_at')
+    all_orders = (
+        Sale.objects
+        .filter(user=request.user)
+        .order_by('-created_at')
+    )
     return render(request, 'back/orders.html', {'all_orders': all_orders})
 
 

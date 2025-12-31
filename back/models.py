@@ -316,7 +316,7 @@ class OrderItem(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
 
-    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT , null=True, blank=True)  # required FK
 
     # Optional references
     internal_product = models.ForeignKey(Product,on_delete=models.SET_NULL,null=True,blank=True,related_name="order_items")

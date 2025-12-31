@@ -514,6 +514,17 @@ class NewOrder(APIView):
             },
             status=status.HTTP_201_CREATED
         )
+
+        #Test Order JSON
+#         {
+#   "customer_id": "CUST-001",
+#   "product_id": "sku_ab12cd",
+#   "quantity": 3,
+#   "customer_name": "John Doe",
+#   "customer_address": "123 Main Street, Lagos",
+#   "customer_phone": "+2348012345678"
+# }
+
     
 
 
@@ -554,7 +565,16 @@ class NewOrderExternal(APIView):
                 total_amount = 0
 
                 # A default internal product for external items
-                default_product = Product.objects.get(slug="external-product")
+                default_product, created = Product.objects.get_or_create(
+                    pid="EXTERNAL_DEFAULT",
+                    user=user,
+                    defaults={
+                        "name": "External Order Placeholder",
+                        "price": 0,
+                        "stock_quantity": 0,
+                        "status": True,
+                    }
+                )
 
                 for item in items:
                     price = item.get("price", 0)
@@ -592,6 +612,38 @@ class NewOrderExternal(APIView):
                 {"error": "Default external product not found"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+        
+    # Test Order External JSON
+#     {
+#   "external_order_id": "EXT-ORD-12345",
+#   "customer_id": "CUST-001",
+#   "customer_name": "John Doe",
+#   "customer_address": "123 Main Street, Lagos",
+#   "customer_phone": "+2348012345678",
+#   "items": [
+#     {
+#       "external_product_id": "EXT-PROD-001",
+#       "product_name": "Wireless Mouse",
+#       "price": 2500,
+#       "quantity": 2,
+#       "raw_product_data": {
+#         "color": "black",
+#         "brand": "Logitech"
+#       }
+#     },
+#     {
+#       "external_product_id": "EXT-PROD-002",
+#       "product_name": "USB Keyboard",
+#       "price": 4000,
+#       "quantity": 1,
+#       "raw_product_data": {
+#         "layout": "QWERTY",
+#         "connection": "USB"
+#       }
+#     }
+#   ]
+# }
+
 
 
 @method_decorator(csrf_exempt, name='dispatch')

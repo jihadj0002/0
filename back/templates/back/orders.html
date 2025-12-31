@@ -230,7 +230,7 @@
         <strong>{{ order.customer_name|default:"N/A" }}</strong><br>
         <small class="muted">{{ order.customer_phone }}</small>
       </td>
-      <td>${{ order.amount }}</td>
+      <td>৳ {{ order.amount }}</td>
       <td>
         <select class="status-select" data-order-id="{{ order.id }}">
           {% for key, value in order.STATUS_CHOICES %}
@@ -259,20 +259,32 @@
 {% for order in all_orders %}
 <div class="modal" id="orderModal{{ order.id }}">
   <div class="modal-content">
+
     <div class="modal-header">
       <h3>Order #{{ order.oid }}</h3>
       <span class="close" onclick="closeOrderModal({{ order.id }})">&times;</span>
     </div>
 
     <div class="modal-body">
-      <p><strong>Customer:</strong> {{ order.customer_name }}</p>
-      <p><strong>Phone:</strong> {{ order.customer_phone }}</p>
-      <p><strong>Address:</strong> {{ order.customer_address }}</p>
-      <p><strong>Status:</strong> {{ order.get_status_display }}</p>
+
+      <p><strong>Customer:</strong> {{ order.customer_name|default:"N/A" }}</p>
+      <p><strong>Phone:</strong> {{ order.customer_phone|default:"—" }}</p>
+      <p><strong>Address:</strong> {{ order.customer_address|default:"—" }}</p>
+
+      <!-- ✅ STATUS SELECT (JSON BUTTON SAFE) -->
+      <p>
+        <strong>Status:</strong>
+        <select class="status-select" data-order-id="{{ order.id }}">
+          {% for key, value in order.STATUS_CHOICES %}
+            <option value="{{ key }}" {% if order.status == key %}selected{% endif %}>
+              {{ value }}
+            </option>
+          {% endfor %}
+        </select>
+      </p>
 
       <hr>
 
-      <!-- ✅ ONLY SHOWN WHEN VIEW IS CLICKED -->
       <h4>Items</h4>
       <table class="items-table">
         <thead>
@@ -280,16 +292,28 @@
             <th>Product</th>
             <th>Qty</th>
             <th>Price</th>
-            <th>Total</th>
+            <th>Line Total</th>
           </tr>
         </thead>
+
         <tbody>
           {% for item in order.items.all %}
           <tr>
-            <td>{{ item.product.name }}</td>
+            <!-- ✅ SAFE: works for internal + external products -->
+            <td>
+              {{ item.product_name }}
+              {% if item.product %}
+                <br><small class="muted">SKU: {{ item.product.id }}</small>
+              {% endif %}
+            </td>
+
             <td>{{ item.quantity }}</td>
-            <td>${{ item.price }}</td>
-            <td>${{ item.quantity|floatformat:2|add:"0" }}</td>
+            <td>৳ {{ item.price }}</td>
+
+            <!-- ✅ NO BROKEN MATH -->
+            <td>
+              ৳ {{ item.price }} × {{ item.quantity }}
+            </td>
           </tr>
           {% empty %}
           <tr>
@@ -300,12 +324,14 @@
       </table>
 
       <div class="total">
-        <strong>Total Amount:</strong> ৳{{ order.amount }}
+        <strong>Total Amount:</strong> ৳ {{ order.amount }}
       </div>
+
     </div>
   </div>
 </div>
 {% endfor %}
+
 
 
       </div>
