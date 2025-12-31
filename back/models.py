@@ -297,7 +297,9 @@ class Sale(models.Model):
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
     delivered_to = models.CharField(max_length=20, choices=DELIVERED_CHOICES, default="inside_dhaka")
+    
     updated_to_web = models.CharField(max_length=20, choices=UPDATE_CHOICES, default="failed")
+    
     external_order_id = models.CharField(max_length=255, blank=True, null=True)
 
     # product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True, related_name="sales")
@@ -326,7 +328,7 @@ class OrderItem(models.Model):
     order = models.ForeignKey(Sale, related_name="items", on_delete=models.CASCADE)
 
     # Editable product data
-    product_name = models.CharField(max_length=255, default="Unknown Product")
+    product_name = models.CharField(max_length=255, default="Unknown Product", null=True, blank=True)
     price = models.DecimalField(max_digits=10, decimal_places=2)
     quantity = models.PositiveIntegerField(default=1)
 

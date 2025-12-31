@@ -451,6 +451,40 @@ class ConfirmOrderView(APIView):
             },
             status=status.HTTP_200_OK
         )
+    
+
+class Update_External_Order_Item_To_Web(APIView):
+    @transaction.atomic
+    def post(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+        order = get_object_or_404(Sale, user=user, oid=order_id, source="external", status="pending")
+
+        try:
+            # Logic to update external order to web goes here
+            # For example, sending data to an external API
+
+            order.updated_to_web = "updated"
+            order.save(update_fields=["updated_to_web"])
+
+            return Response(
+                {
+                    "order_id": order.oid,
+                    "status": "External order updated to web successfully"
+                },
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            order.updated_to_web = "failed"
+            order.save(update_fields=["updated_to_web"])
+            return Response(
+                {
+                    "order_id": order.oid,
+                    "error": str(e)
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+
 
 class NewOrder(APIView):
 
@@ -539,6 +573,11 @@ class NewOrderExternal(APIView):
         user = get_object_or_404(User, username=username)
         
         data = request.data
+
+        if isinstance(data, list):
+            data = data[0]
+
+
         customer_id = data.get("customer_id")
 
         # Required fields
@@ -557,7 +596,7 @@ class NewOrderExternal(APIView):
                 sale = Sale.objects.create(
                     user=user,
                     source="external",
-                    external_order_id=data.get("external_order_id"),
+                    # external_order_id=data.get("external_order_id"),
                     customer_id=customer_id,
                     customer_name=data.get("customer_name", ""),
                     customer_address=data.get("customer_address", ""),
@@ -567,6 +606,7 @@ class NewOrderExternal(APIView):
                     delivered_to=data.get("delivered_to", "inside_dhaka"),
                     status="pending",
                 )
+                print("Created Sale with ID:", sale.id)
 
                 total_amount = 0
 
@@ -597,6 +637,9 @@ class NewOrderExternal(APIView):
                         quantity=quantity,
                         raw_product_data=item.get("raw_product_data", {}),
                     )
+                    print("Created OrderItem for external_product_id:", item.get("external_product_id"))
+                    print("Created OrderItem for external_variation_id:", item.get("external_variation_id"))
+                    print("Created OrderItem for quantity:", item.get("quantity"))
 
                     total_amount += price * quantity
 

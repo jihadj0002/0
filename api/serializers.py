@@ -101,7 +101,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderItem
-        fields = ["id", "order", "product", "quantity", "price"]
+        fields = ["id", "order", "product", "quantity", "price", "external_product_id", "external_variation_id", "raw_product_data"]
         read_only_fields = ["price"]
 
     def validate(self, data):
@@ -112,6 +112,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Not enough stock")
 
         return data
+
+
 
     @transaction.atomic
     def create(self, validated_data):

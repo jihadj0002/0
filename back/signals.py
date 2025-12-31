@@ -5,55 +5,58 @@ from django.contrib.auth.models import User
 from .models import UserProfile, Sale, OrderItem
 from .models import Message
 import requests
+import json
 
 
 
 
-WEBHOOK_URL = "https://n8n.srv915514.hstgr.cloud/webhook/9346a62a-a008-40a6-a2eb-84a7badd2d26"
+WEBHOOK_URL = "https://n8n.srv915514.hstgr.cloud/webhook/b3270b85-fae4-4d1b-ba47-a3ff66d28527"
 EXTERNAL_UPDATE_URL = "https://erp.monowamart.com/api/v1/1/ai/order"
 
 
 
-@receiver(post_save, sender=Sale)
-def external_order_post_request(sender, instance, created, **kwargs):
-
+@receiver(post_save, sender=OrderItem)
+def external_order_item_post_request(sender, instance, created, **kwargs):
+    # Only process when the OrderItem is newly created
     if not created:
         return
 
-    if instance.source != "external":
-        return
+    # Get the Sale instance related to this OrderItem
+    sale = instance.order
 
-    if instance.user.username != "monowamart":
+    # Check if the Sale is external and if the username is "monowamart"
+    if sale.source != "external" or sale.user.username != "monowamart":
         return
 
     try:
         print("Preparing payload for external order update...")
 
+        # Create the payload similar to your previous Sale signal
         payload = {
+            "order_id": sale.oid,
             "address": {
-                "name": instance.customer_name,
-                "mobile": instance.customer_phone,
-                "address": instance.customer_address,
-                "city": getattr(instance, "customer_city", ""),
-                "state": getattr(instance, "customer_state", ""),
+                "name": sale.customer_name,
+                "mobile": sale.customer_phone,
+                "address": sale.customer_address,
+                "city": getattr(sale, "customer_city", ""),
+                "state": getattr(sale, "customer_state", ""),
             },
-
             "items": [
                 {
-                    "product_id": item.external_product_id,
-                    "variation_id": getattr(item, "external_variation_id", None),
-                    "quantity": item.quantity,
+                    "product_id": instance.external_product_id,
+                    "variation_id": instance.external_variation_id,
+                    "quantity": instance.quantity,
                 }
-                for item in instance.items.all()
             ],
-
-            "delivered_to": getattr(instance, "delivered_to", ""),
+            "delivered_to": getattr(sale, "delivered_to", ""),
             "pickup_location_id": 1,
             "shipping_note": "",
-            "source": "ai",
+            "source": "ai",  # assuming "ai" is the source you're using for external orders
             "payment_method": "cod",
             "rp_redeemed": 0,
-        },
+        }
+
+        # Define headers for the request
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
@@ -61,7 +64,7 @@ def external_order_post_request(sender, instance, created, **kwargs):
 
         print("Payload:", payload)
 
-        
+        # Send the request to the external webhook
         try:
             response = requests.post(
                 WEBHOOK_URL,
@@ -70,19 +73,13 @@ def external_order_post_request(sender, instance, created, **kwargs):
                 timeout=5,
             )
             print("Webhook delivered successfully.")
-
-            # Print response status and content
             print("Webhook response status:", response.status_code)
-
-            # You can also print the response body (if any)
             print("Response content:", response.text)
         except requests.RequestException as e:
             print("Webhook delivery failed:", e)
 
-    except requests.RequestException as e:
-        print("External order sync failed:", e)
-
-
+    except Exception as e:
+        print("Error during processing OrderItem post-save:", e)
 
 
         response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
