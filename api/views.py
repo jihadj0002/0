@@ -617,14 +617,16 @@ class NewOrderExternal(APIView):
                     defaults={
                         "name": "External Order Placeholder",
                         "price": 0,
-                        "stock_quantity": 0,
-                        "status": True,
+                        "stock_quantity": 99999,
+                        # "status": True,
                     }
                 )
-
+                print("Default product for external items:", default_product.pid)
                 for item in items:
                     price = item.get("price", 0)
+                    print("Processing item with external_product_id:", item.get("external_product_id"))
                     quantity = int(item.get("quantity", 1))
+                    print("Quantity:", quantity)
 
                     OrderItem.objects.create(
                         order=sale,
