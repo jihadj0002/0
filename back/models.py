@@ -252,6 +252,11 @@ class Conversation(models.Model):
             return True  # AI was disabled due to the Messenger integration being disabled
         return False
     
+    def save(self, *args, **kwargs):
+        # Check if Messenger integration is disabled for the user
+        self.check_integration_for_messenger()
+        super(Conversation, self).save(*args, **kwargs)
+    
 
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
