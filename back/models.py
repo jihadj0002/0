@@ -241,6 +241,17 @@ class Conversation(models.Model):
                 self.save()
         return self.is_ai_enabled   
     
+    def check_integration_for_messenger(self):
+        """Check if Messenger integration is disabled, and disable AI if so."""
+        # Check if there is an integration with 'messenger' platform and `is_enabled = False`
+        integration = Integration.objects.filter(user=self.user, platform="messenger", is_enabled=False).first()
+        if integration:
+            self.is_ai_enabled = False
+            self.ai_disabled_at = timezone.now()
+            self.save()
+            return True  # AI was disabled due to the Messenger integration being disabled
+        return False
+    
 
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
