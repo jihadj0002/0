@@ -291,14 +291,15 @@ class Sale(models.Model):
         ]
 
     UPDATE_CHOICES = [
-            ("updated", "Updated"),
             ("failed", "Failed"),
+            ("updated", "Updated"),
         ]
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
     delivered_to = models.CharField(max_length=20, choices=DELIVERED_CHOICES, default="inside_dhaka")
     
     updated_to_web = models.CharField(max_length=20, choices=UPDATE_CHOICES, default="failed")
+    # updated_to_web = models.BooleanField(default=False)
     
     external_order_id = models.CharField(max_length=255, blank=True, null=True)
 

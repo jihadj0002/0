@@ -178,6 +178,8 @@
     margin-top: 5px;
   }
   
+
+
   /* Add labels for mobile using data-labels dynamically */
   .orders-table td:nth-child(1)::before { content: "Order ID"; }
   .orders-table td:nth-child(2)::before { content: "Product"; }
@@ -224,8 +226,11 @@
   </thead>
   <tbody>
     {% for order in all_orders %}
-    <tr>
+    <tr {% if order.updated_to_web == False or order.updated_to_web == "failed" %} style="background-color: #ffcccc; color: #9b1c1c; border: 2px solid #d9534f;"{% endif %}>
+
       <td>#{{ order.oid }}</td>
+      
+
       <td>
         <strong>{{ order.customer_name|default:"N/A" }}</strong><br>
         <small class="muted">{{ order.customer_phone }}</small>
@@ -299,12 +304,16 @@
 
         <tbody>
           {% for item in order.items.all %}
+
+          {% comment %} <tr {% if item.updated_to_web='failed' %} class="failed-order"{% endif %}> {% endcomment %}
           <tr>
             <!-- ✅ SAFE: works for internal + external products -->
             <td>
               {{ item.product_name }}
-              {% if item.product %}
-                <br><small class="muted">SKU: {{ item.product.id }}</small>
+              {% if item.external_product_id %}
+                <br><small class="muted">External Product ID: {{ item.external_product_id }}</small>
+              {% else %}
+              <br><small class="muted">SKU: {{ item.product.id }}</small>
               {% endif %}
             </td>
 

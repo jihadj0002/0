@@ -458,18 +458,33 @@ class Update_External_Order_Item_To_Web(APIView):
     def post(self, request, username, order_id):
         user = get_object_or_404(User, username=username)
         order = get_object_or_404(Sale, user=user, oid=order_id, source="external", status="pending")
+        order_items = get_object_or_404(OrderItem, order=order)
+        product_name = request.data.get("product_name")
+        external_order_id = request.data.get("external_order_id")
+        price = request.data.get("price")
+        raw_product_data = request.data.get("raw_product_data", "{}")
+        
 
+
+        
         try:
             # Logic to update external order to web goes here
             # For example, sending data to an external API
 
             order.updated_to_web = "updated"
-            order.save(update_fields=["updated_to_web"])
+            order.save(update_fields=["updated_to_web", "external_order_id"])
+
+            order_items.product_name = product_name
+            order_items.raw_product_data = raw_product_data
+            order_items.price = price
+            
+            order_items.save(update_fields=["product_name", "raw_product_data", "price"])
 
             return Response(
                 {
                     "order_id": order.oid,
-                    "status": "External order updated to web successfully"
+                    "status": "External order updated to web successfully",
+                    "status": "Updated Product Name successfully"
                 },
                 status=status.HTTP_200_OK
             )
@@ -623,9 +638,8 @@ class NewOrderExternal(APIView):
                 print("Default product for external items:", default_product.pid)
                 for item in items:
                     price = item.get("price", 0)
-                    print("Processing item with external_product_id:", item.get("external_product_id"))
                     quantity = int(item.get("quantity", 1))
-                    print("Quantity:", quantity)
+                    
 
                     OrderItem.objects.create(
                         order=sale,
@@ -638,10 +652,7 @@ class NewOrderExternal(APIView):
                         quantity=quantity,
                         raw_product_data=item.get("raw_product_data", {}),
                     )
-                    print("Created OrderItem for external_product_id:", item.get("external_product_id"))
-                    print("Created OrderItem for external_variation_id:", item.get("external_variation_id"))
-                    print("Created OrderItem for quantity:", item.get("quantity"))
-
+                    
                     total_amount += price * quantity
 
                 # Update total amount
