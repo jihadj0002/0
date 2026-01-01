@@ -731,6 +731,8 @@ class UserConvCreateView(APIView):
         print("Existing conversation:", existing_convo)
 
         if existing_convo:
+            print(existing_convo)
+            print("Conversation already exists")
             return Response({
                 "message": "Conversation already exists",
                 "sessionId": customer_id,
@@ -745,7 +747,7 @@ class UserConvCreateView(APIView):
         serializer = ConversationSerializer(data=data)
         if serializer.is_valid():
             print("Conversation created:", serializer.data)
-            serializer.save()
+            serializer.save(user=user)               #Problem Here
             print("Conversation created Done:", serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
