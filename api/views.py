@@ -744,7 +744,22 @@ class UserConvCreateView(APIView):
             # print("Conversation created:", serializer.data)
             # # serializer.save()               #Problem Here
             # print("Conversation created Done:", serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+            convo = Conversation.objects.create(
+                user=user,
+                customer_id=str(customer_id),
+                platform=platform
+            )
+
+            return Response(
+                {
+                    "message": "Conversation created",
+                    "sessionId": customer_id,
+                    "conversation_id": convo.id
+                },
+                status=201
+            )
+            
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
