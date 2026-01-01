@@ -241,21 +241,30 @@ class Conversation(models.Model):
                 self.save()
         return self.is_ai_enabled   
     
-    def check_integration_for_messenger(self):
-        """Check if Messenger integration is disabled, and disable AI if so."""
-        # Check if there is an integration with 'messenger' platform and `is_enabled = False`
-        integration = Integration.objects.filter(user=self.user, platform="messenger", is_enabled=False).first()
-        if integration:
-            self.is_ai_enabled = False
-            self.ai_disabled_at = timezone.now()
-            self.save()
-            return True  # AI was disabled due to the Messenger integration being disabled
-        return False
+
     
-    def save(self, *args, **kwargs):
-        # Check if Messenger integration is disabled for the user
-        self.check_integration_for_messenger()
-        super(Conversation, self).save(*args, **kwargs)
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "platform", "customer_id"],
+                name="unique_user_platform_customer"
+            )
+        ]
+    # def check_integration_for_messenger(self):
+    #     """Check if Messenger integration is disabled, and disable AI if so."""
+    #     # Check if there is an integration with 'messenger' platform and `is_enabled = False`
+    #     integration = Integration.objects.filter(user=self.user, platform="messenger", is_enabled=False).first()
+    #     if integration:
+    #         self.is_ai_enabled = False
+    #         self.ai_disabled_at = timezone.now()
+    #         self.save()
+    #         return True  # AI was disabled due to the Messenger integration being disabled
+    #     return False
+    
+    # def save(self, *args, **kwargs):
+    #     # Check if Messenger integration is disabled for the user
+    #     self.check_integration_for_messenger()
+    #     super(Conversation, self).save(*args, **kwargs)
     
 
 class Message(models.Model):
