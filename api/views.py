@@ -719,6 +719,7 @@ class UserConvCreateView(APIView):
         platform = request.data.get("platform")
 
         if not customer_id:
+            print("customer_id is required")
             return Response({"error": "customer_id is required"}, status=400)
 
         # Check if conversation already exists for this user + customer_id + platform
@@ -727,6 +728,7 @@ class UserConvCreateView(APIView):
             customer_id=customer_id,
             platform=platform
         ).first()
+        print("Existing conversation:", existing_convo)
 
         if existing_convo:
             return Response({
@@ -736,12 +738,15 @@ class UserConvCreateView(APIView):
             }, status=status.HTTP_200_OK)
 
         # Create a new conversation
+        print("Creating new conversation...")
         data = request.data.copy()
         data["user"] = user.id
-
+        print("Data for serializer:", data)
         serializer = ConversationSerializer(data=data)
         if serializer.is_valid():
+            print("Conversation created:", serializer.data)
             serializer.save()
+            print("Conversation created Done:", serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
