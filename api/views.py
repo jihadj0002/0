@@ -767,7 +767,8 @@ class UserConvCreateView(APIView):
                 {
                     "message": "Conversation created",
                     "sessionId": customer_id,
-                    "conversation_id": convo.id
+                    "conversation_id": convo.id,
+                    "is_ai_enabled": convo.is_ai_enabled
                 },
                 status=201
             )
