@@ -346,6 +346,8 @@ def disable_all_bots(request):
     # return JsonResponse({"success": True, "message": "All bots disabled."})
     return redirect("back:options")  # update with your URL name
 @login_required
+
+
 def enable_all_bots(request):
     Conversation.objects.filter(user=request.user, is_ai_enabled=False).update(is_ai_enabled=True)
     print("All bots enabled for user:", request.user.username)

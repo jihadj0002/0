@@ -648,7 +648,7 @@ class NewOrderExternal(APIView):
                         product_name=item.get("product_name", "External Product"),
                         external_product_id=item.get("external_product_id"),
                         external_variation_id=item.get("external_variation_id"),
-                        product_name=item.get("product_name"),
+                        
                         price=price,
                         quantity=quantity,
                         raw_product_data=item.get("raw_product_data", {}),
