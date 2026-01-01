@@ -712,6 +712,7 @@ class NewOrderExternal(APIView):
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
     def post(self, request, username):
+        print("Received request data:", request.data)
         user = get_object_or_404(User, username=username)
 
         customer_id = request.data.get("customer_id")
@@ -880,6 +881,7 @@ class SelectProductView(APIView):
     
 class GetLastMessages(APIView):
     def get(self, request, username, id):
+        print("Fetching last messages for conversation:", id)
         user = get_object_or_404(User, username=username)
         convo = get_object_or_404(Conversation, customer_id=id, user=user)
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
