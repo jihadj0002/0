@@ -884,9 +884,13 @@ class SelectProductView(APIView):
 class GetLastMessages(APIView):
     def get(self, request, username, id):
         print("Fetching last messages for conversation:", id)
-        user = get_object_or_404(User, username=username)
+        user = get_object_or_404(User, username__iexact=username)
         print("User found:", user.username)
-        convo = get_object_or_404(Conversation, customer_id=id, user=user)
+        # convo = get_object_or_404(Conversation, customer_id=id, user=user)
+        convo = Conversation.objects.filter(customer_id=str(id),user=user).first()
+        if not convo:
+            print("No conversation found for customer_id:", id)
+            return JsonResponse({"error": "Conversation not found"},status=404)
         print("Conversation found:", convo)
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
         current_product = convo.current_product
