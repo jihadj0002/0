@@ -1,9 +1,10 @@
 # signals.py
+from datetime import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
 from .models import UserProfile, Sale, OrderItem
-from .models import Message
+from .models import Message, Integration, Conversation
 import requests
 import json
 
@@ -97,7 +98,15 @@ def external_order_item_post_request(sender, instance, created, **kwargs):
 
 
 
-
+@receiver(post_save, sender=Integration)
+def sync_ai_status_to_conversations(sender, instance, **kwargs):
+    Conversation.objects.filter(
+        user=instance.user,
+        platform=instance.platform
+    ).update(
+        is_ai_enabled=instance.is_enabled,
+        # ai_disabled_at=None if instance.is_enabled else timezone.now()
+    )
 
 
 @receiver(post_save, sender=User)

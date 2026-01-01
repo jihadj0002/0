@@ -14,7 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.db import transaction
-from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem
+from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer
@@ -707,15 +707,25 @@ class NewOrderExternal(APIView):
 #   ]
 # }
 
+def get_ai_status(user, platform):
+        integration = Integration.objects.filter(
+            user=user,
+            platform=platform
+        ).first()
 
+        return integration.is_enabled if integration else False
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
+
+    
+
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
 
         customer_id = request.data.get("customer_id")
         platform = request.data.get("platform")
+        ai_enabled = get_ai_status(user, platform)
 
         if not customer_id:
         
@@ -725,7 +735,8 @@ class UserConvCreateView(APIView):
         existing_convo = Conversation.objects.filter(
             user=user,
             customer_id=customer_id,
-            platform=platform
+            platform=platform,
+            
         ).first()
         
 
@@ -748,7 +759,8 @@ class UserConvCreateView(APIView):
             convo = Conversation.objects.create(
                 user=user,
                 customer_id=str(customer_id),
-                platform=platform
+                platform=platform,
+                is_ai_enabled=ai_enabled
             )
 
             return Response(
