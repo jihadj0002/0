@@ -477,7 +477,7 @@ class Update_External_Order_Item_To_Web(APIView):
             order_items.product_name = product_name
             order_items.raw_product_data = raw_product_data
             order_items.price = price
-            
+
             order_items.save(update_fields=["product_name", "raw_product_data", "price"])
 
             return Response(
@@ -645,6 +645,7 @@ class NewOrderExternal(APIView):
                         order=sale,
                         product=default_product,  # required FK
                         internal_product=None,
+                        product_name=item.get("product_name", "External Product"),
                         external_product_id=item.get("external_product_id"),
                         external_variation_id=item.get("external_variation_id"),
                         product_name=item.get("product_name"),
