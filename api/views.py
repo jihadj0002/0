@@ -708,53 +708,45 @@ class NewOrderExternal(APIView):
 # }
 
 
+
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
     def post(self, request, username):
-        user = get_object_or_404(User, username__iexact=username)
+        user = get_object_or_404(User, username=username)
 
         customer_id = request.data.get("customer_id")
         platform = request.data.get("platform")
 
-        if not customer_id or not platform:
-            return Response(
-                {"error": "customer_id and platform are required"},
-                status=400
-            )
+        if not customer_id:
+        
+            return Response({"error": "customer_id is required"}, status=400)
 
-        # Prevent duplicates
-        convo = Conversation.objects.filter(
+        # Check if conversation already exists for this user + customer_id + platform
+        existing_convo = Conversation.objects.filter(
             user=user,
-            customer_id=str(customer_id),
+            customer_id=customer_id,
             platform=platform
         ).first()
+        
 
-        if convo:
-            return Response(
-                {
-                    "message": "Conversation already exists",
-                    "sessionId": customer_id,
-                    "conversation_id": convo.id
-                },
-                status=200
-            )
-
-        # ✅ CREATE CONVERSATION DIRECTLY
-        convo = Conversation.objects.create(
-            user=user,
-            customer_id=str(customer_id),
-            platform=platform
-        )
-
-        return Response(
-            {
-                "message": "Conversation created",
+        if existing_convo:
+            return Response({
+                "message": "Conversation already exists",
                 "sessionId": customer_id,
-                "conversation_id": convo.id
-            },
-            status=201
-        )
+                "conversation": ConversationSerializer(existing_convo).data
+            }, status=status.HTTP_200_OK)
 
+        # Create a new conversation
+        
+        data = request.data.copy()
+        serializer = ConversationSerializer(data=data)
+        if serializer.is_valid():
+            # print("Conversation created:", serializer.data)
+            # # serializer.save()               #Problem Here
+            # print("Conversation created Done:", serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 
 @method_decorator(csrf_exempt, name='dispatch')
