@@ -712,14 +712,13 @@ class NewOrderExternal(APIView):
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
     def post(self, request, username):
-        print("Received request data:", request.data)
         user = get_object_or_404(User, username=username)
 
         customer_id = request.data.get("customer_id")
         platform = request.data.get("platform")
 
         if not customer_id:
-            print("customer_id is required")
+        
             return Response({"error": "customer_id is required"}, status=400)
 
         # Check if conversation already exists for this user + customer_id + platform
@@ -728,11 +727,9 @@ class UserConvCreateView(APIView):
             customer_id=customer_id,
             platform=platform
         ).first()
-        print("Existing conversation:", existing_convo)
+        
 
         if existing_convo:
-            print(existing_convo)
-            print("Conversation already exists")
             return Response({
                 "message": "Conversation already exists",
                 "sessionId": customer_id,
@@ -740,15 +737,13 @@ class UserConvCreateView(APIView):
             }, status=status.HTTP_200_OK)
 
         # Create a new conversation
-        print("Creating new conversation...")
+        
         data = request.data.copy()
-        data["user"] = user.id
-        print("Data for serializer:", data)
         serializer = ConversationSerializer(data=data)
         if serializer.is_valid():
-            print("Conversation created:", serializer.data)
-            # serializer.save()               #Problem Here
-            print("Conversation created Done:", serializer.data)
+            # print("Conversation created:", serializer.data)
+            # # serializer.save()               #Problem Here
+            # print("Conversation created Done:", serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -894,6 +889,8 @@ class GetLastMessages(APIView):
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
         current_product = convo.current_product
         is_ai_enabled = convo.is_ai_enabled
+        print("Conversation found:", convo)
+        print("Current product:", current_product)
 
 
         messages_qs = (
@@ -901,17 +898,17 @@ class GetLastMessages(APIView):
             .filter(conversation=convo)
             .order_by('-timestamp')[:10]
         )
-
+        print("Messages fetched:", messages_qs)
         orders_qs = Sale.objects.filter(customer_id=id, user=user)
         last_orders_qs = orders_qs.order_by('-created_at')[:1]
         
         messages = reversed(messages_qs)
-
+        print("Reversed messages:", messages)
         conversation_text = "\n".join(
             f"{msg.sender.capitalize()}: {msg.text}"
             for msg in messages
         )
-
+        print("Compiled conversation text:", conversation_text)
         orders_data = []
         for order in last_orders_qs:
             items = [
