@@ -747,7 +747,7 @@ class UserConvCreateView(APIView):
         serializer = ConversationSerializer(data=data)
         if serializer.is_valid():
             print("Conversation created:", serializer.data)
-            serializer.save(user=user)               #Problem Here
+            serializer.save()               #Problem Here
             print("Conversation created Done:", serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
 
