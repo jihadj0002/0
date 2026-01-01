@@ -15,85 +15,85 @@ EXTERNAL_UPDATE_URL = "https://erp.monowamart.com/api/v1/1/ai/order"
 
 
 
-@receiver(post_save, sender=OrderItem)
-def external_order_item_post_request(sender, instance, created, **kwargs):
-    # Only process when the OrderItem is newly created
-    if not created:
-        return
+# @receiver(post_save, sender=OrderItem)
+# def external_order_item_post_request(sender, instance, created, **kwargs):
+#     # Only process when the OrderItem is newly created
+#     if not created:
+#         return
 
-    # Get the Sale instance related to this OrderItem
-    sale = instance.order
+#     # Get the Sale instance related to this OrderItem
+#     sale = instance.order
 
-    # Check if the Sale is external and if the username is "monowamart"
-    if sale.source != "external" or sale.user.username != "monowamart":
-        return
+#     # Check if the Sale is external and if the username is "monowamart"
+#     if sale.source != "external" or sale.user.username != "monowamart":
+#         return
 
-    try:
-        print("Preparing payload for external order update...")
+#     try:
+#         print("Preparing payload for external order update...")
 
-        # Create the payload similar to your previous Sale signal
-        payload = {
-            "order_id": sale.oid,
-            "address": {
-                "name": sale.customer_name,
-                "mobile": sale.customer_phone,
-                "address": sale.customer_address,
-                "city": getattr(sale, "customer_city", ""),
-                "state": getattr(sale, "customer_state", ""),
-            },
-            "items": [
-                {
-                    "product_id": instance.external_product_id,
-                    "variation_id": instance.external_variation_id,
-                    "quantity": instance.quantity,
-                }
-            ],
-            "delivered_to": getattr(sale, "delivered_to", ""),
-            "pickup_location_id": 1,
-            "shipping_note": "",
-            "source": "ai",  # assuming "ai" is the source you're using for external orders
-            "payment_method": "cod",
-            "rp_redeemed": 0,
-        }
+#         # Create the payload similar to your previous Sale signal
+#         payload = {
+#             "order_id": sale.oid,
+#             "address": {
+#                 "name": sale.customer_name,
+#                 "mobile": sale.customer_phone,
+#                 "address": sale.customer_address,
+#                 "city": getattr(sale, "customer_city", ""),
+#                 "state": getattr(sale, "customer_state", ""),
+#             },
+#             "items": [
+#                 {
+#                     "product_id": instance.external_product_id,
+#                     "variation_id": instance.external_variation_id,
+#                     "quantity": instance.quantity,
+#                 }
+#             ],
+#             "delivered_to": getattr(sale, "delivered_to", ""),
+#             "pickup_location_id": 1,
+#             "shipping_note": "",
+#             "source": "ai",  # assuming "ai" is the source you're using for external orders
+#             "payment_method": "cod",
+#             "rp_redeemed": 0,
+#         }
 
-        # Define headers for the request
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
+#         # Define headers for the request
+#         headers = {
+#             "Content-Type": "application/json",
+#             "Accept": "application/json",
+#         }
 
-        print("Payload:", payload)
+#         print("Payload:", payload)
 
-        # Send the request to the external webhook
-        try:
-            response = requests.post(
-                WEBHOOK_URL,
-                json=payload,      # ✅ webhook body
-                headers=headers,
-                timeout=5,
-            )
-            print("Webhook delivered successfully.")
-            print("Webhook response status:", response.status_code)
-            print("Response content:", response.text)
-        except requests.RequestException as e:
-            print("Webhook delivery failed:", e)
+#         # Send the request to the external webhook
+#         try:
+#             response = requests.post(
+#                 WEBHOOK_URL,
+#                 json=payload,      # ✅ webhook body
+#                 headers=headers,
+#                 timeout=5,
+#             )
+#             print("Webhook delivered successfully.")
+#             print("Webhook response status:", response.status_code)
+#             print("Response content:", response.text)
+#         except requests.RequestException as e:
+#             print("Webhook delivery failed:", e)
 
-    except Exception as e:
-        print("Error during processing OrderItem post-save:", e)
+#     except Exception as e:
+#         print("Error during processing OrderItem post-save:", e)
 
 
-        response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
-        print("External order update response status:", response.status_code)
-        response.raise_for_status()  # Raise exception for HTTP errors
+#         response = requests.post(WEBHOOK_URL, json=payload, timeout=10)
+#         print("External order update response status:", response.status_code)
+#         response.raise_for_status()  # Raise exception for HTTP errors
 
-        if response.status_code == 200:
-            # Mark the sale as completed or update status as needed
-            instance.updated_to_web = "updated"
-            instance.save(update_fields=["updated_to_web"])
+#         if response.status_code == 200:
+#             # Mark the sale as completed or update status as needed
+#             instance.updated_to_web = "updated"
+#             instance.save(update_fields=["updated_to_web"])
 
-    except requests.RequestException as e:
-        # You can log this for debugging
-        print(f"Failed to send external order update: {e}")
+#     except requests.RequestException as e:
+#         # You can log this for debugging
+#         print(f"Failed to send external order update: {e}")
 
 
 
