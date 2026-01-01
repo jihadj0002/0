@@ -885,9 +885,12 @@ class GetLastMessages(APIView):
     def get(self, request, username, id):
         print("Fetching last messages for conversation:", id)
         user = get_object_or_404(User, username=username)
+        print("User found:", user.username)
         convo = get_object_or_404(Conversation, customer_id=id, user=user)
+        print("Conversation found:", convo)
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
         current_product = convo.current_product
+        print("Current product:", current_product)
         is_ai_enabled = convo.is_ai_enabled
         print("Conversation found:", convo)
         print("Current product:", current_product)
