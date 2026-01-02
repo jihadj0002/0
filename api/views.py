@@ -932,13 +932,25 @@ class GetLastMessages(APIView):
 
         print("Starting Messages Fetching:")
 
-        messages_qs = (
-            Message.objects
-            .filter(conversation=convo)
-            .order_by('-timestamp')[:10]
-        )
-        print("Messages fetched:", messages_qs)
-        print("Starting Last order Fetching:")
+        try:
+            messages_qs = (
+                Message.objects
+                .filter(conversation=convo)
+                .order_by('-timestamp')[:10]
+            )
+            print("Messages fetched:", messages_qs)
+            print("Starting Last order Fetching:")
+
+            if messages_qs.count() == 0:
+                print("No messages found for this conversation.")
+                return JsonResponse({"error": "No messages found"}, status=404)
+            else:
+                print(f"Found {messages_qs.count()} messages.")
+        except Exception as e:
+            print("Error fetching messages:", e)
+            return JsonResponse({"error": "Error fetching messages"}, status=500)
+
+
 
         try:
             last_order = (
