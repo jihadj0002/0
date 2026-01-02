@@ -935,8 +935,32 @@ class GetLastMessages(APIView):
             .order_by('-timestamp')[:10]
         )
         print("Messages fetched:", messages_qs)
-        orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
-        last_orders_qs = orders_qs.order_by('-created_at')[:1]
+
+        try:
+            last_order = (
+                Sale.objects
+                .filter(customer_id=customer_id, user=user)
+                .order_by('-created_at')
+                .first()
+            )
+
+            if last_order:
+                # order exists
+                print("Last order found:", last_order)
+                pass
+            else:
+                # no order found
+                print("No last order found for this customer.")
+                pass
+
+        except Exception as e:
+            # only catches real errors (DB issue, etc.)
+            print(e)
+
+
+        # orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
+
+        last_orders_qs = last_order.order_by('-created_at')[:1]
         
         messages = reversed(messages_qs)
         print("Reversed messages:", messages)
