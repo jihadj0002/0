@@ -933,7 +933,7 @@ class GetLastMessages(APIView):
         print("Starting Messages Fetching:")
 
         try:
-            messages_qss = convo.messages.order_by('-timestamp')
+            messages_qss = convo.messages.order_by('-timestamp')        #Find Messages by related name from Conversation model
 
             print("Messages fetched:", messages_qss)
             print("Starting Last order Fetching:")
@@ -943,9 +943,19 @@ class GetLastMessages(APIView):
             else:
                 messages_qs = list(messages_qss[:10])
                 print(f"Found {messages_qss.count()} messages.")
+                
+                messages = reversed(messages_qs)
+                print("Reversed messages:", messages)
+                conversation_text = "\n".join(
+                    f"{msg.sender.capitalize()}: {msg.text}"
+                    for msg in messages
+                )
+                print("Compiled conversation text:", conversation_text)
+                
         except Exception as e:
             print("Error fetching messages:", e)
-            return JsonResponse({"error": "Error fetching messages"}, status=500)
+            conversation_text = "This is a new Conversation"
+            return JsonResponse({"conversation_text": conversation_text}, status=200)
 
 
 
@@ -1001,14 +1011,6 @@ class GetLastMessages(APIView):
         # orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
 
         
-        
-        messages = reversed(messages_qs)
-        print("Reversed messages:", messages)
-        conversation_text = "\n".join(
-            f"{msg.sender.capitalize()}: {msg.text}"
-            for msg in messages
-        )
-        print("Compiled conversation text:", conversation_text)
         
 
         return JsonResponse(
