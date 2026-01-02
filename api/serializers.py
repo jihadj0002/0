@@ -104,7 +104,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
             "current_product",
             "is_ai_enabled",
 
-            # "last_order",
+            "last_order",
             "conversation",
         ]
 
@@ -114,17 +114,23 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
             .order_by("-timestamp")[:10]
         )
         messages = reversed(messages)  # oldest → newest
-        return MessageMiniSerializer(messages, many=True).data
 
-    # def get_last_order(self, obj):
-    #     last_sale = (
-    #         obj.sales
-    #         .order_by("-created_at")
-    #         .first()
-    #     )
-    #     if not last_sale:
-    #         return None
-    #     return LastSaleSerializer(last_sale).data
+        conversation_text = "\n".join(
+                    f"{msg.sender.capitalize()}: {msg.text}"
+                    for msg in messages
+                )
+        return MessageMiniSerializer(conversation_text, many=True).data
+
+# ADD LAST ORDER IF NEEDED
+    def get_last_order(self, obj):
+        last_sale = (
+            obj.sales
+            .order_by("-created_at")
+            .first()
+        )
+        if not last_sale:
+            return None
+        return SaleSerializer(last_sale).data
 
         
     
