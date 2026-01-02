@@ -929,6 +929,9 @@ class GetLastMessages(APIView):
         print("Current product:", current_product)
 
 
+
+        print("Starting Messages Fetching:")
+
         messages_qs = (
             Message.objects
             .filter(conversation=convo)
