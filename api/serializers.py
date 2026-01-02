@@ -89,6 +89,43 @@ class MessageMiniSerializer(serializers.ModelSerializer):
             "sender",
             "text"
         ]
+
+class ConversationSummarySerializer(serializers.ModelSerializer):
+    conversation = serializers.SerializerMethodField()
+    # last_order = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = [
+            "id",
+            "customer_id",
+
+            "chat_summary",
+            "current_product",
+            "is_ai_enabled",
+
+            # "last_order",
+            "conversation",
+        ]
+
+    def get_conversation(self, obj):
+        messages = (
+            obj.messages
+            .order_by("-timestamp")[:10]
+        )
+        messages = reversed(messages)  # oldest → newest
+        return MessageMiniSerializer(messages, many=True).data
+
+    # def get_last_order(self, obj):
+    #     last_sale = (
+    #         obj.sales
+    #         .order_by("-created_at")
+    #         .first()
+    #     )
+    #     if not last_sale:
+    #         return None
+    #     return LastSaleSerializer(last_sale).data
+
         
     
 class SaleSerializer(serializers.ModelSerializer):

@@ -17,7 +17,7 @@ from django.db import transaction
 from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
-    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer,MessageMiniSerializer
+    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer, ConversationSummarySerializer
 )
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -1038,11 +1038,12 @@ class LastMessageView(APIView):
         try:
             user = get_object_or_404(User, username__iexact=username)
             conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
-            messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
-            if not messages.exists():
-                return JsonResponse({"message": "No messages found"}, status=404)
-            messages = reversed(messages)
-            serializer = MessageMiniSerializer(messages, many=True)
+            # messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
+            # if not messages.exists():
+            #     return JsonResponse({"text": "Starting new Converstation"}, status=200)
+            # messages = reversed(messages)
+            serializer = ConversationSummarySerializer(conversation)
+            print("Serialized conversation summary:", serializer.data)
             return Response(serializer.data)
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=500)            
