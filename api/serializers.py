@@ -123,13 +123,12 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
 
 # ADD LAST ORDER IF NEEDED
     def get_last_order(self, obj):
-        last_sale = (
-            obj.sales
-            .order_by("-created_at")
-            .first()
-        )
+        last_sale = (Sale.objects.filter(user=obj.user,customer_id=obj.customer_id)
+                        .order_by("-created_at").first())
+
         if not last_sale:
             return None
+
         return SaleSerializer(last_sale).data
 
         
