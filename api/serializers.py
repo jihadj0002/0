@@ -92,7 +92,7 @@ class MessageMiniSerializer(serializers.ModelSerializer):
 
 class ConversationSummarySerializer(serializers.ModelSerializer):
     conversation = serializers.SerializerMethodField()
-    # last_order = serializers.SerializerMethodField()
+    last_order = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
