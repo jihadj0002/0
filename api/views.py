@@ -939,7 +939,9 @@ class GetLastMessages(APIView):
             print("Starting Last order Fetching:")
 
             if not messages_qss.exists():
-                return JsonResponse({"error": "No messages found"}, status=404)
+                conversation_text = "This is a new Conversation"
+                # return JsonResponse({"conversation_text": conversation_text}, status=200)
+                
             else:
                 messages_qs = list(messages_qss[:10])
                 print(f"Found {messages_qss.count()} messages.")
@@ -953,9 +955,9 @@ class GetLastMessages(APIView):
                 print("Compiled conversation text:", conversation_text)
                 
         except Exception as e:
-            print("Error fetching messages:", e)
-            conversation_text = "This is a new Conversation"
-            return JsonResponse({"conversation_text": conversation_text}, status=200)
+            print("Error fetching messages:", str(e))
+            
+            
 
 
 
