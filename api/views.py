@@ -17,7 +17,7 @@ from django.db import transaction
 from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
-    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer
+    ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer,MessageMiniSerializer
 )
 
 class UserProfileViewSet(viewsets.ModelViewSet):
@@ -923,7 +923,7 @@ class GetLastMessages(APIView):
         print("Conversation found:", convo)
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
         current_product = convo.current_product
-        print("Current product:", current_product if current_product else "None")
+        print("Current product:", current_product if current_product else "Nonee")
         is_ai_enabled = convo.is_ai_enabled
         print("Conversation found:", convo)
         print("Current product:", current_product)
@@ -957,7 +957,7 @@ class GetLastMessages(APIView):
                 
         except Exception as e:
             print("Error fetching messages:", str(e))
-            conversation_text = "This is a new Conversation"
+            conversation_text = "This is a Latest Conversation"
             
             
 
@@ -1009,7 +1009,7 @@ class GetLastMessages(APIView):
 
         except Exception as e:
             # only catches real errors (DB issue, etc.)
-            print(e)
+            print("Error in Last Order", e)
 
 
         # orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
@@ -1029,3 +1029,20 @@ class GetLastMessages(APIView):
             json_dumps_params={"ensure_ascii": False},
             safe=False
         )
+
+
+
+class LastMessageView(APIView):
+    def get(self, request, username, id):
+        customer_id = str(id)
+        try:
+            user = get_object_or_404(User, username__iexact=username)
+            conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
+            messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
+            if not messages.exists():
+                return JsonResponse({"message": "No messages found"}, status=404)
+            messages = reversed(messages)
+            serializer = MessageMiniSerializer(messages, many=True)
+            return Response(serializer.data)
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)            

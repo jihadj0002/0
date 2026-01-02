@@ -82,6 +82,14 @@ class MessageSerializer(serializers.ModelSerializer):
 
         return data
     
+class MessageMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = [
+            "sender",
+            "text"
+        ]
+        
     
 class SaleSerializer(serializers.ModelSerializer):
     oid = serializers.ReadOnlyField()
