@@ -947,10 +947,37 @@ class GetLastMessages(APIView):
             if last_order:
                 # order exists
                 print("Last order found:", last_order)
+                last_orders_qs = last_order.order_by('-created_at')[:1]
+                orders_data = []
+                for order in last_orders_qs:
+                    items = [
+                        {
+                            "product_pid": item.product.pid,
+                            "product_name": item.product.name,
+                            "quantity": item.quantity,
+                            "price": str(item.price),
+                        }
+                        for item in order.items.all()
+                    ]
+
+                    orders_data.append({
+                        "order_id": order.oid,
+                        "status": order.status,
+                        "amount": str(order.amount),
+                        "created_at": order.created_at,
+                        "customer_name": order.customer_name,
+                        "customer_address": order.customer_address,
+                        "customer_phone": order.customer_phone,
+                        "items": items,
+                    })
                 pass
             else:
                 # no order found
                 print("No last order found for this customer.")
+                orders_data = []
+                orders_data.append({
+                        "status": "No orders found",
+                    })
                 pass
 
         except Exception as e:
@@ -960,7 +987,7 @@ class GetLastMessages(APIView):
 
         # orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
 
-        last_orders_qs = last_order.order_by('-created_at')[:1]
+        
         
         messages = reversed(messages_qs)
         print("Reversed messages:", messages)
@@ -969,28 +996,7 @@ class GetLastMessages(APIView):
             for msg in messages
         )
         print("Compiled conversation text:", conversation_text)
-        orders_data = []
-        for order in last_orders_qs:
-            items = [
-                {
-                    "product_pid": item.product.pid,
-                    "product_name": item.product.name,
-                    "quantity": item.quantity,
-                    "price": str(item.price),
-                }
-                for item in order.items.all()
-            ]
-
-            orders_data.append({
-                "order_id": order.oid,
-                "status": order.status,
-                "amount": str(order.amount),
-                "created_at": order.created_at,
-                "customer_name": order.customer_name,
-                "customer_address": order.customer_address,
-                "customer_phone": order.customer_phone,
-                "items": items,
-            })
+        
 
         return JsonResponse(
             {
