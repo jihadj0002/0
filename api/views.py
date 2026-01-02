@@ -935,6 +935,7 @@ class GetLastMessages(APIView):
             .order_by('-timestamp')[:10]
         )
         print("Messages fetched:", messages_qs)
+        print("Starting Last order Fetching:")
 
         try:
             last_order = (
