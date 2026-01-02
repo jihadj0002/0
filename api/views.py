@@ -911,18 +911,19 @@ class SelectProductView(APIView):
     
 class GetLastMessages(APIView):
     def get(self, request, username, id):
-        print("Fetching last messages for conversation:", id)
+        customer_id = str(id)
+        print("Fetching last messages for conversation:", customer_id)
         user = get_object_or_404(User, username__iexact=username)
         print("User found:", user.username)
         # convo = get_object_or_404(Conversation, customer_id=id, user=user)
         convo = Conversation.objects.filter(customer_id=str(id),user=user).first()
         if not convo:
-            print("No conversation found for customer_id:", id)
+            print("No conversation found for customer_id:", customer_id)
             return JsonResponse({"error": "Conversation not found"},status=404)
         print("Conversation found:", convo)
         # orders = get_object_or_404(Sale, customer_id=id, user=user)
         current_product = convo.current_product
-        print("Current product:", current_product)
+        print("Current product:", current_product if current_product else "None")
         is_ai_enabled = convo.is_ai_enabled
         print("Conversation found:", convo)
         print("Current product:", current_product)
@@ -934,7 +935,7 @@ class GetLastMessages(APIView):
             .order_by('-timestamp')[:10]
         )
         print("Messages fetched:", messages_qs)
-        orders_qs = Sale.objects.filter(customer_id=id, user=user)
+        orders_qs = Sale.objects.filter(customer_id=customer_id, user=user)
         last_orders_qs = orders_qs.order_by('-created_at')[:1]
         
         messages = reversed(messages_qs)
