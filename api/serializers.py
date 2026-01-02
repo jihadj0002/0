@@ -119,7 +119,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
                     f"{msg.sender.capitalize()}: {msg.text}"
                     for msg in messages
                 )
-        return MessageMiniSerializer(conversation_text, many=True).data
+        return conversation_text
 
 # ADD LAST ORDER IF NEEDED
     def get_last_order(self, obj):
