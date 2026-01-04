@@ -10,6 +10,7 @@ urlpatterns = [
     path("form", views.forumm, name="forumm"),
     path("pricing", views.pricing, name="pricing"),
     path("privacy-policy", views.privacy_policy, name="p_policy"),
+    path("terms-and-conditions", views.terms, name="terms"),
 
     # path("products", views.products, name="products"),
     # path("stats", views.stats, name="stats"),

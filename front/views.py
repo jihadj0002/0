@@ -26,6 +26,8 @@ def pricing(request):
 
 def privacy_policy(request):
     return render(request, "front/p_policy.html")
+def terms(request):
+    return render(request, "front/terms.html")
 
 def forumm(request):
     if request.method == "POST":

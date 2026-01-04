@@ -48,14 +48,37 @@ body{background:var(--bg);}
   border:1px solid var(--border);
   border-radius:12px;
 }
-
+{% comment %} 
 .chat-tabs{
   display:flex;
   gap:14px;
   margin-top:14px;
   font-size:14px;
   font-weight:600;
+} {% endcomment %}
+
+
+.chat-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
 }
+
+.chat-tab {
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chat-tab.active {
+  color: #fff;
+  background: var(--primary);
+  border-radius: 6px;
+}
+
 
 .chat-list-body{
   margin-top:12px;
@@ -431,16 +454,16 @@ body{background:var(--bg);}
     <input type="text" id="searchInput" class="chat-search" placeholder="Search conversations…">
 
     <div class="chat-tabs">
-      <span>All</span>
-      <span>Messenger</span>
-      <span>WhatsApp</span>
-    </div>
+  <button class="chat-tab active" data-platform="all">All</button>
+  <button class="chat-tab" data-platform="messenger">Messenger</button>
+  <button class="chat-tab" data-platform="whatsapp">WhatsApp</button>
+  </div>
 
     <div class="chat-list-body">
       {% if all_convo %}
         {% for convo in all_convo %}
           <a href="?cid={{ convo.id }}" onclick="openChat()" style="text-decoration:none; color:inherit;">
-            <div class="chat-item {% if selected_convo and selected_convo.id == convo.id %}active{% endif %}">
+            <div class="chat-item {% if selected_convo and selected_convo.id == convo.id %}active{% endif %}" data-platform="{{ convo.platform }}">
               <div class="chat-avatar">
                 <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg"
                   alt="Avatar">
@@ -701,6 +724,37 @@ document.addEventListener("DOMContentLoaded", function() {
 </script>
 
 
+{% comment %} Chat Tabs Messenger, Whatsapp Instagram {% endcomment %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const tabs = document.querySelectorAll(".chat-tab");
+  const chats = document.querySelectorAll(".chat-item");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", function () {
+      const platform = this.dataset.platform;
+
+      // toggle active tab
+      tabs.forEach(t => t.classList.remove("active"));
+      this.classList.add("active");
+
+      // filter chats
+      chats.forEach(chat => {
+        if (platform === "all") {
+          chat.style.display = "flex";
+        } else {
+          chat.style.display =
+            chat.dataset.platform === platform ? "flex" : "none";
+        }
+      });
+    });
+  });
+});
+</script>
+
+
+
 {% comment %} Mobile view adjustments {% endcomment %}
 
 <script>
@@ -721,5 +775,6 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 });
 </script>
+
 
 {% endblock %}

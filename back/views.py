@@ -318,26 +318,135 @@ def sett(request):
             "is_connected": False,
         }
     )
+    print("Integration:", integration, "Created:", created)
+
+
+
+    integration_whapsapp, created = Integration.objects.get_or_create(
+        user=user,
+        platform="whatsapp",
+        defaults={
+            "is_enabled": False,
+            "is_connected": False,
+        }
+    )
+    print("Integration WhatsApp:", integration_whapsapp, "Created:", created)
+
+
+
+
 
     active_conversations = Conversation.objects.filter(user=user, is_ai_enabled=True).count()
     deactivated_conversations = Conversation.objects.filter(user=user, is_ai_enabled=False).count()
 
-    if request.method == "POST":
-        integration.webhook_url = request.POST.get("webhook_url")
-        integration.access_token = request.POST.get("access_token")
-        integration.is_enabled = request.POST.get("is_enabled") == "on"
-        integration.save()
+    active_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=True, platform="whatsapp").count()
+    deactivated_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=False, platform="whatsapp").count()
+    print("Active WhatsApp Conversations:", active_conversations_wp)
+    print("Deactivated WhatsApp Conversations:", deactivated_conversations_wp)
 
+    if request.method == "POST":
+        print("Received POST data to update integrations.")
+        try:
+            print("Updating Messenger Integration settings...")
+            integration.webhook_url = request.POST.get("webhook_url")
+            print("Webhook URL:", integration.webhook_url)
+            integration.access_token = request.POST.get("access_token")
+            print
+            integration.is_enabled = request.POST.get("is_enabled") == "on"
+            print("Is Messenger Bot Enabled:", integration.is_enabled)
+            integration.save()
+            print("Messenger Integration updated successfully.")
+        
+        except Exception as e:
+            messages.error(request, f"Error updating Messenger integration: {e}")
         return redirect("back:options")  # update with your URL name
+    
+    if request.method == "POST":
+        print("Received POST data to update integrations.")
+        try:
+            
+            integration_whapsapp.webhook_url = request.POST.get("webhook_url_wp")
+            integration_whapsapp.access_token = request.POST.get("access_token_wp")
+            integration_whapsapp.is_enabled = request.POST.get("is_enabled_wp") == "on"
+            print("Is WhatsApp Bot Enabled:", integration_whapsapp.is_enabled)
+            integration_whapsapp.save()
+            print("WhatsApp Integration updated successfully.")
+        
+        except Exception as e:
+            messages.error(request, f"Error updating Messenger integration: {e}")
+        return redirect("back:options")  # update with your URL name
+    
+   
 
     context = {
         "integration": integration,
         "active_conversations": active_conversations,
         "deactivated_conversations": deactivated_conversations,
+
+        "integration_wp": integration_whapsapp,
+        "active_conversations_wp": active_conversations_wp,
+        "deactivated_conversations_wp": deactivated_conversations_wp,
     }
 
     return render(request, "back/options.html", context)
 
+
+@login_required
+def settingss(request):
+    user = request.user
+
+    # get or create integrations
+    integration, created = Integration.objects.get_or_create(user=user,platform="messenger",
+                                                             defaults={"is_enabled": False,"is_connected": False,})
+    print("Integration:", integration, "Created:", created)
+
+    integration_whatsapp, created = Integration.objects.get_or_create(user=user,platform="whatsapp",
+        defaults={
+            "is_enabled": False,
+            "is_connected": False,
+        }
+    )
+    print("Integration WhatsApp:", integration_whatsapp, "Created:", created)
+
+    if request.method == "POST":
+        platform = request.POST.get("platform")
+        # Select the correct integration
+        if platform == "messenger":
+            target = integration
+            print("Updating Messenger Integration settings...")
+            print(target)
+        elif platform == "whatsapp":
+            target = integration_whatsapp
+            print(target)
+        else:
+            messages.error(request, "Unknown platform")
+            return redirect("back:options")
+        
+        # Update fields
+        target.webhook_url = request.POST.get("webhook_url")
+        target.access_token = request.POST.get("access_token")
+        target.is_enabled = request.POST.get("is_enabled") == "on"
+        target.save()
+
+        messages.success(request, f"{platform.capitalize()} settings updated")
+        return redirect("back:options")
+    
+    # counts for UI
+    active_conversations = Conversation.objects.filter(user=user, is_ai_enabled=True).count()
+    deactivated_conversations = Conversation.objects.filter(user=user, is_ai_enabled=False).count()
+    active_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=True, platform="whatsapp").count()
+    deactivated_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=False, platform="whatsapp").count()
+
+    context = {
+        "integration": integration,
+        "integration_wp": integration_whatsapp,
+        "active_conversations": active_conversations,
+        "deactivated_conversations": deactivated_conversations,
+        "active_conversations_wp": active_conversations_wp,
+        "deactivated_conversations_wp": deactivated_conversations_wp,
+    }
+
+    return render(request, "back/options.html", context)
 
 @login_required
 def disable_all_bots(request):

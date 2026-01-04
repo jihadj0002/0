@@ -270,6 +270,7 @@
     <div class="panel-body">
       <form method="POST" class="form">
         {% csrf_token %}
+        <input type="hidden" name="platform" value="messenger">
 
         <label>Messenger Webhook URL</label>
         <input
@@ -303,8 +304,111 @@
           </label>
         </div>
 
+
+
+
         <button type="submit" class="btn-primary">Save Settings</button>
       </form>
+
+
+      
+<!-- Whatsapp Integrations -->
+
+  <!-- Integrations -->
+  <div class="panel">
+    <div class="panel-header">
+      <h3>WhatsApp Integration</h3>
+    </div>
+
+    <div class="panel-body">
+      <form method="POST" class="form">
+        {% csrf_token %}
+        <input type="hidden" name="platform" value="whatsapp">
+
+        <label>Whatsapp Webhook URL</label>
+        <input
+  type="text"
+  name="webhook_url"
+  value="{{ integration_wp.webhook_url|default:'' }}"
+  readonly
+  class="readonly-input"
+  style="background-color: #a7a4a4ff; cursor: pointer;"
+  onclick="copyWebhook(this)"
+  title="Click to copy"
+>
+
+        <label>Page Access Token</label>
+        <input
+          type="password"
+          name="access_token"
+          placeholder="Paste your access token"
+          value="{{ integration_wp.access_token|default:'' }}"
+        >
+
+        <div class="toggle-row">
+          <label>Enable Whatsapp Bot</label>
+          <label class="switch">
+            <input
+              type="checkbox"
+              name="is_enabled"
+              {% if integration_wp.is_enabled %}checked{% endif %}
+            >
+            <span class="slider"></span>
+          </label>
+        </div>
+
+
+
+
+        <button type="submit" class="btn-primary">Save Settings</button>
+      </form>
+{% comment %} 
+<div class="panel-header">
+<h3>WhatsApp Integration</h3>
+</div>
+  <div class="panel">
+    
+
+    <div class="panel-body">
+      <form method="POST" class="form">
+        {% csrf_token %}
+        <input type="hidden" name="platform" value="whatsapp">
+
+        <label>Whatsapp Webhook URL</label>
+        <input
+          type="text"
+          name="webhook_url_wp"
+          value="{{ integration_wp.webhook_url_wp|default:'' }}"
+          readonly
+          class="readonly-input"
+          style="background-color: #a7a4a4ff; cursor: pointer;"
+          onclick="copyWebhook(this)"
+          title="Click to copy"
+>
+
+        <label>Page Access Token</label>
+        <input
+          type="password"
+          name="access_token_wp"
+          placeholder="Paste your access token"
+          value="{{ integration_wp.access_token_wp|default:'' }}"
+        >
+
+        <div class="toggle-row">
+          <label>Enable Whatsapp Bot</label>
+          <label class="switch">
+            <input
+              type="checkbox"
+              name="is_enabled_wp"
+              {% if integration_wp.is_enabled_wp %}checked{% endif %}
+            >
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <button type="submit" class="btn-primary">Save Settings</button>
+      </form> {% endcomment %}
+
 
       <!-- Future Integrations -->
       <div class="future-integrations">

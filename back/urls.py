@@ -22,7 +22,7 @@ urlpatterns = [
     path("chats/enable-all", views.enable_all_bots, name="enable_all_bots"),
 
     path("stats", views.stats, name="stats"),
-    path("options", views.sett, name="options"),
+    path("options", views.settingss, name="options"),
     
     path('send_message', views.send_message_ajax, name='send_message'),
     

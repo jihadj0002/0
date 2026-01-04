@@ -1,7 +1,7 @@
 from django.shortcuts import render
 
 # Create your views here.
-
+from decimal import Decimal, InvalidOperation
 from rest_framework import viewsets
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -451,18 +451,51 @@ class ConfirmOrderView(APIView):
             },
             status=status.HTTP_200_OK
         )
-    
+
+
+# class ExtOrderUpdate(APIView):
+#     def post(self, request, username, order_id):
+#         user = get_object_or_404(User, username=username)
+#         order = get_object_or_404(Sale, user=user, oid=order_id, source="external", status="pending")
+#         try:
+#             user = get_object_or_404(User, username__iexact=username)
+#             conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
+#             # messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
+#             # if not messages.exists():
+#             #     return JsonResponse({"text": "Starting new Converstation"}, status=200)
+#             # messages = reversed(messages)
+#             serializer = ConversationSummarySerializer(conversation)
+#             print("Serialized conversation summary:", serializer.data)
+#             return Response(serializer.data)
+#         except Exception as e:
+#             return JsonResponse({"error": str(e)}, status=500)      
+
+
 
 class Update_External_Order_Item_To_Web(APIView):
     @transaction.atomic
     def post(self, request, username, order_id):
         user = get_object_or_404(User, username=username)
         order = get_object_or_404(Sale, user=user, oid=order_id, source="external", status="pending")
-        order_items = get_object_or_404(OrderItem, order=order)
+        order_items = OrderItem.objects.filter(order=order)
         product_name = request.data.get("product_name")
         external_order_id = request.data.get("external_order_id")
         price = request.data.get("price")
         raw_product_data = request.data.get("raw_product_data", "{}")
+
+        if price is None:
+            return Response(
+                {"error": "price is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            price = Decimal(price)
+        except (InvalidOperation, TypeError):
+            return Response(
+                {"error": "price must be a valid decimal number"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         
 
 
@@ -472,13 +505,13 @@ class Update_External_Order_Item_To_Web(APIView):
             # For example, sending data to an external API
 
             order.updated_to_web = "updated"
+            order.external_order_id = external_order_id
             order.save(update_fields=["updated_to_web", "external_order_id"])
-
-            order_items.product_name = product_name
-            order_items.raw_product_data = raw_product_data
-            order_items.price = price
-
-            order_items.save(update_fields=["product_name", "raw_product_data", "price"])
+            order_items.update(
+                product_name=product_name,
+                raw_product_data=raw_product_data,
+                price=price,
+            )
 
             return Response(
                 {
