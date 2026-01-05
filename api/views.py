@@ -750,9 +750,6 @@ def get_ai_status(user, platform):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvCreateView(APIView):
-
-    
-
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
 
@@ -1070,7 +1067,15 @@ class LastMessageView(APIView):
         customer_id = str(id)
         try:
             user = get_object_or_404(User, username__iexact=username)
-            conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
+            conversation = (Conversation.objects.filter(user=user, customer_id=customer_id).order_by("-id").first())
+            
+            # conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
+
+            if not conversation:
+                return Response(
+                    {"error": "Conversation not found"},
+                    status=404
+            )
             # messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
             # if not messages.exists():
             #     return JsonResponse({"text": "Starting new Converstation"}, status=200)
