@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib import messages
+from django.core.paginator import Paginator
 
 @login_required
 def dashboard(request):
@@ -223,9 +224,12 @@ def c_dashboard(request):
 
     # Get selected conversation ID from URL query (?cid=123)
     convo_id = request.GET.get("cid")
-
     selected_convo = None
     messages = None
+
+    paginator = Paginator(all_convo, 30)  # 30 chats per page
+    page_number = request.GET.get("page", 1)
+    all_convo = paginator.get_page(page_number)
 
     if convo_id:
         selected_convo = get_object_or_404(
@@ -241,6 +245,7 @@ def c_dashboard(request):
     }
 
     return render(request, "back/c_dashboard.html", context)
+
 
 
 @login_required

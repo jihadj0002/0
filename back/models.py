@@ -191,7 +191,7 @@ class Conversation(models.Model):
 
     last_viewed_product = models.CharField(max_length=255, blank=True, null=True)
     detected_intent = models.CharField(max_length=100, blank=True, null=True)
-    current_product = models.CharField(max_length=255, blank=True, null=True)
+    current_product = models.CharField(max_length=500, blank=True, null=True)
 
     language_detected = models.CharField(max_length=20, blank=True, null=True)
 

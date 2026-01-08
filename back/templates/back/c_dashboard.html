@@ -481,6 +481,12 @@ body{background:var(--bg);}
         <p style="color:var(--muted); padding:10px;">No conversations yet.</p>
       {% endif %}
     </div>
+
+    {% if all_convo.has_next %}
+    <button id="loadMoreChats"data-next="{{ all_convo.next_page_number }}">
+      Load more
+    </button>
+  {% endif %}
   </div>
 
   <!-- CHAT WINDOW -->
@@ -774,6 +780,40 @@ document.addEventListener("DOMContentLoaded", function () {
     document.querySelector('.layout')?.classList.add('chat-open');
   }
 });
+</script>
+
+
+
+
+
+
+
+
+
+<script>
+const loadBtn = document.getElementById("loadMoreChats");
+const chatList = document.getElementById("chatList");
+
+if (loadBtn) {
+  loadBtn.addEventListener("click", function () {
+    const page = this.dataset.next;
+
+    fetch(`?page=${page}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+    .then(res => res.text())
+    .then(html => {
+      const temp = document.createElement("div");
+      temp.innerHTML = html;
+
+      temp.querySelectorAll(".chat-item").forEach(el => {
+        chatList.appendChild(el.parentElement);
+      });
+
+      this.remove(); // remove button after loading
+    });
+  });
+}
 </script>
 
 
