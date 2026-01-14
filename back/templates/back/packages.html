@@ -1,0 +1,962 @@
+{% extends 'back/base.html' %}
+{% load static %}
+
+
+{% block title %}Dashboard | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+/* =====================
+   BASE STYLING
+===================== */
+:root {
+  --primary: #2563eb;
+  --accent: #3b82f6;
+  --bg-light: #f8fafc;
+  --border: #e2e8f0;
+  --muted: #64748b;
+}
+
+.content {
+  padding: 20px;
+  background: var(--bg-light);
+  min-height: 100vh;
+  font-family: 'Inter', sans-serif;
+}
+
+.page-header {
+  margin-bottom: 25px;
+}
+
+.page-header h1 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 5px;
+}
+
+.page-header .sub {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* =====================
+   PANEL & BUTTON
+===================== */
+.panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  padding: 20px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.panel-header h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.btn-primary:hover {
+  background: var(--accent);
+}
+
+/* =====================
+   TABLE STYLING
+===================== */
+.packages-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.packages-table th,
+.packages-table td {
+  padding: 12px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 15px;
+  color: #1f2937;
+}
+
+.packages-table th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #334155;
+}
+
+.packages-table tr:hover {
+  background-color: #f9fafb;
+}
+
+/* =====================
+   STATUS SELECT
+===================== */
+.status-select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+.status-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* =====================
+   RESPONSIVE DESIGN
+===================== */
+@media (max-width: 768px) {
+  .panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .packages-table,
+  .packages-table thead,
+  .packages-table tbody,
+  .packages-table th,
+  .packages-table td,
+  .packages-table tr {
+    display: block;
+  }
+
+  .packages-table thead {
+    display: none;
+  }
+
+  .packages-table tr {
+    background: #fff;
+    margin-bottom: 15px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
+  }
+
+  .packages-table td {
+    border: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 15px;
+    padding: 8px 0;
+  }
+
+  .packages-table td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--muted);
+  }
+
+  .packages-table td:last-child {
+    border-bottom: none;
+  }
+
+  .packages-table td select {
+    width: 100%;
+    margin-top: 5px;
+  }
+  
+  /* Add labels for mobile using data-labels dynamically */
+  .packages-table td:nth-child(1)::before { content: "Package"; }
+  .packages-table td:nth-child(2)::before { content: "Stock"; }
+  .packages-table td:nth-child(3)::before { content: "Price"; }
+  .packages-table td:nth-child(4)::before { content: "Last Updated"; }
+  {% comment %} .packages-table td:nth-child(5)::before { content: "Edit"; } {% endcomment %}
+  {% comment %} .packages-table td:nth-child(6)::before { content: "Created At"; } {% endcomment %}
+}
+
+
+/* =====================
+   Popup STYLING
+===================== */
+body {
+  font-family: 'Inter', sans-serif;
+  margin: 0;
+  padding: 20px;
+  background: #f9fafb;
+}
+
+h1 {
+  text-align: center;
+  color: #111827;
+  margin-bottom: 20px;
+}
+
+button {
+  display: block;
+  margin: 10px auto 20px;
+  padding: 10px 20px;
+  background-color: #2563eb;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.3s ease;
+}
+button:hover {
+  background-color: #1d4ed8;
+}
+
+/* ===== Modal ===== */
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 850px;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ===== Header ===== */
+.modal-header {
+  grid-column: span 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 10px;
+}
+
+.close {
+  font-size: 24px;
+  cursor: pointer;
+  color: #555;
+}
+
+/* ===== Form ===== */
+.form-section label {
+  display: block;
+  font-weight: 600;
+  margin-top: 10px;
+  color: #1f2937;
+}
+
+.form-section input,
+.form-section textarea,
+.form-section select {
+  width: 100%;
+  padding: 8px 10px;
+  margin-top: 5px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.form-section textarea {
+  resize: vertical;
+}
+
+.form-row {
+  display: flex;
+  gap: 12px;
+}
+.form-row > div {
+  flex: 1;
+}
+
+.publish-btn {
+  background-color: #16a34a;
+  color: white;
+  border: none;
+  padding: 10px 15px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 15px;
+  font-weight: 600;
+}
+.publish-btn:hover {
+  background-color: #15803d;
+}
+
+/* ===== Image Upload ===== */
+.image-upload {
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  background-color: #f8fafc;
+  margin-top: 15px;
+}
+.image-upload input {
+  display: none;
+}
+.image-upload label {
+  cursor: pointer;
+  color: #2563eb;
+  font-weight: 600;
+}
+.preview {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.preview img {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .modal-content {
+    grid-template-columns: 1fr;
+    width: 95%;
+  }
+  .modal-header {
+    grid-column: span 1;
+  }
+  .form-row {
+    flex-direction: column;
+  }
+}
+    /* POPUp END */
+
+</style>
+
+
+
+<style>
+/* =====================
+   Edit Popup STYLING
+===================== */
+/* static/back/css/edit_popup.css */
+
+.edit-popup-wrapper {
+  font-family: "Poppins", sans-serif;
+}
+
+.edit-modal {
+  display: none;
+  position: fixed;
+  z-index: 999;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  width: 100%;
+  background-color: rgba(0, 0, 0, 0.4);
+  justify-content: center;
+  align-items: center;
+}
+
+.edit-modal-body {
+  background: #fff;
+  border-radius: 18px;
+  width: 90%;
+  max-width: 640px;
+  padding: 2rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  animation: popupFade 0.3s ease-in-out;
+}
+
+@keyframes popupFade {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.edit-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.2rem;
+}
+
+.edit-modal-header h2 {
+  color: #333;
+  font-size: 1.4rem;
+  margin: 0;
+}
+
+.edit-close-btn {
+  cursor: pointer;
+  font-size: 1.8rem;
+  color: #555;
+}
+
+.edit-form-row {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+  flex-wrap: wrap;
+}
+
+.edit-form-row div {
+  flex: 1;
+  min-width: 48%;
+}
+
+.edit-form-section label {
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #555;
+}
+
+.edit-form-section input,
+.edit-form-section textarea,
+.edit-form-section select {
+  width: 100%;
+  padding: 0.7rem;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+  font-size: 0.95rem;
+  background-color: #f9faff;
+}
+
+.edit-form-section input:focus,
+.edit-form-section textarea:focus,
+.edit-form-section select:focus {
+  border-color: #4f46e5;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.edit-upload-container {
+  border: 2px dashed #cbd5e1;
+  padding: 1rem;
+  border-radius: 12px;
+  text-align: center;
+  background-color: #f8fafc;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.edit-upload-container label {
+  color: #6366f1;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.edit-upload-container input {
+  display: none;
+}
+
+.edit-image-preview img {
+  width: 100px;
+  height: auto;
+  border-radius: 8px;
+  margin: 5px;
+  transition: transform 0.2s ease;
+}
+
+.edit-image-preview img:hover {
+  transform: scale(1.05);
+}
+
+.edit-submit-btn {
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.2rem;
+  width: 100%;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.edit-submit-btn:hover {
+  background: linear-gradient(90deg, #4f46e5, #4338ca);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+}
+
+
+.delete-prod-btn {
+  background: linear-gradient(90deg, #f06593ff, #e5467bff);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 0.9rem 1.2rem;
+  width: 100%;
+  font-size: 1rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.delete-prod-btn:hover {
+  background: linear-gradient(90deg, #e5467bff, #9e3055ff);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+}
+
+@media (max-width: 576px) {
+  .edit-form-row {
+    flex-direction: column;
+  }
+
+  .edit-modal-body {
+    padding: 1.5rem;
+  }
+}
+/* =====================
+   Edit Popup STYLING
+===================== */
+
+
+</style>
+{% endblock %}
+
+
+{% block content %}
+
+
+      <!-- Content -->
+      <div class="content">
+        <div class="page-header">
+          <h1>Package List</h1>
+          <p class="sub">Sync packages from Shopify / WooCommerce or add manually</p>
+        </div>
+
+        <!-- Table -->
+        <div class="panel" style="margin-top:20px;">
+          <div class="panel-header">
+            <h3>All packages</h3>
+            <div style="display:flex; gap:10px;">
+              {% comment %} <button class="btn-primary" >Sync Shopify</button> {% endcomment %}
+              <button id="openModal">Add New Package</button>
+              {% comment %} <button class="btn-primary" onclick="window.location.href='{% url 'back:import_packages' %}';">Export/Import</button> {% endcomment %}
+              <button class="btn-primary" onclick="window.location.href='#';">Export/Import</button>
+            </div>
+          </div>
+
+
+
+          <!-- PopUp start -->
+<div class="Package-page">
+  <!-- Modal -->
+  <div id="PackageModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Package</h2>
+        <span class="close">&times;</span>
+      </div>
+
+      <div class="form-section">
+        <form id="PackageForm" enctype="multipart/form-data" method="POST" action="{% url 'back:add_package' %}">
+          {% csrf_token %}
+          <div class="form-row">
+            <div>
+              <label for="name">Package Name</label>
+              <input type="text" id="name" name="name" required>
+            </div>
+            <div>
+              <label for="price">Price (bdt)</label>
+              <input type="number" step="0.01" id="price" name="price" required>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div>
+              <label for="discounted_price">Discounted Price (bdt)</label>
+              <input type="number" step="0.01" id="discounted_price" name="discounted_price">
+            </div>
+            <div>
+              <label for="stock_quantity">Stock Quantity</label>
+              <input type="number" id="stock_quantity" name="stock_quantity" required>
+            </div>
+          </div>
+
+          <label for="description">Description</label>
+          <textarea id="description" name="description" rows="3" placeholder="Enter Package description..."></textarea>
+
+          <label>Status</label>
+          <select id="status" name="status">
+            <option value="True" selected>Active</option>
+            <option value="False">Inactive</option>
+          </select>
+
+          <div class="image-upload">
+            <input type="file" id="imageUpload" name="image" accept="image/*" multiple>
+            <label for="imageUpload">📁 Click to upload Package images</label>
+            <div class="preview" id="preview"></div>
+          </div>
+
+          <button type="submit" class="publish-btn">Publish Package</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+  <!-- PopUp end -->
+
+
+ <!-- Edit Package Html popup -->
+<div class="edit-popup-wrapper">
+  <div id="editPopupModal" class="edit-modal">
+    <div class="edit-modal-body">
+      <div class="edit-modal-header">
+        <h2>Edit Package</h2>
+        <span class="edit-close-btn">&times;</span>
+      </div>
+
+      <div class="edit-form-section">
+        <form id="editPackageForm" enctype="multipart/form-data" method="POST" action="{% url 'back:add_package' %}">
+          {% csrf_token %}
+          <div class="edit-form-row">
+            <div>
+              <label for="edit_name">Package Name</label>
+              <input type="text" id="edit_name" name="name" required>
+            </div>
+            <div>
+              <label for="edit_price">Price (BDT)</label>
+              <input type="number" step="0.01" id="edit_price" name="price" required>
+            </div>
+          </div>
+
+          <div class="edit-form-row">
+            <div>
+              <label for="edit_discount_price">Discounted Price (BDT)</label>
+              <input type="number" step="0.01" id="edit_discount_price" name="discounted_price">
+            </div>
+            <div>
+              <label for="edit_stock">Stock Quantity</label>
+              <input type="number" id="edit_stock" name="stock_quantity" required>
+            </div>
+          </div>
+
+          <label for="edit_description">Description</label>
+          <textarea id="edit_description" name="description" rows="3" placeholder="Enter Package description..."></textarea>
+
+          <label>Status</label>
+          <select id="edit_status" name="status">
+            <option value="True" selected>Active</option>
+            <option value="False">Inactive</option>
+          </select>
+
+          <div class="edit-upload-container">
+            <input type="file" id="edit_image_upload" name="image" accept="image/*" multiple>
+            <label for="edit_image_upload">📁 Upload Package images</label>
+            <div class="edit-image-preview" id="edit_image_preview"></div>
+          </div>
+
+          <button type="submit" class="edit-submit-btn">Update Package</button>
+          <button type="button" class="delete-prod-btn">Delete Package</button>
+          
+          
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Package Html popup -->
+
+
+
+  
+
+          <table class="packages-table" style="margin-top:12px;">
+            <thead>
+              <tr>
+                <th>Package</th>
+                <th>Stock</th>
+                <th>Price</th>
+                <th>Last Updated</th>
+                <th>Edit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in all_packages %}
+              <tr>
+                <td>{{p.name}}</td>
+                <td>{{p.stock_quantity}}</td>
+                <td>{{p.price}}</td>
+                <td>{{p.last_synced}}</td>
+                <td>
+                  <button class="edit-Package-btn" data-id="{{ p.id }}">Edit</button>
+                </td>
+                
+                
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <!-- PopUp JS-->
+
+      <script>
+    document.addEventListener("DOMContentLoaded", function () {
+  const modal = document.getElementById("PackageModal");
+  const openModalBtn = document.getElementById("openModal");
+  const closeModalBtn = document.querySelector(".close");
+  const imageInput = document.getElementById("imageUpload");
+  const preview = document.getElementById("preview");
+
+
+
+  // Open modal
+  openModalBtn.addEventListener("click", () => {
+    modal.style.display = "flex";
+    document.body.style.overflow = "hidden";
+  });
+
+  // Close modal
+  closeModalBtn.addEventListener("click", () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "auto";
+  });
+
+  // Close on outside click
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+      document.body.style.overflow = "auto";
+    }
+  });
+
+  // Image preview
+  imageInput.addEventListener("change", function () {
+    preview.innerHTML = "";
+    const files = Array.from(this.files);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = document.createElement("img");
+        img.src = e.target.result;
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+});
+  // Optional: Handle form submit via AJAX End
+
+
+  </script>
+
+
+      <!-- Package Update JS-->
+<script>
+
+// static/back/js/edit_popup.js
+
+document.addEventListener("DOMContentLoaded", function () {
+  const modal = document.getElementById("editPopupModal");
+  const closeModal = document.querySelector(".edit-close-btn");
+  const form = document.getElementById("editPackageForm");
+  const imageInput = document.getElementById("edit_image_upload");
+  const preview = document.getElementById("edit_image_preview");
+  const modalTitle = document.querySelector(".edit-modal-header h2");
+  const submitBtn = document.querySelector(".edit-submit-btn");
+
+  let currentEditId = null;
+
+  // --- DELETE Package LOGIC ---
+const deleteBtn = document.querySelector(".delete-prod-btn");
+
+
+deleteBtn.addEventListener("click", function () {
+  if (!currentEditId) {
+    alert("⚠️ Please select a Package to delete.");
+    return;
+  }
+
+  const confirmDelete = confirm("Are you sure you want to delete this Package?");
+  if (!confirmDelete) return;
+
+  fetch(`dbpackages/${currentEditId}/delete/`, {
+    method: "DELETE",
+    headers: {
+      "X-CSRFToken": csrftoken,
+    },
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data.success) {
+        alert("🗑️ " + data.message);
+        modal.style.display = "none";
+        document.body.style.overflow = "auto";
+        form.reset();
+        preview.innerHTML = "";
+        currentEditId = null;
+      } else {
+        alert("❌ " + data.message);
+      }
+    })
+    .catch((err) => {
+      console.error(err);
+      alert("⚠️ Something went wrong while deleting.");
+    });
+});
+  // --- DELETE Package LOGIC END ---
+
+  // Helper: Get CSRF token
+  function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== "") {
+      const cookies = document.cookie.split(";");
+      for (let cookie of cookies) {
+        cookie = cookie.trim();
+        if (cookie.startsWith(name + "=")) {
+          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+          break;
+        }
+      }
+    }
+    return cookieValue;
+  }
+  const csrftoken = getCookie("csrftoken");
+
+  // Open edit modal
+  document.querySelectorAll(".edit-Package-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      currentEditId = btn.dataset.id;
+      modal.style.display = "flex";
+      document.body.style.overflow = "hidden";
+
+      modalTitle.textContent = "Edit Package";
+      submitBtn.textContent = "Update Package";
+
+      // Fetch data to prefill
+      fetch("{% url 'back:edit_package' 0 %}".replace("0", currentEditId))
+        .then((res) => res.json())
+        .then((data) => {
+          document.getElementById("edit_name").value = data.name;
+          document.getElementById("edit_price").value = data.price;
+          document.getElementById("edit_discount_price").value = data.discounted_price;
+          document.getElementById("edit_stock").value = data.stock_quantity;
+          document.getElementById("edit_description").value = data.description;
+          document.getElementById("edit_status").value = data.status ? "True" : "False";
+          
+
+          preview.innerHTML = "";
+          if (data.image) {
+            const img = document.createElement("img");
+            img.src = data.image;
+            preview.appendChild(img);
+          }
+        });
+    });
+  });
+
+  // Close modal
+  closeModal.addEventListener("click", () => {
+    modal.style.display = "none";
+    document.body.style.overflow = "auto";
+  });
+
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) {
+      modal.style.display = "none";
+      document.body.style.overflow = "auto";
+    }
+  });
+
+  // Image preview
+  imageInput.addEventListener("change", function () {
+    preview.innerHTML = "";
+    const files = Array.from(this.files);
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = document.createElement("img");
+        img.src = e.target.result;
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  // Form submit
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    const formData = new FormData(form);
+
+    const url = currentEditId
+      ? `dbpackages/${currentEditId}/edit/`
+      : form.action;
+
+    fetch(url, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrftoken },
+      body: formData,
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          alert("✅ Package updated successfully!");
+          modal.style.display = "none";
+          document.body.style.overflow = "auto";
+          form.reset();
+          preview.innerHTML = "";
+          currentEditId = null;
+          modalTitle.textContent = "Edit Package";
+          submitBtn.textContent = "Update Package";
+        } else {
+          alert("❌ Update failed.");
+        }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("⚠️ Something went wrong.");
+      });
+  });
+});
+
+
+
+
+
+    </script>
+
+      
+
+
+    {% endblock %}

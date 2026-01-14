@@ -14,6 +14,14 @@ urlpatterns = [
     path("products/import", views.import_products, name="import_products"),
     path("products/export", views.export_products, name="export_products"),
     
+    # Package Management
+    path("packages", views.packages, name="packages"),
+    path("packages/add", views.add_package, name="add_package"),
+    path("packages/<int:pk>/edit/", views.edit_package, name='edit_package'),
+    path("packages/<int:pk>/delete/", views.delete_package, name="delete_package"),
+    # path("products/import", views.import_products, name="import_products"),
+    # path("products/export", views.export_products, name="export_products"),
+    
     # path("pricing", views.pricing, name="pricing"),
     path("orders", views.orders, name="orders"),
     path("orders/update-status/", views.update_order_status, name="update_order_status"),

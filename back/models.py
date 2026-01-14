@@ -156,18 +156,40 @@ class ProductImages(models.Model):
 
 class Package(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="packages")
+    pacid = ShortUUIDField(length=6,max_length=15,prefix="pac_",alphabet="abcdefg1234")
 
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
-
-    base_price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    discounted_price = models.DecimalField(max_digits=10, decimal_places=2)
+    stock_quantity = models.IntegerField(default=100)
+    upsell_enabled = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    image = models.ImageField(upload_to="package", default="package.jpg")
 
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
     
+    def get_percentage(self):
+        new_price = (self.price / self.discounted_price) * 100
+        return new_price
+    
+    
+    def product_image(self):
+        return mark_safe(f'<img src="{self.image.url}" width="50" height="50" />')
+
+    
+
+
+class PackageImages(models.Model):
+    images = models.ImageField(upload_to="package-images", default="package.jpg")
+    package = models.ForeignKey(Package, on_delete=models.SET_NULL, null=True)
+    date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name_plural = "Package Images"
 
 class PackageItem(models.Model):
     package = models.ForeignKey(Package, on_delete=models.CASCADE, related_name="items")

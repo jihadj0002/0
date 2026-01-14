@@ -9,7 +9,7 @@ from .models import UserProfile, Product, Conversation, Message, Sale, Setting, 
 # which acts a bit like a "subform" of the User admin page
 
 class PackageAdmin(admin.ModelAdmin):
-    list_display = ("name", "base_price", "is_active", "created_at")
+    list_display = ("name", "price", "is_active", "created_at")
     search_fields = ("name",)
     list_filter = ("is_active",)
 

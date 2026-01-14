@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
-from .models import Product, Conversation, Sale, Message, Integration
+from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem
 # Create your views here.
 from django.db.models.functions import TruncDay
 
@@ -306,6 +306,115 @@ def products(request):
         "all_products": all_products
     }
     return render(request, "back/products.html", context)
+
+
+@login_required
+def packages(request):
+    # Get only the packages owned by the logged-in user
+    all_packages = Package.objects.filter(user=request.user).order_by('-created_at')
+    print("Packages:", all_packages)
+    context = {
+        "user": request.user,
+        "all_packages": all_packages
+    }
+    return render(request, "back/packages.html", context)
+
+
+
+
+@login_required
+def add_package(request):
+    if request.method == "POST":
+        name = request.POST.get("name")
+        description = request.POST.get("description")
+        price = request.POST.get("price")
+        discounted_price = request.POST.get("discounted_price")
+        stock_quantity = request.POST.get("stock_quantity")
+        upsell_enabled = request.POST.get("upsell_enabled") == "on"
+        image = request.FILES.get("image")
+
+
+        # Create and save product for the logged-in user
+        Package.objects.create(
+            user=request.user,
+            name=name,
+            description=description,
+            price=price,
+            discounted_price=discounted_price if discounted_price else None,
+            stock_quantity=stock_quantity,
+            upsell_enabled=upsell_enabled,
+            image=image if image else "product.jpg",
+        )
+
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({
+                "success": True,
+                "product": {
+                    "id": Product.id,
+                    "name": Product.name,
+                    "price": str(Product.price),
+                    "image": Product.image.url if Product.image and hasattr(Product.image, "url") else "",
+                },
+            })
+
+        # Otherwise, handle normal form submit
+        return redirect("back:packages")
+
+        
+
+    return render(request, "back/add_product.html", {"user": request.user})
+
+
+@login_required
+def edit_package(request, pk):
+
+    package = get_object_or_404(Package, pk=pk, user=request.user)
+    
+
+    if request.method == "GET":
+        # print("GET request for product data")
+        # Return product data as JSON for prefill
+        return JsonResponse({
+            "id": package.id,
+            "name": package.name,
+            "price": float(package.price),
+            "discounted_price": float(package.discounted_price) if package.discounted_price else "",
+            "stock_quantity": package.stock_quantity,
+            "description": package.description,
+            "status": package.status,
+            "image": package.image.url if package.image and hasattr(package.image, "url") else ""
+        })
+
+    elif request.method == "POST":
+        # Update product with submitted form data
+        package.name = request.POST.get("name")
+        package.price = request.POST.get("price")
+        package.discounted_price = request.POST.get("discounted_price") or None
+        package.stock_quantity = request.POST.get("stock_quantity")
+        package.description = request.POST.get("description")
+        package.status = request.POST.get("status") == "True"
+
+        if "image" in request.FILES:
+            package.image = request.FILES["image"]
+
+        package.save()
+
+        return JsonResponse({"success": True, "message": "Package updated successfully!"})
+
+    return JsonResponse({"error": "Invalid request"}, status=400)
+
+
+@csrf_exempt
+def delete_package(request, pk):
+    if request.method == "DELETE":
+        try:
+            package = get_object_or_404(Package, pk=pk)
+            package.delete()
+            return JsonResponse({"success": True, "message": "Package deleted successfully."}) 
+        except Package.DoesNotExist:
+            return JsonResponse({"success": False, "message": "Package not found."}, status=404)
+    return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
+
 
 @login_required
 def stats(request):
