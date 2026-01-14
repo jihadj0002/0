@@ -389,7 +389,7 @@ class Sale(models.Model):
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
 
     # If Sale is a package sale
-    package = models.ForeignKey("Package",on_delete=models.PROTECT,null=True,blank=True,related_name="sales")
+    package = models.ForeignKey("Package",on_delete=models.PROTECT,null=True,blank=True,related_name="package")
     
     delivered_to = models.CharField(max_length=20, choices=DELIVERED_CHOICES, default="inside_dhaka")
     
@@ -428,7 +428,7 @@ class OrderItem(models.Model):
         ("added", "Added"),
         ("removed", "Removed"),
     ]
-    
+
     action = models.CharField(max_length=20, choices=ACTION_CHOICES, default="base")    
     price_delta = models.DecimalField(max_digits=10, decimal_places=2, default=0)
 
@@ -438,7 +438,7 @@ class OrderItem(models.Model):
 
     # Editable product data
     product_name = models.CharField(max_length=255, default="Unknown Product", null=True, blank=True)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     quantity = models.PositiveIntegerField(default=1)
 
     product = models.ForeignKey(Product, on_delete=models.PROTECT , null=True, blank=True)  # required FK

@@ -16,6 +16,9 @@ urlpatterns = [
     path('<str:username>/product/<int:pk>/', views.UserProductDataView.as_view(), name='user-product-view'),
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
 
+    path('<str:username>/package_list', views.UserPackageListView.as_view(), name='user-package-list'),
+    path('<str:username>/package/<int:pk>/', views.UserPackageDataView.as_view(), name='user-package-view'),
+
     path('<str:username>/orders', views.UserOrderListCreateView.as_view(), name='user-order-list'),
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
     
@@ -39,7 +42,9 @@ urlpatterns = [
     path('<str:username>/conv/msg/<str:id>', views.LastMessageView.as_view(), name='get-last-messages-multi'),
     
     path('<str:username>/conv/<str:aid>/select_p', views.SelectProductView.as_view(), name='select-product'),
+    
     path('<str:username>/conv/<str:aid>/update', views.UserConvUpdateView.as_view(), name='chat-convo-update'),
+
     path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
     path('<str:username>/conv/<str:aid>/msg/<str:mid>', views.MessageRetrieveView.as_view(), name='chat-msg-retrieve'),
 

@@ -14,7 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.db import transaction
-from back.models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
+from back.models import Package, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer, ConversationSummarySerializer
@@ -46,6 +46,33 @@ class UserProductListView(APIView):
         products = Product.objects.filter(user=user)
         serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
+    
+
+# Package List View Endpoint
+
+class UserPackageListView(APIView):
+    def get(self, request, username):
+        user = get_object_or_404(User, username=username)
+        packages = Package.objects.filter(user=user)
+        serializer = ProductSerializer(packages, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+
+
+class UserPackageDataView(APIView):
+    
+    def get(self, request, username, pk):
+        # Ensure the token user matches the username in the URL
+        if request.user.username != username:
+            return Response({'error': 'Unauthorized access'}, status=403)
+
+        # Fetch the package belonging to this user
+        package = get_object_or_404(Package, id=pk, user=request.user)
+        serializer = ProductSerializer(package)
+        return Response(serializer.data)
+    
+
+# Package Data view Endpoint
     
 class ProductImagesSerializer(serializers.ModelSerializer):
     images = serializers.SerializerMethodField()
@@ -542,19 +569,35 @@ class NewOrder(APIView):
 
         customer_id = request.data.get("customer_id")
         product_id = request.data.get("product_id")
+        package_id = request.data.get("package_id")
         quantity = int(request.data.get("quantity", 1))
+        
         customer_name = request.data.get("customer_name", "")
         customer_address = request.data.get("customer_address", "")
         customer_phone = request.data.get("customer_phone", "")
         customer_city = request.data.get("customer_city", "")
         customer_state = request.data.get("customer_state", "")
-        if not customer_id or not product_id:
+
+
+        if not customer_id:
             return Response(
-                {"error": "customer_id and product_id are required"},
+                {"error": "customer_id is required"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        product = get_object_or_404(Product, pid=product_id)
+        if not product_id and not package_id:
+            return Response(
+                {"error": "Either product_id or package_id is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if product_id and package_id:
+            return Response(
+                {"error": "Only one of product_id or package_id is allowed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # product = get_object_or_404(Product, pid=product_id)
 
         # 1️⃣ Create Sale (Internal)
         sale = Sale.objects.create(
@@ -569,18 +612,68 @@ class NewOrder(APIView):
             customer_state=customer_state,
         )
 
-        # 2️⃣ Create OrderItem
-        order_item = OrderItem.objects.create(
-            order=sale,
-            product=product,
-            internal_product=product,
-            product_name=product.name,
-            price=product.price,
-            quantity=quantity,
-        )
+        items_response = []
+        total_amount = 0
+        
+        # =========================
+        # 🟢 PRODUCT ORDER
+        # =========================
+        if product_id:
+            product = get_object_or_404(Product, pid=product_id)
 
-        # 3️⃣ Update total amount
-        sale.amount = order_item.price * order_item.quantity
+            order_item = OrderItem.objects.create(
+                order=sale,
+                product=product,
+                internal_product=product,
+                product_name=product.name,
+                price=product.discounted_price or product.price,
+                quantity=quantity,
+            )
+
+            total_amount = order_item.price * quantity
+
+            items_response.append({
+                "product_id": product.pid,
+                "product_name": product.name,
+                "quantity": quantity,
+                "price": order_item.price,
+            })
+
+        # =========================
+        # 🟦 PACKAGE ORDER
+        # =========================
+        else:
+            package = get_object_or_404(Package, pacid=package_id)
+
+            sale.package = package
+            base_price = package.discounted_price or package.price
+            total_amount = base_price
+
+            # Create OrderItem per PackageItem
+            for item in package.items.select_related("product"):
+                OrderItem.objects.create(
+                    order=sale,
+                    product=item.product,
+                    internal_product=item.product,
+                    product_name=item.product.name,
+                    price=0,            # price stored at sale level
+                    quantity=1,
+                    raw_product_data={
+                        "package": package.name,
+                        "action": "base",
+                        "add_price": str(item.add_price),
+                        "remove_price": str(item.remove_price),
+                    }
+                )
+
+                items_response.append({
+                    "product_id": item.product.pid,
+                    "product_name": item.product.name,
+                    "action": "included",
+                })
+
+        # 3️⃣ Update Sale total
+        sale.amount = total_amount
         sale.save()
 
         return Response(
@@ -588,14 +681,7 @@ class NewOrder(APIView):
                 "order_id": sale.oid,
                 "status": sale.status,
                 "total": sale.amount,
-                "items": [
-                    {
-                        "product_id": product.pid,
-                        "product_name": order_item.product_name,
-                        "quantity": order_item.quantity,
-                        "price": order_item.price,
-                    }
-                ],
+                "items": items_response,
             },
             status=status.HTTP_201_CREATED
         )
@@ -609,6 +695,83 @@ class NewOrder(APIView):
   "customer_address": "123 Main Street, Lagos",
   "customer_phone": "+2348012345678"
 }
+
+    
+# class NewOrderPackage(APIView):
+
+#     @transaction.atomic
+#     def post(self, request, username):
+#         user = get_object_or_404(User, username=username)
+
+#         customer_id = request.data.get("customer_id")
+#         product_id = request.data.get("product_id")
+#         quantity = int(request.data.get("quantity", 1))
+#         customer_name = request.data.get("customer_name", "")
+#         customer_address = request.data.get("customer_address", "")
+#         customer_phone = request.data.get("customer_phone", "")
+#         customer_city = request.data.get("customer_city", "")
+#         customer_state = request.data.get("customer_state", "")
+#         if not customer_id or not product_id:
+#             return Response(
+#                 {"error": "customer_id and product_id are required"},
+#                 status=status.HTTP_400_BAD_REQUEST
+#             )
+
+#         product = get_object_or_404(Product, pid=product_id)
+
+#         # 1️⃣ Create Sale (Internal)
+#         sale = Sale.objects.create(
+#             user=user,
+#             source="internal",
+#             customer_id=customer_id,
+#             status="pending",
+#             customer_name=customer_name,
+#             customer_address=customer_address,
+#             customer_phone=customer_phone,
+#             customer_city=customer_city,
+#             customer_state=customer_state,
+#         )
+
+#         # 2️⃣ Create OrderItem
+#         order_item = OrderItem.objects.create(
+#             order=sale,
+#             product=product,
+#             internal_product=product,
+#             product_name=product.name,
+#             price=product.price,
+#             quantity=quantity,
+#         )
+
+#         # 3️⃣ Update total amount
+#         sale.amount = order_item.price * order_item.quantity
+#         sale.save()
+
+#         return Response(
+#             {
+#                 "order_id": sale.oid,
+#                 "status": sale.status,
+#                 "total": sale.amount,
+#                 "items": [
+#                     {
+#                         "product_id": product.pid,
+#                         "product_name": order_item.product_name,
+#                         "quantity": order_item.quantity,
+#                         "price": order_item.price,
+#                     }
+#                 ],
+#             },
+#             status=status.HTTP_201_CREATED
+#         )
+
+#         #Test Order JSON
+#         {
+#   "customer_id": "CUST-001",
+#   "product_id": "sku_ab12cd",
+#   "quantity": 3,
+#   "customer_name": "John Doe",
+#   "customer_address": "123 Main Street, Lagos",
+#   "customer_phone": "+2348012345678"
+# }
 
     
 
