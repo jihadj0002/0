@@ -16,7 +16,7 @@ import json
 from django.db import transaction
 from back.models import Package, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
-    UserProfileSerializer, ProductSerializer,MessageSerializer,
+    UserProfileSerializer, ProductSerializer,MessageSerializer, PackageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer, ConversationSummarySerializer
 )
 
@@ -54,7 +54,7 @@ class UserPackageListView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
         packages = Package.objects.filter(user=user)
-        serializer = ProductSerializer(packages, many=True, context={'request': request})
+        serializer = PackageSerializer(packages, many=True, context={'request': request})
         return Response(serializer.data)
     
 

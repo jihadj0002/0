@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from back.models import UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
+from back.models import Package, PackageImages, UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
 from django.db import transaction
 
 
@@ -14,12 +14,31 @@ class ProductImagesSerializer(serializers.ModelSerializer):
         model = ProductImages
         fields = '__all__'
 
+class PackageImagesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PackageImages
+        fields = '__all__'
+
 class ProductSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
     product_images = ProductImagesSerializer(source='productimages_set', many=True, read_only=True)
 
     class Meta:
         model = Product
+        fields = '__all__'
+    
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.image:
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return ""
+    
+class PackageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+    product_images = PackageImagesSerializer(source='packageimages_set', many=True, read_only=True)
+
+    class Meta:
+        model = Package
         fields = '__all__'
     
     def get_image(self, obj):
@@ -106,6 +125,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
 
             "last_order",
             "conversation",
+            "detected_intent",
         ]
 
     def get_conversation(self, obj):
