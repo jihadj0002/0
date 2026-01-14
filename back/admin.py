@@ -1,14 +1,19 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem,Package, PackageItem
+from .models import PackageImages, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem,Package, PackageItem
 # -----------------------
 # Custom User Admin
 # -----------------------
 # Define an inline admin descriptor for UserProfile model
-# which acts a bit like a "subform" of the User admin page
+# which acts a bit like a "subform" of the User admin page.
+
+
+class PackageImagesAdmin(admin.TabularInline):
+    model= PackageImages
 
 class PackageAdmin(admin.ModelAdmin):
+    inlines = [PackageImagesAdmin]
     list_display = ("name", "price", "is_active", "created_at")
     search_fields = ("name",)
     list_filter = ("is_active",)
@@ -22,6 +27,7 @@ class PackageItemInline(admin.TabularInline):
     model = PackageItem
     extra = 0
 
+    
 class ProductImagesAdmin(admin.TabularInline):
     model= ProductImages
 
