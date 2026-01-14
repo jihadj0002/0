@@ -366,6 +366,8 @@ class Sale(models.Model):
         ("completed", "Completed"),
         ("refunded", "Refunded"),
     ]
+    
+    
     # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sales")
@@ -385,6 +387,10 @@ class Sale(models.Model):
         ]
 
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="internal")
+
+    # If Sale is a package sale
+    package = models.ForeignKey("Package",on_delete=models.PROTECT,null=True,blank=True,related_name="sales")
+    
     delivered_to = models.CharField(max_length=20, choices=DELIVERED_CHOICES, default="inside_dhaka")
     
     updated_to_web = models.CharField(max_length=20, choices=UPDATE_CHOICES, default="failed")
@@ -415,6 +421,19 @@ class Sale(models.Model):
         return f"Sale {self.id} - {self.user.email} ({self.status})"
     
 class OrderItem(models.Model):
+
+
+    ACTION_CHOICES = [
+        ("base", "Base Included"),
+        ("added", "Added"),
+        ("removed", "Removed"),
+    ]
+    
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, default="base")    
+    price_delta = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+
+    
+    
     order = models.ForeignKey(Sale, related_name="items", on_delete=models.CASCADE)
 
     # Editable product data
