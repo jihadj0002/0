@@ -1,15 +1,41 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem
+from .models import UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem,Package, PackageItem
 # -----------------------
 # Custom User Admin
 # -----------------------
 # Define an inline admin descriptor for UserProfile model
 # which acts a bit like a "subform" of the User admin page
 
+class PackageAdmin(admin.ModelAdmin):
+    list_display = ("name", "base_price", "is_active", "created_at")
+    search_fields = ("name",)
+    list_filter = ("is_active",)
+
+
+class PackageInline(admin.TabularInline):
+    model = Package
+    extra = 0
+
+class PackageItemInline(admin.TabularInline):
+    model = PackageItem
+    extra = 0
+
 class ProductImagesAdmin(admin.TabularInline):
     model= ProductImages
+
+class PackageItemAdmin(admin.ModelAdmin):
+    list_display = (
+        "package",
+        "product",
+        "add_price",
+        "remove_price",
+        "is_default",
+        "is_optional",
+    )
+    search_fields = ("package__name", "product__name")
+    list_filter = ("package",)
 
 
 class UserProfileInline(admin.StackedInline):
@@ -145,4 +171,6 @@ admin.site.register(Sale, SaleAdmin)
 admin.site.register(Setting, SettingAdmin)
 admin.site.register(Integration, IntegrationAdmin)
 admin.site.register(Message, MessageAdmin)
+admin.site.register(Package, PackageAdmin)
+admin.site.register(PackageItem, PackageItemAdmin)
 # admin.site.register(ProductImages, ProductImagesAdmin)
