@@ -121,6 +121,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
 
             "chat_summary",
             "current_product",
+            "current_package",
             "is_ai_enabled",
 
             "last_order",

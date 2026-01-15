@@ -256,6 +256,7 @@ class Conversation(models.Model):
     last_viewed_product = models.CharField(max_length=255, blank=True, null=True)
     detected_intent = models.CharField(max_length=100, blank=True, null=True)
     current_product = models.CharField(max_length=500, blank=True, null=True)
+    current_package = models.CharField(max_length=500, blank=True, null=True)
 
     language_detected = models.CharField(max_length=20, blank=True, null=True)
 
@@ -352,7 +353,7 @@ class Message(models.Model):
     text = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
-    
+
     def __str__(self):
         if self.text:
             return f"{self.sender}: {self.text[:30]}"

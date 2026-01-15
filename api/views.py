@@ -1175,16 +1175,51 @@ class SelectProductView(APIView):
         conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
 
         current_product = request.data.get("current_product")
+        current_package = request.data.get("current_package")
+        detected_intent = request.data.get("detected_intent", "")
         
+        conversation.detected_intent = detected_intent
 
-        conversation.current_product = current_product
-        conversation.save(update_fields=["current_product"])
+        if detected_intent:
+            conversation.save(update_fields=["detected_intent"])
+            return Response({
+            "status": "success",
+            "message": f"detected_intent {detected_intent} Given for conversation.",
+            "conversation_id": conversation.id,
+            }, status=status.HTTP_200_OK)
 
-        return Response({
+        if not current_package and not current_product:
+            return Response(
+                {"error": "Either current_package or current_product is required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if current_package and current_product:
+            return Response(
+                {"error": "Only one of current_product or current_package is allowed"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+        if current_product:
+            conversation.current_product = current_product
+            conversation.save(update_fields=["current_product"])
+            return Response({
             "status": "success",
             "message": f"Product {current_product} selected for conversation.",
             "conversation_id": conversation.id,
-        }, status=status.HTTP_200_OK)
+            }, status=status.HTTP_200_OK)
+
+        if current_package:
+            conversation.current_package = current_package
+            
+            conversation.save(update_fields=["current_package"])
+
+            return Response({
+                "status": "success",
+                "message": f"Package {current_package} selected for conversation.",
+                "conversation_id": conversation.id,
+            }, status=status.HTTP_200_OK)
     
 class GetLastMessages(APIView):
     def get(self, request, username, id):
