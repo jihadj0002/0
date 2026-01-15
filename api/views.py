@@ -14,7 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 import json
 from django.db import transaction
-from back.models import Package, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
+from back.models import Package, PackageItem, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
     UserProfileSerializer, ProductSerializer,MessageSerializer, PackageSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer, ConversationSummarySerializer
@@ -61,16 +61,17 @@ class UserPackageListView(APIView):
 
 class UserPackageDataView(APIView):
     
-    def get(self, request, username, pk):
+    def get(self, request, username, pacid):
         # Ensure the token user matches the username in the URL
         if request.user.username != username:
             return Response({'error': 'Unauthorized access'}, status=403)
 
         # Fetch the package belonging to this user
-        package = get_object_or_404(Package, id=pk, user=request.user)
-        serializer = ProductSerializer(package)
+        package = get_object_or_404(Package, pacid=pacid, user=request.user)
+        serializer = PackageSerializer(package)
         return Response(serializer.data)
     
+
 
 # Package Data view Endpoint
     
@@ -642,37 +643,120 @@ class NewOrder(APIView):
         # =========================
         # 🟦 PACKAGE ORDER
         # =========================
+        
         else:
             package = get_object_or_404(Package, pacid=package_id)
-
             sale.package = package
+
+            add_products = request.data.get("add_products", [])
+            remove_products = request.data.get("remove_products", [])
+
+            # Base package price
             base_price = package.discounted_price or package.price
             total_amount = base_price
 
-            # Create OrderItem per PackageItem
-            for item in package.items.select_related("product"):
+            # Map existing package items by pid
+            package_items = {
+                item.product.pid: item
+                for item in package.items.select_related("product")
+            }
+
+            # =========================
+            # 🔴 HANDLE PACKAGE ITEMS
+            # =========================
+            for pid, item in package_items.items():
+
+                # ❌ REMOVED ITEM
+                if pid in remove_products:
+                    total_amount -= item.remove_price
+                    # continue
+
+                    OrderItem.objects.create(
+                        order=sale,
+                        product=item.product,
+                        internal_product=item.product,
+                        product_name=item.product.name,
+                        price=0,
+                        quantity=1,
+                        raw_product_data={
+                            "package": package.name,
+                            "action": "removed",
+                            "remove_price": str(item.remove_price),
+                        }
+                    )
+
+                    items_response.append({
+                        "product_id": pid,
+                        "product_name": item.product.name,
+                        "action": "removed",
+                        "price_effect": -float(item.remove_price),
+                    })
+                    continue
+
+                # ✅ INCLUDED ITEM
                 OrderItem.objects.create(
                     order=sale,
                     product=item.product,
                     internal_product=item.product,
                     product_name=item.product.name,
-                    price=0,            # price stored at sale level
+                    price=item.product.discounted_price or item.product.price,
                     quantity=1,
                     raw_product_data={
                         "package": package.name,
-                        "action": "base",
-                        "add_price": str(item.add_price),
-                        "remove_price": str(item.remove_price),
+                        "action": "included",
                     }
                 )
 
                 items_response.append({
-                    "product_id": item.product.pid,
+                    "product_id": pid,
                     "product_name": item.product.name,
                     "action": "included",
                 })
 
+            # =========================
+            # 🟢 HANDLE ADDED PRODUCTS
+            # =========================
+            existing_pids = set(package_items.keys())
+
+            for pid in add_products:
+
+                # ❌ BLOCK DUPLICATE ADD
+                if pid in existing_pids:
+                    return Response(
+                        {"error": f"Product {pid} already exists in package"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                product = get_object_or_404(Product, pid=pid)
+
+                product_price = product.discounted_price or product.price
+                total_amount += product_price
+
+                OrderItem.objects.create(
+                    order=sale,
+                    product=product,
+                    internal_product=product,
+                    product_name=product.name,
+                    price=product_price,
+                    quantity=1,
+                    raw_product_data={
+                        "package": package.name,
+                        "action": "added",
+                        "product_price": str(product_price),
+                    }
+                )
+
+                items_response.append({
+                    "product_id": pid,
+                    "product_name": product.name,
+                    "action": "added",
+                    "price_effect": float(product_price),
+                })
+
+
+
         # 3️⃣ Update Sale total
+        print("Total amount for order:", total_amount)
         sale.amount = total_amount
         sale.save()
 

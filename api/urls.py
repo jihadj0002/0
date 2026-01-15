@@ -17,10 +17,12 @@ urlpatterns = [
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
 
     path('<str:username>/package_list', views.UserPackageListView.as_view(), name='user-package-list'),
-    path('<str:username>/package/<int:pk>/', views.UserPackageDataView.as_view(), name='user-package-view'),
+    path('<str:username>/package/<str:pacid>/', views.UserPackageDataView.as_view(), name='user-package-view'),
+    # path('<str:username>/package/<str:pacid>/add', views.UserPackageItemAddView.as_view(), name='user-package-item-add'),
+    # path('<str:username>/package/<str:pacid>/remove', views.UserPackageItemRemoveView.as_view(), name='user-package-item-remove'),
     # Add Package Item and remove Package Item endpoints
 
-    
+
     path('<str:username>/orders', views.UserOrderListCreateView.as_view(), name='user-order-list'),
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
     
