@@ -18,7 +18,9 @@ urlpatterns = [
 
     path('<str:username>/package_list', views.UserPackageListView.as_view(), name='user-package-list'),
     path('<str:username>/package/<int:pk>/', views.UserPackageDataView.as_view(), name='user-package-view'),
+    # Add Package Item and remove Package Item endpoints
 
+    
     path('<str:username>/orders', views.UserOrderListCreateView.as_view(), name='user-order-list'),
     path('<str:username>/orders/add', views.UserOrderCreateView.as_view(), name='user-order-add'),
     
