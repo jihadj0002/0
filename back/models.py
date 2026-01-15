@@ -352,8 +352,15 @@ class Message(models.Model):
     text = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
+    
     def __str__(self):
-        return f"{self.sender}: {self.text[:30]}"
+        if self.text:
+            return f"{self.sender}: {self.text[:30]}"
+
+        if self.attachments:
+            return f"{self.sender}: [attachment]"
+
+        return f"{self.sender}: [empty message]"
 
 # -----------------------
 # Sales
