@@ -1076,6 +1076,16 @@ class UserConvUpdateView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')    
 class MessageCreateView(APIView):
+    def get(self, request, username, aid):
+        user = get_object_or_404(User, username=username)
+
+        # Only allow sending messages to conversations owned by user
+        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+
+        messages = Message.objects.filter(conversation=conversation).order_by("timestamp")
+        serializer = MessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
     def post(self, request, username, aid):
         user = get_object_or_404(User, username=username)
 

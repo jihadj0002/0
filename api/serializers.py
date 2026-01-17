@@ -65,13 +65,20 @@ class ConversationSerializer(serializers.ModelSerializer):
 
 class MessageSerializer(serializers.ModelSerializer):
 
-    replied_to = serializers.CharField(required=False,allow_blank=True,allow_null=True)
-
+    # replied_to = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+    replied_to = serializers.SlugRelatedField(
+            slug_field="mid",
+            queryset=Message.objects.all(),
+            required=False,
+            allow_null=True
+        )
     text = serializers.CharField(required=False,allow_blank=True,allow_null=True)
 
     attachments = serializers.JSONField(required=False,allow_null=True)
 
     mid = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+    
+    
 
     class Meta:
         model = Message
