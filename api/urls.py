@@ -30,6 +30,7 @@ urlpatterns = [
     
     path('<str:username>/orders/new', views.NewOrder.as_view(), name='user-order-new'),
     path('<str:username>/orders/newex', views.NewOrderExternal.as_view(), name='user-order-new-external'),
+    path('<str:username>/orders/monowa', views.ExternalSaleCreateAPIView.as_view(), name='monowa-user-order-new-external'),
     path('<str:username>/orders/<str:order_id>/update-ext-success', views.Update_External_Order_Item_To_Web.as_view(), name='user-order-update-external-success'),
     
     path('<str:username>/orders/items', views.AddOrderItem.as_view(), name='user-order-add'),

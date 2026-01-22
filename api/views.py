@@ -579,7 +579,7 @@ class NewOrder(APIView):
         customer_city = request.data.get("customer_city", "")
         customer_state = request.data.get("customer_state", "")
 
-
+        
         if not customer_id:
             return Response(
                 {"error": "customer_id is required"},
@@ -599,13 +599,14 @@ class NewOrder(APIView):
             )
 
         # product = get_object_or_404(Product, pid=product_id)
+        conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
 
         # 1️⃣ Create Sale (Internal)
         sale = Sale.objects.create(
             user=user,
             source="internal",
             customer_id=customer_id,
-            conversation=customer_id,
+            conversation=conversation,
             status="pending",
             customer_name=customer_name,
             customer_address=customer_address,
@@ -858,6 +859,58 @@ class NewOrder(APIView):
 #   "customer_phone": "+2348012345678"
 # }
 
+
+
+class ExternalSaleCreateAPIView(APIView):
+    """
+    Create an external sale
+    """
+
+    @transaction.atomic
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+        data = request.data
+
+        # Required field
+        customer_id = data.get("customer_id")
+        if not customer_id:
+            return Response(
+                {"error": "customer_id is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Optional: attach to conversation if exists
+        conversation = Conversation.objects.filter(
+            user=user,
+            customer_id=customer_id
+        ).first()
+
+        sale = Sale.objects.create(
+            user=user,
+            source="external",
+            conversation=conversation,
+            customer_id=customer_id,
+            customer_name=data.get("customer_name", ""),
+            customer_phone=data.get("customer_phone", ""),
+            customer_address=data.get("customer_address", ""),
+            customer_city=data.get("customer_city", ""),
+            customer_state=data.get("customer_state", ""),
+            delivered_to=data.get("delivered_to", "inside_dhaka"),
+            external_order_id=data.get("external_order_id"),
+            amount=data.get("amount", 0),
+            status="pending",
+        )
+
+        return Response(
+            {
+                "message": "External sale created successfully",
+                "order_id": sale.id,
+                "oid": sale.oid,
+                "amount": sale.amount,
+                "status": sale.status,
+            },
+            status=status.HTTP_201_CREATED,
+        )
     
 
 
