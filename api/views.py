@@ -894,6 +894,7 @@ class NewOrderExternal(APIView):
                     source="external",
                     # external_order_id=data.get("external_order_id"),
                     customer_id=customer_id,
+                    conversation=customer_id,
                     customer_name=data.get("customer_name", ""),
                     customer_address=data.get("customer_address", ""),
                     customer_phone=data.get("customer_phone", ""),
