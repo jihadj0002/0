@@ -875,9 +875,23 @@ class NewOrderExternal(APIView):
 
 
         customer_id = data.get("customer_id")
+        print("Received customer_id:", customer_id)
 
         # Required fields
-        items = data.get("items", [])
+        # items = data.get("items", [])
+        items = []
+        i = 0
+        while f"items[{i}].external_product_id" in data:
+            items.append({
+                "external_product_id": data.get(f"items[{i}].external_product_id"),
+                "external_variation_id": data.get(f"items[{i}].external_variation_id"),
+                "quantity": data.get(f"items[{i}].quantity", 1),
+                "product_name": data.get("product_name"),
+                "price": data.get("price", 0),
+            })
+            i += 1
+
+        print("Received items:", items)
 
         if not customer_id or not items:
             return Response(
@@ -887,14 +901,15 @@ class NewOrderExternal(APIView):
 
         try:
             with transaction.atomic():
-
+                # conversation, _ = Conversation.objects.get_or_create(user=user,external_id=customer_id)
+                conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
                 # Create Sale
                 sale = Sale.objects.create(
                     user=user,
                     source="external",
                     # external_order_id=data.get("external_order_id"),
                     customer_id=customer_id,
-                    conversation=customer_id,
+                    conversation=conversation,
                     customer_name=data.get("customer_name", ""),
                     customer_address=data.get("customer_address", ""),
                     customer_phone=data.get("customer_phone", ""),
