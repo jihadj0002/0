@@ -89,7 +89,6 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender",
             "text",
             "attachments",
-            "extra_data",
             "replied_to",
             "timestamp",
         ]
