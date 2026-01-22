@@ -257,6 +257,7 @@ class Conversation(models.Model):
     detected_intent = models.CharField(max_length=100, blank=True, null=True)
     current_product = models.CharField(max_length=1500, blank=True, null=True)
     current_package = models.CharField(max_length=1500, blank=True, null=True)
+    extra_data = models.JSONField(blank=True, null=True)
 
     language_detected = models.CharField(max_length=20, blank=True, null=True)
 
@@ -377,7 +378,7 @@ class Sale(models.Model):
     
     
     # uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
-
+    conversation = models.ForeignKey(Conversation,on_delete=models.SET_NULL,null=True,blank=True,related_name="orders")
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sales")
     SOURCE_CHOICES = [
             ("internal", "Internal"),

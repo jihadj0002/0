@@ -56,7 +56,20 @@ body{background:var(--bg);}
   font-size:14px;
   font-weight:600;
 } {% endcomment %}
+.msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
 
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
 
 .chat-tabs {
   display: flex;
@@ -440,6 +453,22 @@ body{background:var(--bg);}
     font-size: 14px;
     cursor: pointer;
   }
+
+  .msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
+
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
+
 }
 
 
@@ -530,8 +559,25 @@ body{background:var(--bg);}
         {% if messages %}
           {% for msg in messages %}
             <div class="msg {% if msg.sender == 'customer' %}from{% else %}to{% endif %}" data-msg-id="{{ msg.id }}">
-              {{ msg.text|linebreaksbr }}
-              <small>{{ msg.timestamp|date:"j M, Y H:i" }}</small>
+              {% comment %} {{ msg.text|linebreaksbr }}
+              <small>{{ msg.timestamp|date:"j M, Y H:i" }}</small> {% endcomment %}
+              {# TEXT MESSAGE #}
+                {% if msg.text %}
+                  <div class="msg-text">
+                    {{ msg.text|linebreaksbr }}
+                  </div>
+                {% endif %}
+
+                {# IMAGE ATTACHMENT #}
+                {% if msg.attachments and msg.attachments.payload.url %}
+                  <div class="msg-image">
+                    <img src="{{ msg.attachments.payload.url }}"
+                        alt="Image"
+                        loading="lazy">
+                  </div>
+                {% endif %}
+
+                <small>{{ msg.timestamp|date:"j M, Y H:i" }}</small>
             </div>
           {% endfor %}
         {% else %}

@@ -605,6 +605,7 @@ class NewOrder(APIView):
             user=user,
             source="internal",
             customer_id=customer_id,
+            conversation=customer_id,
             status="pending",
             customer_name=customer_name,
             customer_address=customer_address,
@@ -1187,9 +1188,18 @@ class SelectProductView(APIView):
         current_product = request.data.get("current_product")
         current_package = request.data.get("current_package")
         detected_intent = request.data.get("detected_intent", "")
+        extra_data = request.data.get("extra_data", "")
         
         conversation.detected_intent = detected_intent
-
+    
+        if extra_data:
+            conversation.save(update_fields=["extra_data"])
+            return Response({
+            "status": "success",
+            "message": f"extra_data {extra_data} Given for conversation.",
+            "conversation_id": conversation.id,
+            }, status=status.HTTP_200_OK)
+        
         if detected_intent:
             conversation.save(update_fields=["detected_intent"])
             return Response({

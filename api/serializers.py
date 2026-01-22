@@ -89,6 +89,7 @@ class MessageSerializer(serializers.ModelSerializer):
             "sender",
             "text",
             "attachments",
+            "extra_data",
             "replied_to",
             "timestamp",
         ]
@@ -132,6 +133,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
             "is_ai_enabled",
 
             "last_order",
+            "extra_data",
             "conversation",
             "detected_intent",
         ]

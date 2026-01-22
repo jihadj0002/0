@@ -195,7 +195,15 @@ def orders(request):
         .filter(user=request.user)
         .order_by('-created_at')
     )
-    return render(request, 'back/orders.html', {'all_orders': all_orders})
+    # conversations = Conversation.objects.filter(user=request.user)
+    # convo_map = {c.customer_id: c.id for c in conversations}
+
+    context = {
+        'all_orders': all_orders, 
+        
+    }
+
+    return render(request, 'back/orders.html', context)
 
 
 @csrf_exempt  # because we manually include CSRF token in fetch()
@@ -609,6 +617,7 @@ def add_product(request):
                     "name": Product.name,
                     "price": str(Product.price),
                     "image": Product.image.url if Product.image and hasattr(Product.image, "url") else "",
+                
                 },
             })
 

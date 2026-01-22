@@ -121,6 +121,20 @@
   outline: none;
   border-color: var(--accent);
 }
+.btn-secondary {
+  display: inline-block;
+  padding: 6px 12px;
+  background: #2563eb;
+  color: white;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.btn-secondary:hover {
+  background: #1e40af;
+}
+
 
 /* =====================
    RESPONSIVE DESIGN
@@ -288,6 +302,18 @@
           {% endfor %}
         </select>
       </p>
+
+      {% if order.conversation %}
+      <a href="{% url 'back:c_dashboard' %}?cid={{ order.conversation.id }}"
+        class="btn-secondary"
+        target="_blank">
+        💬 Go to Conversation
+      </a>
+    {% else %}
+      <small class="muted">No conversation linked</small>
+    {% endif %}
+
+
 
       <hr>
 
