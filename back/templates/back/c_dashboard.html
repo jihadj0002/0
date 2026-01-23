@@ -498,7 +498,14 @@ body{background:var(--bg);}
                   alt="Avatar">
               </div>
               <div class="chat-info">
-                <div class="name">{{ convo.customer_id }}</div>
+                <div class="name">
+                  {% if convo.customer_name %}
+                    {{ convo.customer_name }}
+                  {% else %}
+                    {{ convo.customer_id }}
+                  {% endif %}
+                </div>
+
                 <div class="preview">
                   {{ convo.message_text|default:"No messages" }}
                 </div>
