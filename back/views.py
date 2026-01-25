@@ -29,6 +29,7 @@ def dashboard(request):
 
     completed_sales = Sale.objects.filter(user=user, status="completed").count()
     total_conversations = Conversation.objects.filter(user=user).count()
+    # print("Total Conversations:", total_conversations)
     active_products = Product.objects.filter(user=user, stock_quantity__gt=0).count()
 
     orders_count = Sale.objects.filter(user=user).count()
@@ -255,21 +256,74 @@ def c_dashboard(request):
     return render(request, "back/c_dashboard.html", context)
 
 
-
+ 
 @login_required
 @require_POST
 def send_message_ajax(request):
+    user = request.user
+
+
     try:
         data = json.loads(request.body.decode('utf-8'))
         convo_id = data.get('conversation_id')
         text = data.get('text', '').strip()
+
     except Exception:
         return HttpResponseBadRequest("Invalid payload")
 
     if not convo_id or not text:
         return HttpResponseBadRequest("Missing conversation id or text")
 
+    
     convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+    
+    if convo.platform == "messenger":
+
+        access_token = user.integrations.filter(platform="messenger").first().access_token
+        sender_id = user.integrations.filter(platform="messenger").first().integration_id
+        if not access_token and sender_id:
+            return HttpResponseForbidden("Messenger integration or Sender ID not configured.")
+        else:
+            url = f"https://graph.facebook.com/v23.0/{sender_id}/messages"
+            params = {
+                "access_token": access_token,
+            }
+            payload = {
+                "recipient": {"id": convo.customer_id},
+                "message": {"text": text},
+            }
+            response = requests.post(url, params=params, json=payload)
+            if response.status_code != 200:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Failed to send message via Messenger API."
+                }, status=500)
+    
+    if convo.platform == "whatsapp":
+
+        access_token = user.integration_set.filter(platform="whatsapp").first().access_token
+        sender_id = user.integration_set.filter(platform="whatsapp").first().integration_id
+        if not access_token and sender_id:
+            return HttpResponseForbidden("WhatsApp integration not configured.")
+        else:
+            url = "https://www.wasenderapi.com/api/send-message"
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+
+            data = {
+                "to": f"{convo.customer_id}",
+                "text": text,
+            }
+            response = requests.post(url, headers=headers, json=data)
+            if response.status_code != 200:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Failed to send message via WhatsApp API."
+                }, status=500)
+    
+    
 
     # Create customer message
     msg = Message.objects.create(
@@ -281,25 +335,26 @@ def send_message_ajax(request):
     # Update conversation last message_text for preview
     convo.message_text = text
     convo.save()
-
+    
     response_data = {
         "status": "ok",
         "sent_text": msg.text,
-        "sent_ts": timezone.localtime(msg.timestamp).strftime("%-d %b, %Y %H:%M"),
+        "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
+        
     }
 
     # If AI is enabled, simulate an immediate bot reply (replace with real AI call)
-    if convo.is_ai_enabled:
-        bot_text = f"Auto-reply: Received '{text[:200]}'"
-        bot_msg = Message.objects.create(
-            conversation=convo,
-            sender='bot',
-            text=bot_text,
-        )
-        response_data.update({
-            "bot_reply_html": bot_msg.text,
-            "bot_reply_ts": timezone.localtime(bot_msg.timestamp).strftime("%-d %b, %Y %H:%M"),
-        })
+    # if convo.is_ai_enabled:
+    #     bot_text = f"Auto-reply: Received '{text[:200]}'"
+    #     bot_msg = Message.objects.create(
+    #         conversation=convo,
+    #         sender='bot',
+    #         text=bot_text,
+    #     )
+    #     response_data.update({
+    #         "bot_reply_html": bot_msg.text,
+    #         "bot_reply_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
+    #     })
     return JsonResponse(response_data)
 
 
@@ -431,7 +486,8 @@ def stats(request):
 @login_required
 def sett(request):
     user = request.user
-
+    total_conversations = Conversation.objects.filter(user=user).count()
+    print("Total Conversations:", total_conversations)
     integration, created = Integration.objects.get_or_create(
         user=user,
         platform="messenger",
@@ -473,7 +529,8 @@ def sett(request):
             integration.webhook_url = request.POST.get("webhook_url")
             print("Webhook URL:", integration.webhook_url)
             integration.access_token = request.POST.get("access_token")
-            print
+            integration.integration_id = request.POST.get("integration_id")
+            print("Integration ID:", integration.integration_id)
             integration.is_enabled = request.POST.get("is_enabled") == "on"
             print("Is Messenger Bot Enabled:", integration.is_enabled)
             integration.save()
@@ -489,6 +546,7 @@ def sett(request):
             
             integration_whapsapp.webhook_url = request.POST.get("webhook_url_wp")
             integration_whapsapp.access_token = request.POST.get("access_token_wp")
+            integration_whapsapp.integration_id = request.POST.get("sender_number_wp")
             integration_whapsapp.is_enabled = request.POST.get("is_enabled_wp") == "on"
             print("Is WhatsApp Bot Enabled:", integration_whapsapp.is_enabled)
             integration_whapsapp.save()
@@ -497,6 +555,7 @@ def sett(request):
         except Exception as e:
             messages.error(request, f"Error updating Messenger integration: {e}")
         return redirect("back:options")  # update with your URL name
+    
     
    
 
@@ -508,6 +567,7 @@ def sett(request):
         "integration_wp": integration_whapsapp,
         "active_conversations_wp": active_conversations_wp,
         "deactivated_conversations_wp": deactivated_conversations_wp,
+        "total_conversations": total_conversations,
     }
 
     return render(request, "back/options.html", context)
@@ -536,6 +596,8 @@ def settingss(request):
         if platform == "messenger":
             target = integration
             print("Updating Messenger Integration settings...")
+
+
             print(target)
         elif platform == "whatsapp":
             target = integration_whatsapp
@@ -547,6 +609,7 @@ def settingss(request):
         # Update fields
         target.webhook_url = request.POST.get("webhook_url")
         target.access_token = request.POST.get("access_token")
+        target.integration_id = request.POST.get("integration_id")
         target.is_enabled = request.POST.get("is_enabled") == "on"
         target.save()
 

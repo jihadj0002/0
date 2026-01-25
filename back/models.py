@@ -95,6 +95,7 @@ class Integration(models.Model):
 
     webhook_url = models.URLField(blank=True, null=True)
     access_token = models.TextField(blank=True, null=True)
+    integration_id = models.TextField(blank=True, null=True)
 
     is_enabled = models.BooleanField(default=False)
     is_connected = models.BooleanField(default=False)
