@@ -33,6 +33,8 @@ urlpatterns = [
     path("options", views.settingss, name="options"),
     
     path('send_message', views.send_message_ajax, name='send_message'),
+    path('send_image', views.send_image_ajax, name='send_image'),
+    path('send_message_with_image', views.send_message_with_image_ajax, name='send_message_with_image'),
     
 
 

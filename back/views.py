@@ -259,6 +259,78 @@ def c_dashboard(request):
  
 @login_required
 @require_POST
+def send_image_ajax(request):
+    user = request.user
+
+    # convo_id = request.POST.get('conversation_id')
+    # image = request.FILES.get('image')
+
+    # if not convo_id or not image:
+    #     return HttpResponseBadRequest("Missing conversation id or image")
+
+    # convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+
+    # # Here you would add code to send the image via the appropriate API
+    # # For simplicity, we'll skip that part and just create the message in our DB
+
+    # msg = Message.objects.create(
+    #     conversation=convo,
+    #     sender='agent',
+    #     image=image
+    # )
+
+    # convo.message_text = "Image"
+    # convo.save()
+
+    # response_data = {
+    #     "status": "ok",
+    #     "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
+    #     "image_url": msg.image.url if msg.image else "",
+    # }
+
+    # return JsonResponse(response_data)
+    return JsonResponse({"status": "error", "message": "Image sending not implemented yet."}, status=501)
+
+@login_required
+@require_POST
+def send_message_with_image_ajax(request):
+    user = request.user
+
+    # convo_id = request.POST.get('conversation_id')
+    # text = request.POST.get('text', '').strip()
+    # image = request.FILES.get('image')
+
+    # if not convo_id or (not text and not image):
+    #     return HttpResponseBadRequest("Missing conversation id or text/image")
+
+    # convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+
+    # # Here you would add code to send the message with image via the appropriate API
+    # # For simplicity, we'll skip that part and just create the message in our DB
+
+    # msg = Message.objects.create(
+    #     conversation=convo,
+    #     sender='agent',
+    #     text=text,
+    #     image=image
+    # )
+
+    # convo.message_text = text if text else "Image"
+    # convo.save()
+
+    # response_data = {
+    #     "status": "ok",
+    #     "sent_text": msg.text,
+    #     "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
+    #     "image_url": msg.image.url if msg.image else "",
+    # }
+
+    # return JsonResponse(response_data)
+    return JsonResponse({"status": "error", "message": "Image sending not implemented yet."}, status=501)
+
+
+@login_required
+@require_POST
 def send_message_ajax(request):
     user = request.user
 

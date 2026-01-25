@@ -330,6 +330,29 @@ body{background:var(--bg);}
     display: none;
   }
 
+
+  .image-preview{
+  padding:6px;
+}
+
+.image-preview img{
+  max-width:140px;
+  border-radius:8px;
+  display:block;
+}
+
+.image-preview button{
+  background:#ff4444;
+  color:#fff;
+  border:none;
+  padding:2px 6px;
+  border-radius:6px;
+  cursor:pointer;
+  margin-top:4px;
+  font-size:12px;
+}
+
+
 /* responsive */
 @media (max-width: 920px) {
   .layout { grid-template-columns: 1fr; height: auto; }
@@ -593,8 +616,18 @@ body{background:var(--bg);}
       </div>
 
       <div class="chat-input">
+        <div id="imagePreview" style="display:none;" class="image-preview"></div>
+
         {% csrf_token %}
-        <input type="text" id="messageInput" placeholder="Type a message…" autocomplete="off">
+
+        <!-- Hidden file input -->
+    <input type="file" id="fileInput" accept="image/*" hidden>
+
+    <input type="text" id="messageInput" placeholder="Type a message…" autocomplete="off">
+  
+        <!-- Attachment button -->
+        <button id="attachBtn" type="button">📎</button>
+        
         <button id="sendBtn">Send</button>
       </div>
 
@@ -646,6 +679,7 @@ function toggleAI(url) {
 }
 </script>
 
+
       
 
       <button class="profile-btn btn-primary">Manage Orders</button>
@@ -668,6 +702,18 @@ function toggleAI(url) {
 
 </div>
 
+{% comment %} Get Image Data Javascript {% endcomment %}
+ {% comment %} On Btnclick, On Paste, On Drag n Drop {% endcomment %}
+<script>
+
+
+</script>
+
+
+
+
+{% comment %} Chat Functionality JS {% endcomment %}
+  
 <script>
 document.addEventListener("DOMContentLoaded", function() {
   // Auto-scroll chat to bottom
@@ -709,10 +755,89 @@ document.addEventListener("DOMContentLoaded", function() {
       return cookieValue;
   }
   const csrftoken = getCookie('csrftoken');
-
+  // Send message functionality
   const sendBtn = document.getElementById("sendBtn");
   const input = document.getElementById("messageInput");
+  const fileInput = document.getElementById("fileInput");
+  const attachBtn = document.getElementById("attachBtn");
+  const imagePreview = document.getElementById("imagePreview");
+  const chatBox = document.querySelector(".chat-messages");
 
+  let selectedFile = null;
+  // Handle image selection
+
+  
+/* =====================
+   FILE SELECT
+===================== */
+  document.getElementById('fileInput').addEventListener('change', function(event) {
+    const file = event.target.files[0]; // Get the first selected file
+    if (file) {
+      selectedFile = file;
+      //colsole.log("Selected file:", file);
+      showPreview(file);
+      
+        // Proceed if the file is selected
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Do something with the image data, like sending it or displaying it
+            // sendMessageWithImage(e.target.result);
+            console.log("Image data ready to send:", e.target.result);
+        };
+        reader.readAsDataURL(file); // Read file as a base64 URL
+    } else {
+        // Handle the case when no file is selected
+        console.error("No file selected.");
+    }
+        
+});
+
+
+/* =====================
+   PASTE IMAGE
+===================== */
+
+document.addEventListener("paste", function(e) {
+
+  const items = e.clipboardData.items;
+
+  for (let item of items) {
+
+    if (item.type.startsWith("image")) {
+
+      const file = item.getAsFile();
+      if (!file) return;
+
+      selectedFile = file;
+      showPreview(file);
+
+      break; // only one image
+    }
+  }
+});
+
+/* =====================
+   DRAG & DROP
+===================== */
+
+chatBox.addEventListener("dragover", e => e.preventDefault());
+
+chatBox.addEventListener("drop", function(e) {
+
+  e.preventDefault();
+
+  if (!e.dataTransfer.files.length) return;
+
+  const file = e.dataTransfer.files[0];
+
+  if (!file.type.startsWith("image")) return;
+
+  selectedFile = file;
+  showPreview(file);
+});
+
+  
+  
   if (sendBtn && input) {
     function sendMessage() {
       const text = input.value.trim();
@@ -779,6 +904,32 @@ document.addEventListener("DOMContentLoaded", function() {
       }
     });
   }
+
+
+
+
+
+document.querySelector("#attachBtn").addEventListener("click", () => fileInput.click());
+
+  function showPreview(file){
+  if (!file || !file.type.startsWith("image")) return;
+
+  const url = URL.createObjectURL(file);
+
+  imagePreview.innerHTML = `
+    <img src="${url}">
+    <button id="removePreview">Remove</button>
+  `;
+
+  imagePreview.style.display = "block";
+
+  document.getElementById("removePreview").onclick = () => {
+    selectedFile = null;
+    fileInput.value = "";
+    imagePreview.style.display = "none";
+  };
+}
+
 });
 </script>
 
