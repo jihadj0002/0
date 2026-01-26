@@ -29,6 +29,13 @@ urlpatterns = [
     path("chats/disable-all", views.disable_all_bots, name="disable_all_bots"),
     path("chats/enable-all", views.enable_all_bots, name="enable_all_bots"),
 
+    path("newchats", views.message_dashboard, name="ajax_c_dashboard"),
+
+
+    
+    path("chats/ajax_messages", views.ajax_load_messages, name="ajax_load_messages"),
+    path("chats/ajax_conversations", views.ajax_load_conversations, name="ajax_load_conversations"),
+
     path("stats", views.stats, name="stats"),
     path("options", views.settingss, name="options"),
     

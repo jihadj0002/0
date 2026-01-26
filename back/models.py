@@ -228,6 +228,7 @@ class Conversation(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="conversations")
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
     customer_id = models.CharField(max_length=255)  # external ID
+    profile_image = models.ImageField(upload_to="customer_profiles", default="customer.jpg")
     
     customer_name = models.CharField(max_length=255, blank=True, null=True)
     customer_gender = models.CharField(max_length=20, choices=GENDER_CHOICES, default="unknown", null=True, blank=True)
@@ -242,6 +243,7 @@ class Conversation(models.Model):
     ai_enable_delay = models.IntegerField(default=300)             # Time in seconds before re-enabling AI
 
     timestamp = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     chat_summary = models.TextField(blank=True, null=True)
 
     # -----------------------------------------------------

@@ -1,0 +1,1303 @@
+{% extends 'back/base.html' %}
+{% load static %}
+{% block title %}Dashboard | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ---------- ROOT ---------- */
+:root{
+  --bg:#f5f7fb;
+  --white:#fff;
+  --primary:#7c3aed;
+  --primary-soft:#ede9fe;
+  --border:#e5e7eb;
+  --muted:#6b7280;
+  --radius:14px;
+  --shadow:0 4px 14px rgba(0,0,0,0.08);
+  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{background:var(--bg);}
+
+/* LAYOUT as grid for responsive spacing */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 320px;
+  gap:18px;
+  height: calc(100vh - 40px);
+  padding:20px;
+  align-items: start;
+}
+
+/* ---------- CHAT LIST PANEL ---------- */
+.chat-list{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.chat-search{
+  padding:10px 14px;
+  width:100%;
+  border:1px solid var(--border);
+  border-radius:12px;
+}
+{% comment %} 
+.chat-tabs{
+  display:flex;
+  gap:14px;
+  margin-top:14px;
+  font-size:14px;
+  font-weight:600;
+} {% endcomment %}
+.msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
+
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
+
+.chat-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.chat-tab {
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chat-tab.active {
+  color: #fff;
+  background: var(--primary);
+  border-radius: 6px;
+}
+
+
+.chat-list-body{
+  margin-top:12px;
+  overflow-y:auto;
+  padding-right:6px;
+}
+
+/* Chat item */
+.chat-item{
+  padding:12px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-top:10px;
+  cursor:pointer;
+  transition:0.15s;
+  text-decoration:none;
+  color:inherit;
+}
+.chat-item:hover,
+.chat-item.active{
+  background:var(--primary-soft);
+}
+
+.chat-avatar{
+  width:44px; height:44px;
+  border-radius:50%;
+  background:#ddd;
+  flex-shrink:0;
+}
+
+.chat-info .name{
+  font-weight:600;
+}
+.chat-info .preview{
+  font-size:13px;
+  color:var(--muted);
+  max-width:200px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* ---------- MESSAGES PANEL ---------- */
+.chat-window{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:hidden;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-info strong {
+  font-size: 16px;
+}
+
+.header-info small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.header-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+
+.header-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
+}
+
+.header-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
+.chat-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
+}
+
+.chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
+
+.chat-messages{
+  flex:1;
+  padding:20px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.9));
+}
+
+.msg{
+  padding:10px 14px;
+  border-radius:12px;
+  max-width:75%;
+  line-height:1.4;
+  word-wrap:break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.msg.to{
+  align-self:flex-end;
+  background:var(--primary);
+  color:white;
+}
+
+.msg.from{
+  align-self:flex-start;
+  background:#f3f4f6;
+  color:#111827;
+}
+
+/* nice timestamp small */
+.msg small {
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:6px;
+}
+
+/* input area */
+.chat-input{
+  padding:14px;
+  border-top:1px solid var(--border);
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.chat-input input{
+  flex:1;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+}
+.chat-input button{
+  padding:10px 18px;
+  border:none;
+  background:var(--primary);
+  color:white;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+/* ---------- PROFILE PANEL ---------- */
+.profile{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  padding:22px;
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:auto;
+}
+
+.profile .avatar{
+  width:90px; height:90px;
+  border-radius:50%;
+  background:#ddd;
+  margin:auto;
+}
+
+.profile h3{
+  margin-top:12px;
+  text-align:center;
+}
+
+.profile small{
+  display:block;
+  margin:auto;
+  text-align:center;
+  color:var(--muted);
+  margin-bottom:20px;
+}
+
+.profile-btn{
+  width:100%;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  text-align:center;
+  font-weight:600;
+  cursor:pointer;
+  margin-top:10px;
+}
+
+.btn-primary{
+  background:var(--primary);
+  color:white;
+  border:none;
+}
+  /* Back button */
+  .mobile-back {
+    display: none;
+  }
+
+
+  .image-preview{
+  padding:6px;
+}
+
+.image-preview img{
+  max-width:140px;
+  border-radius:8px;
+  display:block;
+}
+
+.image-preview button{
+  background:#ff4444;
+  color:#fff;
+  border:none;
+  padding:2px 6px;
+  border-radius:6px;
+  cursor:pointer;
+  margin-top:4px;
+  font-size:12px;
+}
+
+
+
+/* responsive */
+@media (max-width: 920px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .chat-list, .chat-window, .profile { height: auto; }
+}
+
+
+/* ---------- MOBILE VIEW FIRST ---------- */
+@media (max-width: 768px) {
+
+  body {
+    overflow: hidden;
+    margin: 0;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    height: 100vh;
+    padding: 0;
+  }
+
+  .chat-list,
+  .chat-window {
+    border-radius: 0;
+    height: 100vh;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .profile {
+    display: none;
+  }
+
+  /* Chat window visibility */
+  .chat-list  {
+    display: flex;
+  }
+
+  .layout.chat-open .chat-list {
+    display: none;
+  }
+
+  .layout.chat-open .chat-window  .chat-input {
+    display: flex;
+  }
+  .header-btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Header sticky */
+  .chat-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 10px;
+    flex-shrink: 0;
+  }
+
+  /* Messages scrollable */
+  .chat-messages {
+    flex: 1;               /* take remaining height */
+    overflow-y: auto;      /* scroll if overflow */
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .msg {
+    max-width: 90%;
+    font-size: 15px;
+    word-wrap: break-word;
+  }
+
+  /* Footer (input area) sticky at bottom */
+.chat-input {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+  .chat-input button {
+    padding: 8px 12px;
+    font-size: 14px;
+    
+    border-radius: 10px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+  }
+
+  /* Touch-friendly chat items */
+  .chat-item {
+    padding: 16px;
+  }
+
+  /* Back button for mobile */
+  .mobile-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
+
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
+
+}
+
+
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="layout">
+
+  <!-- CHAT LIST -->
+  <aside class="chat-list">
+
+    <input
+      type="text"
+      id="searchInput"
+      class="chat-search"
+      placeholder="Search conversations…"
+    >
+
+    <div class="chat-tabs">
+      <button class="chat-tab active" data-platform="all">All</button>
+      <button class="chat-tab" data-platform="messenger">Messenger</button>
+      <button class="chat-tab" data-platform="whatsapp">WhatsApp</button>
+    </div>
+
+    <div class="chat-list-body">
+      <!-- AJAX inserts conversation items here -->
+    </div>
+
+    <button id="loadMoreChats" hidden>
+      Load more
+    </button>
+
+  </aside>
+
+  <!-- CHAT WINDOW -->
+  <main class="chat-window">
+
+    <!-- CHAT HEADER -->
+    <header class="chat-header">
+
+      <div class="mobile-back">← Back</div>
+
+      <div class="header-left">
+        <div class="header-avatar">
+          <img
+            src=""
+            alt="Avatar"
+            class="header-avatar-img"
+          >
+        </div>
+
+        <div class="header-info">
+          <strong class="header-customer-id"></strong><br>
+          <small class="header-ai-status" id="header-ai-status-text"></small>
+        </div>
+      </div>
+
+      <button class="header-btn" id="toggleAiBtn" >Loading...</button>
+
+    </header>
+
+    <!-- CHAT MESSAGES -->
+    <section class="chat-messages" id="chatMessages">
+      <!-- AJAX inserts messages here -->
+    </section>
+
+    <!-- CHAT INPUT -->
+    <footer class="chat-input">
+
+      <div
+        id="imagePreview"
+        class="image-preview"
+        hidden
+      ></div>
+
+      <input
+        type="file"
+        id="fileInput"
+        accept="image/*"
+        hidden
+      >
+
+      <input
+        type="text"
+        id="messageInput"
+        placeholder="Type a message…"
+        autocomplete="off"
+      >
+
+      <button
+        id="attachBtn"
+        type="button"
+        aria-label="Attach file"
+      >
+        📎
+      </button>
+
+      <button
+        id="sendBtn"
+        type="button"
+      >
+        Send
+      </button>
+
+    </footer>
+
+  </main>
+
+  <!-- PROFILE PANEL -->
+  <aside class="profile">
+
+    <div class="profile-avatar"></div>
+
+    <h3 class="profile-customer-id"></h3>
+
+    <small class="profile-joined"></small>
+
+    <button class="profile-btn" id="profileToggleAiBtn">Loading...</button>
+
+    <button class="profile-btn btn-primary">
+      Manage Orders
+    </button>
+
+    <button class="profile-btn">
+      Create Order
+    </button>
+
+    <h4>Summary</h4>
+    <p class="profile-summary"></p>
+
+    <h4>Meta</h4>
+    <p class="profile-meta"></p>
+
+  </aside>
+
+</div>
+
+
+
+
+
+{% comment %} 
+AJAX function to toggle AI
+
+
+
+
+{% comment %} Get Conversation Data Javascript {% endcomment %}
+
+
+<script>
+let currentConversation = null;
+let lastMessageId = 0;
+
+function loadConversations(){
+
+  fetch("{% url 'back:ajax_load_conversations' %}")
+    .then(res => res.json())
+    .then(data => {
+
+      const listBody = document.querySelector(".chat-list-body");
+      listBody.innerHTML = "";
+
+      data.conversations.forEach(convo => {
+
+        listBody.innerHTML += `
+          <div class="chat-item" 
+               data-platform="${convo.platform}"
+               onclick="openConversation(${convo.id})">
+
+            <div class="chat-avatar">
+              <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+            </div>
+
+            <div class="chat-info">
+              <div class="name">
+                ${convo.customer_name || convo.customer_id}
+              </div>
+              <div class="preview">
+                ${convo.last_message || "No messages"}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+    });
+}
+loadConversations();
+
+
+
+function openConversation(id){
+
+  currentConversation = id;
+  lastMessageId = 0;
+
+  const chatBox = document.getElementById("chatMessages");
+  chatBox.innerHTML = "";
+
+  fetch("{% url 'back:ajax_load_messages' %}?cid=" + id)
+    .then(res => res.json())
+    .then(data => {
+
+      // 👉 Assign conversation info
+      renderConversationUI(data.conversation);
+        console.log("Render Success ")
+      // 👉 Load messages
+      appendMessages(data.messages);
+
+    });
+
+  document.querySelector('.layout').classList.add('chat-open');
+}
+
+
+
+function renderConversationUI(c){
+
+  /* ===== CHAT HEADER ===== */
+
+  const headerAvatar = document.querySelector(".header-avatar-img");
+  headerAvatar.src = c.profile_image ? c.profile_image : "https://e7.pngegg.com/pngimages/84/165/png-clipart-united-states-avatar-organization-information-user-avatar-service-computer-wallpaper-thumbnail.png";
+
+  document.querySelector(".header-customer-id").innerText = 
+      c.name || "";
+
+  document.querySelector(".header-ai-status").innerText = 
+      c.is_ai_enabled ? "AI Enabled" : "AI Disabled";
+
+
+  /* ===== PROFILE PANEL ===== */
+
+  const profileAvatar = document.querySelector(".profile-avatar");
+
+  if (c.profile_image) {
+    profileAvatar.innerHTML = `<img src="${c.profile_image}" alt="Avatar">`;
+  } else {
+    profileAvatar.innerHTML = "";
+  }
+
+  document.querySelector(".profile-customer-id").innerText = 
+      c.customer_id || "";
+
+  document.querySelector(".profile-joined").innerText = 
+      c.updated_at ? "Last updated: " + c.updated_at : "";
+
+  document.querySelector(".profile-summary").innerText = 
+      c.chat_summary || "";
+
+  document.querySelector(".profile-meta").innerText = 
+      "Platform: " + c.platform;
+
+
+  /* ===== AI BUTTONS ===== */
+
+
+  const toggleBtn = document.getElementById("toggleAiBtn");
+  const profileBtn = document.getElementById("profileToggleAiBtn");
+
+  // Set URLs dynamically
+  toggleBtn.dataset.enableUrl = `/api/${c.username}/conv/enable/${c.id}`;
+  toggleBtn.dataset.disableUrl = `/api/${c.username}/conv/disable/${c.id}`;
+  toggleBtn.onclick = () => toggleConversationAI(toggleBtn);
+
+  profileBtn.dataset.enableUrl = `/api/${c.username}/conv/enable/${c.id}`;
+  profileBtn.dataset.disableUrl = `/api/${c.username}/conv/disable/${c.id}`;
+  profileBtn.onclick = () => toggleConversationAI(profileBtn);
+
+  // Set initial button text based on AI status
+  updateAiButtons(c.is_ai_enabled);
+}
+
+
+
+
+
+// Initialize button text on page load
+function initAiButtons() {
+  const buttons = [document.getElementById("toggleAiBtn"), document.getElementById("profileToggleAiBtn")];
+  buttons.forEach(btn => {
+    const convoId = btn.dataset.enableUrl.split("/").pop(); // extract id from URL
+    const username = btn.dataset.enableUrl.split("/")[2];   // extract username from URL
+
+    // Fetch current AI status
+    fetch(`/api/${username}/conv/AIstatus/${convoId}`, {
+      method: "GET",
+      headers: {"X-Requested-With": "XMLHttpRequest"}
+    })
+    .then(res => res.json())
+    .then(data => {
+      updateAiButtonText(btn, data.is_ai_enabled);
+    });
+  });
+}
+
+// Function to update a single button's text
+function updateAiButtonText(btn, isEnabled) {
+  btn.innerText = isEnabled ? "Disable AI" : "Enable AI";
+}
+
+// Toggle function
+function toggleConversationAI(button) {
+  const isCurrentlyEnabled = button.innerText.includes("Disable");
+  const url = isCurrentlyEnabled ? button.dataset.disableUrl : button.dataset.enableUrl;
+
+  fetch(url, {
+    method: "GET",
+    headers: {"X-Requested-With": "XMLHttpRequest"}
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.ai_enabled !== undefined) {
+      // Update both buttons
+      updateAiButtons(data.ai_enabled);
+    } else if (data.status?.includes("enabled")) {
+      updateAiButtons(true);
+      console.log("AI Enabled")
+    } else if (data.status?.includes("disabled")) {
+        updateAiButtons(false);
+        console.log("AI Disabled")
+    }
+  })
+  .catch(err => console.error("Error toggling AI:", err));
+}
+
+// Update both buttons
+function updateAiButtons(isEnabled) {
+  document.getElementById("toggleAiBtn").innerText = isEnabled ? "Disable AI" : "Enable AI";
+  document.getElementById("profileToggleAiBtn").innerText = isEnabled ? "Disable AI" : "Enable AI";
+  document.getElementById("header-ai-status-text").innerText = isEnabled ? "AI Enabled ✨" : "AI Disabled ⭕";
+}
+
+// Initialize button text after DOM load
+document.addEventListener("DOMContentLoaded", initAiButtons);
+
+
+
+
+
+
+
+
+
+
+function appendMessages(messages){
+
+  const chatBox = document.getElementById("chatMessages");
+
+  messages.forEach(msg => {
+
+    let html = "";
+
+    if(msg.text){
+      html += `<div class="msg-text">${msg.text}</div>`;
+    }
+
+    if(msg.image){
+      html += `
+        <div class="msg-image">
+          <img src="${msg.image}" loading="lazy">
+        </div>
+      `;
+    }
+
+    html += `<small>${msg.timestamp}</small>`;
+
+    const div = document.createElement("div");
+    div.className = `msg ${msg.sender === "customer" ? "from" : "to"}`;
+    div.innerHTML = html;
+
+    chatBox.appendChild(div);
+
+    lastMessageId = msg.id;
+  });
+
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+
+setInterval(() => {
+
+  if(!currentConversation) return;
+
+  fetch("{% url 'back:ajax_load_messages' %}?cid=" 
+        + currentConversation 
+        + "&last_id=" + lastMessageId)
+
+    .then(res => res.json())
+    .then(data => {
+
+      if(data.messages.length){
+        appendMessages(data.messages);
+      }
+
+    });
+
+}, 2500);
+
+
+
+
+
+
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{% comment %} Chat Functionality JS {% endcomment %}
+  
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  // Auto-scroll chat to bottom
+  const msgBox = document.getElementById("chatMessages");
+  if (msgBox) {
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  // simple search filter on client side
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll(".chat-list .chat-item").forEach(function(item) {
+        const name = item.querySelector(".name").textContent.toLowerCase();
+        const preview = item.querySelector(".preview").textContent.toLowerCase();
+        if (name.includes(q) || preview.includes(q)) {
+          item.style.display = "flex";
+        } else {
+          item.style.display = "none";
+        }
+      });
+    });
+  }
+
+  // CSRF helper for fetch
+  function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+              const cookie = cookies[i].trim();
+              if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                  cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                  break;
+              }
+          }
+      }
+      return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
+  // Send message functionality
+  const sendBtn = document.getElementById("sendBtn");
+  const input = document.getElementById("messageInput");
+  const fileInput = document.getElementById("fileInput");
+  const attachBtn = document.getElementById("attachBtn");
+  const imagePreview = document.getElementById("imagePreview");
+  const chatBox = document.querySelector(".chat-messages");
+
+  let selectedFile = null;
+  // Handle image selection
+
+  
+/* =====================
+   FILE SELECT
+===================== */
+  document.getElementById('fileInput').addEventListener('change', function(event) {
+    const file = event.target.files[0]; // Get the first selected file
+    if (file) {
+      selectedFile = file;
+      //colsole.log("Selected file:", file);
+      showPreview(file);
+      
+        // Proceed if the file is selected
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Do something with the image data, like sending it or displaying it
+            // sendMessageWithImage(e.target.result);
+            console.log("Image data ready to send:", e.target.result);
+        };
+        reader.readAsDataURL(file); // Read file as a base64 URL
+    } else {
+        // Handle the case when no file is selected
+        console.error("No file selected.");
+    }
+        
+});
+
+
+/* =====================
+   PASTE IMAGE
+===================== */
+
+document.addEventListener("paste", function(e) {
+
+  const items = e.clipboardData.items;
+
+  for (let item of items) {
+
+    if (item.type.startsWith("image")) {
+
+      const file = item.getAsFile();
+      if (!file) return;
+
+      selectedFile = file;
+      showPreview(file);
+
+      break; // only one image
+    }
+  }
+});
+
+/* =====================
+   DRAG & DROP
+===================== */
+
+chatBox.addEventListener("dragover", e => e.preventDefault());
+
+chatBox.addEventListener("drop", function(e) {
+
+  e.preventDefault();
+
+  if (!e.dataTransfer.files.length) return;
+
+  const file = e.dataTransfer.files[0];
+
+  if (!file.type.startsWith("image")) return;
+
+  selectedFile = file;
+  showPreview(file);
+});
+
+  
+  
+  function sendMessage(){
+
+  if(!currentConversation) {
+    alert("Select a conversation first");
+    return;
+  }
+
+  const text = input.value.trim();
+
+  if(!text && !selectedFile) return;
+
+  // ========== optimistic UI ==========
+  const msgEl = document.createElement("div");
+  msgEl.className = "msg to";
+
+  let html = "";
+
+  if(text){
+    html += `<div class="msg-text">${text}</div>`;
+  }
+
+  if(selectedFile){
+    const preview = URL.createObjectURL(selectedFile);
+    html += `
+      <div class="msg-image">
+        <img src="${preview}">
+      </div>
+    `;
+  }
+
+  html += `<small>Sending...</small>`;
+
+  msgEl.innerHTML = html;
+
+  msgBox.appendChild(msgEl);
+  msgBox.scrollTop = msgBox.scrollHeight;
+
+  input.value = "";
+
+
+  // ========== prepare request ==========
+  let request;
+
+  if(selectedFile){
+
+    const formData = new FormData();
+    formData.append("conversation_id", currentConversation);
+    formData.append("image", selectedFile);
+    if(text) formData.append("text", text);
+
+    request = fetch("{% url 'back:send_image' %}",{
+      method:"POST",
+      headers:{
+        "X-CSRFToken": csrftoken
+      },
+      body: formData
+    });
+
+  } else {
+
+    request = fetch("{% url 'back:send_message' %}",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-CSRFToken": csrftoken
+      },
+      body: JSON.stringify({
+        conversation_id: currentConversation,
+        text: text
+      })
+    });
+
+  }
+
+
+  // ========== handle response ==========
+  request
+  .then(res => res.json())
+  .then(data => {
+
+    if(data.status !== "ok"){
+      msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
+      return;
+    }
+
+    // replace optimistic with server version
+    let finalHTML = "";
+
+    if(data.text){
+      finalHTML += `<div class="msg-text">${data.text}</div>`;
+    }
+
+    if(data.image_url){
+      finalHTML += `
+        <div class="msg-image">
+          <img src="${data.image_url}" loading="lazy">
+        </div>
+      `;
+    }
+
+    finalHTML += `<small>${data.sent_ts}</small>`;
+
+    msgEl.innerHTML = finalHTML;
+
+
+    // append bot reply if exists
+    if(data.bot_reply){
+
+      const botEl = document.createElement("div");
+      botEl.className = "msg from";
+      botEl.innerHTML = `
+        <div class="msg-text">${data.bot_reply}</div>
+        <small>${data.bot_reply_ts}</small>
+      `;
+
+      msgBox.appendChild(botEl);
+    }
+
+    msgBox.scrollTop = msgBox.scrollHeight;
+
+  })
+  .catch(() => {
+    msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
+  });
+
+
+  // reset attachment
+  selectedFile = null;
+  imagePreview.style.display = "none";
+}
+
+
+    sendBtn.onclick = sendMessage;
+
+input.onkeydown = e => {
+  if(e.key === "Enter"){
+    e.preventDefault();
+    sendMessage();
+  }
+};
+
+
+
+
+
+
+
+
+document.querySelector("#attachBtn").addEventListener("click", () => fileInput.click());
+
+  function showPreview(file){
+  if (!file || !file.type.startsWith("image")) return;
+
+  const url = URL.createObjectURL(file);
+
+  imagePreview.innerHTML = `
+    <img src="${url}">
+    <button id="removePreview">Remove</button>
+  `;
+
+  imagePreview.style.display = "block";
+
+  document.getElementById("removePreview").onclick = () => {
+    selectedFile = null;
+    fileInput.value = "";
+    imagePreview.style.display = "none";
+  };
+}
+
+});
+</script>
+
+
+{% comment %} Chat Tabs Messenger, Whatsapp Instagram {% endcomment %}
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const tabs = document.querySelectorAll(".chat-tab");
+  const chats = document.querySelectorAll(".chat-item");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", function () {
+      const platform = this.dataset.platform;
+
+      // toggle active tab
+      tabs.forEach(t => t.classList.remove("active"));
+      this.classList.add("active");
+
+      // filter chats
+      chats.forEach(chat => {
+        if (platform === "all") {
+          chat.style.display = "flex";
+        } else {
+          chat.style.display =
+            chat.dataset.platform === platform ? "flex" : "none";
+        }
+      });
+    });
+  });
+});
+</script>
+
+
+
+{% comment %} Mobile view adjustments {% endcomment %}
+
+<script>
+function openChat() {
+  document.querySelector('.layout')?.classList.add('chat-open');
+}
+
+function closeChat() {
+  document.querySelector('.layout')?.classList.remove('chat-open');
+  history.pushState({}, "", window.location.pathname);
+}
+
+/* Auto open chat if cid exists (refresh / direct link) */
+document.addEventListener("DOMContentLoaded", function () {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('cid')) {
+    document.querySelector('.layout')?.classList.add('chat-open');
+  }
+});
+</script>
+
+
+
+
+
+
+
+
+
+<script>
+const loadBtn = document.getElementById("loadMoreChats");
+const chatList = document.getElementById("chatList");
+
+if (loadBtn) {
+  loadBtn.addEventListener("click", function () {
+    const page = this.dataset.next;
+
+    fetch(`?page=${page}`, {
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+    .then(res => res.text())
+    .then(html => {
+      const temp = document.createElement("div");
+      temp.innerHTML = html;
+
+      temp.querySelectorAll(".chat-item").forEach(el => {
+        chatList.appendChild(el.parentElement);
+      });
+
+      this.remove(); // remove button after loading
+    });
+  });
+}
+</script>
+
+
+{% endblock %}

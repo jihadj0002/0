@@ -704,9 +704,196 @@ function toggleAI(url) {
 </div>
 
 {% comment %} Get Image Data Javascript {% endcomment %}
- {% comment %} On Btnclick, On Paste, On Drag n Drop {% endcomment %}
-<script>
 
+
+<script>
+let lastConversationTime = null;
+let lastConversationId = null;
+let isFetching = false;
+
+function fetchNewConversations() {
+  if (isFetching) return;
+  isFetching = true;
+
+  const params = new URLSearchParams();
+  if (lastConversationTime && lastConversationId) {
+    params.append("last_time", lastConversationTime);
+    params.append("last_id", lastConversationId);
+  }
+
+  fetch("{% url 'back:ajax_load_conversations' %}?" + params.toString())
+    .then(res => res.json())
+    .then(data => {
+      if (!data.conversations.length) return;
+
+      const listBody = document.querySelector(".chat-list-body");
+
+      data.conversations.forEach(convo => {
+        // DUPLICATE PROTECTION
+        if (document.querySelector(`[data-convo-id="${convo.id}"]`)) {
+          return;
+        }
+
+        const a = document.createElement("a");
+        a.href = `?cid=${convo.id}`;
+        a.style.textDecoration = "none";
+        a.style.color = "inherit";
+        a.dataset.convoId = convo.id;
+
+        a.innerHTML = `
+          <div class="chat-item" data-platform="${convo.platform}">
+            <div class="chat-avatar">
+              <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+            </div>
+            <div class="chat-info">
+              <div class="name">
+                ${convo.customer_name || convo.customer_id}
+              </div>
+              <div class="preview">
+                ${convo.preview}
+              </div>
+            </div>
+          </div>
+        `;
+
+        // APPEND (ASC order!)
+        listBody.appendChild(a);
+      });
+
+      // CURSOR = LAST ITEM (newest)
+      const last = data.conversations[data.conversations.length - 1];
+      lastConversationTime = last.timestamp;
+      lastConversationId = last.id;
+    })
+    .finally(() => {
+      isFetching = false;
+    });
+}
+
+setTimeout(fetchNewConversations, 0); // initial load
+setInterval(fetchNewConversations, 5000);
+</script>
+
+
+
+<script>
+  //Pagination Control Ajax
+  const loadMoreBtn = document.getElementById("loadMoreChats");
+
+if (loadMoreBtn) {
+
+  loadMoreBtn.addEventListener("click", () => {
+
+    let nextPage = loadMoreBtn.dataset.next;
+
+    fetch(`/dbchats/ajax_conversations/?page=${nextPage}`)
+      .then(res => res.json())
+      .then(data => {
+
+        if (!data.conversations.length) {
+            loadMoreBtn.style.display = "none";
+            return;
+        }
+
+        const listBody = document.querySelector(".chat-list-body");
+
+        data.conversations.forEach(convo => {
+
+            const a = document.createElement("a");
+            a.href = `?cid=${convo.id}`;
+            a.style.textDecoration = "none";
+            a.style.color = "inherit";
+
+            a.innerHTML = `
+              <div class="chat-item" data-platform="${convo.platform}">
+                <div class="chat-avatar">
+                  <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+                </div>
+                <div class="chat-info">
+                  <div class="name">
+                    ${convo.customer_name || convo.customer_id}
+                  </div>
+                  <div class="preview">
+                    ${convo.preview}
+                  </div>
+                </div>
+              </div>
+            `;
+
+            listBody.appendChild(a);
+        });
+
+        loadMoreBtn.dataset.next = parseInt(nextPage) + 1;
+      });
+  });
+}
+
+</script>
+
+
+
+
+
+
+
+ {% comment %} Ajax Conversation and messages load. {% endcomment %}
+
+ <script>
+  let lastMessageId = null;
+let currentConversationId = new URLSearchParams(window.location.search).get("cid");
+
+function fetchNewMessages() {
+    if (!currentConversationId) return;
+
+    fetch("{% url 'back:ajax_load_messages' %}?cid=" + currentConversationId + "&last_id=" + (lastMessageId || ""))        .then(res => res.json())
+        .then(data => {
+
+            if (!data.messages.length) return;
+
+            const chatBox = document.getElementById("chatMessages");
+
+            data.messages.forEach(msg => {
+
+                lastMessageId = msg.id;
+
+                let div = document.createElement("div");
+                div.className = `msg ${msg.sender === "customer" ? "from" : "to"}`;
+                div.setAttribute("data-msg-id", msg.id);
+
+                let html = "";
+
+                if (msg.text) {
+                    html += `<div class="msg-text">${msg.text}</div>`;
+                }
+
+                if (msg.image) {
+                    html += `
+                        <div class="msg-image">
+                            <img src="${msg.image}" loading="lazy">
+                        </div>
+                    `;
+                }
+
+                html += `<small>${msg.timestamp}</small>`;
+
+                div.innerHTML = html;
+
+                chatBox.appendChild(div);
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+
+        });
+}
+
+// poll every 2 seconds
+setInterval(fetchNewMessages, 2000);
+
+document.addEventListener("DOMContentLoaded", () => {
+    let lastMsg = document.querySelector(".msg:last-child");
+    if (lastMsg) {
+        lastMessageId = lastMsg.getAttribute("data-msg-id");
+    }
+});
 
 </script>
 

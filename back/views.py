@@ -4,6 +4,7 @@ from django.core.files.storage import default_storage
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem
+from django.views.decorators.http import require_GET
 # Create your views here.
 from django.db.models.functions import TruncDay
 
@@ -18,6 +19,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.contrib import messages
 from django.core.paginator import Paginator
+from django.utils.dateparse import parse_datetime
 
 @login_required
 def dashboard(request):
@@ -256,6 +258,111 @@ def c_dashboard(request):
     }
 
     return render(request, "back/c_dashboard.html", context)
+
+
+@login_required
+def message_dashboard(request):
+    return render(request, "back/ajax_c_dashboard.html")
+
+
+
+
+@login_required
+@require_GET
+def ajax_load_messages(request):
+    convo_id = request.GET.get("cid")
+    last_msg_id = request.GET.get("last_id")
+    username = request.user.username
+
+    if not convo_id:
+        return JsonResponse({"messages": []})
+
+    convo = get_object_or_404(
+        Conversation,
+        id=convo_id,
+        user=request.user
+    )
+
+    # 👉 get last message for preview info
+    last_msg = (
+        Message.objects
+        .filter(conversation=convo)
+        .order_by("-timestamp")
+        .first()
+    )
+
+    # ==========================
+    # Conversation meta data
+    # ==========================
+
+    conversation_data = {
+        "id": convo.id,
+        "username": username,
+        "customer_id": convo.customer_id,
+        "platform": convo.platform,
+
+        "name": convo.customer_name or f"ID: {convo.id}",
+        
+        "profile_image": convo.profile_image.url if convo.profile_image else None,
+        "chat_summary": convo.chat_summary,
+
+        "is_ai_enabled": convo.is_ai_enabled,
+
+        "last_message": last_msg.text if last_msg else "",
+        "timestamp": convo.timestamp.strftime("%H:%M") if convo.timestamp else "",
+        "updated_at": convo.updated_at.strftime("%H:%M") if convo.updated_at else "",
+    }
+
+    # ==========================
+    # Messages query
+    # ==========================
+
+    qs = Message.objects.filter(
+        conversation=convo
+    ).order_by("timestamp")
+
+    if last_msg_id:
+        qs = qs.filter(id__gt=last_msg_id)
+
+    messages_data = []
+
+    for msg in qs:
+        messages_data.append({
+            "id": msg.id,
+            "sender": msg.sender,
+            "text": msg.text,
+            "timestamp": msg.timestamp.strftime("%d %b, %Y %H:%M"),
+            "image": msg.attachments.get("payload", {}).get("url") if msg.attachments else None
+        })
+
+    # ==========================
+    # Final response
+    # ==========================
+
+    return JsonResponse({
+        "conversation": conversation_data,
+        "messages": messages_data
+    })
+
+
+@login_required
+def ajax_load_conversations(request):
+    convos = Conversation.objects.filter(user=request.user).order_by("-timestamp")[:50]
+
+    data = []
+    for c in convos:
+        last_msg = c.messages.last()
+
+        data.append({
+            "id": c.id,
+            "name": c.customer_name or f"Conversation {c.id}",
+            "customer_id": c.customer_id ,
+            "platform": c.platform,
+            "last_message": last_msg.text if last_msg else "",
+            "updated_at": c.updated_at.strftime("%H:%M"),
+        })
+
+    return JsonResponse({"conversations": data})
 
 
 @login_required

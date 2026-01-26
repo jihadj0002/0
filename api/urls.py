@@ -9,6 +9,8 @@ router.register(r'conversations', views.ConversationViewSet)
 router.register(r'sales', views.SaleViewSet)
 router.register(r'settings', views.SettingViewSet)
 
+app_name = 'api'
+
 urlpatterns = [
     path('', include(router.urls)),
 
