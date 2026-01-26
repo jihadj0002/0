@@ -1,4 +1,6 @@
 from django.shortcuts import render, redirect
+from django.core.files.storage import default_storage
+
 from django.db.models import Sum, Count, Q, Avg
 from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem
@@ -256,40 +258,143 @@ def c_dashboard(request):
     return render(request, "back/c_dashboard.html", context)
 
 
- 
 @login_required
 @require_POST
 def send_image_ajax(request):
     user = request.user
+    print(f"User: {user}")
 
-    # convo_id = request.POST.get('conversation_id')
-    # image = request.FILES.get('image')
+    # Get conversation_id from POST data
+    convo_id = request.POST.get("conversation_id")
+    print(f"Conversation ID: {convo_id}")
+    
+    # Get the image file from request
+    image = request.FILES.get("image")
+    print(f"Image: {image}")
 
-    # if not convo_id or not image:
-    #     return HttpResponseBadRequest("Missing conversation id or image")
+    if not convo_id or not image:
+        return HttpResponseBadRequest("Missing conversation id or image")
 
-    # convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+    # Get the conversation object
+    convo = get_object_or_404(Conversation, id=convo_id, user=user)
 
-    # # Here you would add code to send the image via the appropriate API
-    # # For simplicity, we'll skip that part and just create the message in our DB
+    # =======================
+    # Save Image to Cloudflare R2
+    # =======================
+    
+    # Save image using the default storage backend (Cloudflare R2)
+    file_name = f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{image.name}"
+    file_path = default_storage.save(f"media/{file_name}", ContentFile(image.read()))
+    
+    # Generate the public URL for the image
+    image_url = default_storage.url(file_path)
+    print(f"Image URL: {image_url}")
+    
+    # =======================
+    # Save message to database
+    # =======================
+    # Save message with the image attachment URL
+    msg = Message.objects.create(
+        conversation=convo,
+        sender="agent",
+        attachments={"payload": {"url": image_url}}  # Save image URL as an attachment field
+    )
+    print("Message Created")
 
-    # msg = Message.objects.create(
-    #     conversation=convo,
-    #     sender='agent',
-    #     image=image
-    # )
+    # =======================
+    # Facebook Messenger Integration
+    # =======================
+    if convo.platform == "messenger":
+        integration = user.integrations.filter(platform="messenger").first()
+        if not integration:
+            return HttpResponseForbidden("Messenger integration not configured.")
 
-    # convo.message_text = "Image"
-    # convo.save()
+        access_token = integration.access_token
+        sender_id = integration.integration_id
 
-    # response_data = {
-    #     "status": "ok",
-    #     "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
-    #     "image_url": msg.image.url if msg.image else "",
-    # }
+        payload = {
+            "recipient": {"id": convo.customer_id},
+            "message": {
+                "attachment": {
+                    "type": "image",
+                    "payload": {
+                        "url": image_url,
+                        "is_reusable": True
+                    }
+                }
+            }
+        }
 
-    # return JsonResponse(response_data)
-    return JsonResponse({"status": "error", "message": "Image sending not implemented yet."}, status=501)
+        # Send the image to the customer on Facebook Messenger
+        url = f"https://graph.facebook.com/v24.0/{sender_id}/messages"
+        params = {"access_token": access_token}
+        print(f"Messenger API URL: {url}")
+        
+        response = requests.post(url, params=params, json=payload)
+        print(response)
+
+        if response.status_code != 200:
+            return JsonResponse({
+                "status": "error",
+                "message": "Failed to send image via Messenger API."
+            }, status=500)
+        
+        # Extract the message_id from the response
+        data = response.json()
+        message_id = data.get("message_id")
+        print(f"Message ID from Facebook: {message_id}")
+
+        # Update the message with the received message_id
+        msg.mid = message_id
+        msg.save()
+
+    # =======================
+    # WhatsApp Integration
+    # =======================
+    elif convo.platform == "whatsapp":
+        integration = user.integration_set.filter(platform="whatsapp").first()
+        if not integration:
+            return HttpResponseForbidden("WhatsApp integration not configured.")
+
+        # Assuming that `attachments` contains the image URL
+        msg = Message.objects.create(
+            conversation=convo,
+            sender="agent",
+            attachments={"payload": {"url": image_url}}
+        )
+
+        url = "https://www.wasenderapi.com/api/send-image"
+        headers = {"Authorization": f"Bearer {integration.access_token}"}
+        data = {
+            "to": convo.customer_id,
+            "image": image_url
+        }
+
+        response = requests.post(url, headers=headers, json=data)
+
+        if response.status_code != 200:
+            return JsonResponse({
+                "status": "error",
+                "message": "Failed to send image via WhatsApp API."
+            }, status=500)
+        
+        # Extract the message_id from the response
+        data = response.json()
+        message_id = data.get("message_id")
+        print(f"Message ID from Whatsapp: {message_id}")
+
+        # Update the message with the received message_id
+        msg.mid = message_id
+        msg.save()
+
+    return JsonResponse({
+        "status": "ok",
+        "image_url": image_url,
+        "sent_ts": timezone.localtime(msg.timestamp).strftime("%d %b, %Y %H:%M"),
+        "message_id": msg.mid,  # Return the saved message_id
+        "attachments": msg.attachments  # Include the full attachments object
+    })
+
 
 @login_required
 @require_POST

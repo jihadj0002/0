@@ -353,6 +353,7 @@ body{background:var(--bg);}
 }
 
 
+
 /* responsive */
 @media (max-width: 920px) {
   .layout { grid-template-columns: 1fr; height: auto; }
@@ -839,13 +840,18 @@ chatBox.addEventListener("drop", function(e) {
   
   
   if (sendBtn && input) {
+
+
     function sendMessage() {
       const text = input.value.trim();
-      if (!text) return;
+
+
+      if (!text && !selectedFile) return;
 
       // find conversation id from URL ?cid=
       const params = new URLSearchParams(window.location.search);
       const cid = params.get('cid');
+      
       if (!cid) {
         alert('Please select a conversation first.');
         return;
@@ -854,46 +860,144 @@ chatBox.addEventListener("drop", function(e) {
       // optimistic UI: append message to chat
       const newMsg = document.createElement('div');
       newMsg.className = 'msg to';
+
+      let previewHTML = "";
+      if (text) {
+        previewHTML += `<div class="msg-text">${text}</div>`;
+      }
+
+      if (selectedFile) {
+        const imgURL = URL.createObjectURL(selectedFile);
+        previewHTML += `
+          <div class="msg-image">
+            <img src="${imgURL}">
+          </div>
+        `;
+      }
+      
+      
       newMsg.innerHTML = text + '<small>Sending…</small>';
+
+      
       msgBox.appendChild(newMsg);
       msgBox.scrollTop = msgBox.scrollHeight;
       input.value = '';
 
-      fetch("{% url 'back:send_message' %}", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrftoken,
-        },
-        credentials: "same-origin",
-        body: JSON.stringify({ conversation_id: cid, text: text })
-      })
-      .then(resp => {
-        if (!resp.ok) throw new Error('Network response not ok');
-        return resp.json();
-      })
-      .then(data => {
-        // replace optimistic content by server-provided html/text
-        if (data.status === 'ok') {
-          // update last appended (assumes optimistic order)
-          newMsg.innerHTML = data.sent_text + '<small>' + data.sent_ts + '</small>';
 
-          if (data.bot_reply_html) {
-            const botEl = document.createElement('div');
-            botEl.className = 'msg from';
-            botEl.innerHTML = data.bot_reply_html + '<small>' + data.bot_reply_ts + '</small>';
-            msgBox.appendChild(botEl);
+      let url = "";
+      let payload;
+
+      if (text && !selectedFile) {
+        
+        
+        fetch("{% url 'back:send_message' %}", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrftoken,
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({ conversation_id: cid, text: text })
+        })
+        .then(resp => {
+          if (!resp.ok) throw new Error('Network response not ok');
+          return resp.json();
+        })
+        .then(data => {
+          // replace optimistic content by server-provided html/text
+          if (data.status === 'ok') {
+            // update last appended (assumes optimistic order)
+            newMsg.innerHTML = data.sent_text + '<small>' + data.sent_ts + '</small>';
+            
+            if (data.bot_reply_html) {
+              const botEl = document.createElement('div');
+              botEl.className = 'msg from';
+              botEl.innerHTML = data.bot_reply_html + '<small>' + data.bot_reply_ts + '</small>';
+              msgBox.appendChild(botEl);
+            }
+
+            msgBox.scrollTop = msgBox.scrollHeight;
+          } else {
+            newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
           }
-
-          msgBox.scrollTop = msgBox.scrollHeight;
-        } else {
+        })
+        .catch(err => {
+          console.error(err);
           newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
-      });
+        });
+      }
+      
+      
+      // Send Image View
+
+
+
+      if (!text && selectedFile) {
+        // find conversation id from URL ?cid=
+
+        
+        
+        const formData = new FormData();
+        formData.append("conversation_id", cid),
+        formData.append("image", selectedFile),
+        console.log(formData)
+        
+        
+        fetch("{% url 'back:send_image' %}", {
+          method: "POST",
+          headers: {
+            
+            "X-CSRFToken": csrftoken,
+          },
+          credentials: "same-origin",
+          body: formData
+          
+        })
+        .then(resp => {
+          if (!resp.ok) throw new Error('Network response not ok');
+          
+          console.log(formData)
+          return resp.json();
+        })
+        .then(data => {
+          // replace optimistic content by server-provided html/text
+          if (data.status === 'ok') {
+            // update last appended (assumes optimistic order)
+            
+            newMsg.innerHTML =  ' ';
+            if (data.image_url) {
+            newMsg.innerHTML += `
+              <div class="msg-image">
+                <img src="${data.image_url}" alt="Image from server" loading="lazy">
+              </div>
+              <small>${data.sent_ts}<small>
+            `;
+          }
+            if (data.bot_reply_html) {
+              const botEl = document.createElement('div');
+              botEl.className = 'msg from';
+              botEl.innerHTML = data.bot_reply_html + '<small>' + data.bot_reply_ts + '</small>';
+              msgBox.appendChild(botEl);
+            }
+
+            // If the message has an attachment, append it as an image
+            
+
+            msgBox.scrollTop = msgBox.scrollHeight;
+            // Clear text input and selected file after sending the message
+            input.value = '';
+            selectedFile = null;  // Reset selected file
+            imagePreview.style.display = "none";  // Hide the image preview
+            
+          } else {
+            newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          newMsg.innerHTML = '<em style="color:#ff3333">Failed to send</em>';
+        });
+      }
     }
 
     sendBtn.addEventListener("click", sendMessage);
@@ -904,6 +1008,8 @@ chatBox.addEventListener("drop", function(e) {
       }
     });
   }
+
+
 
 
 
