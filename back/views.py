@@ -267,6 +267,10 @@ def message_dashboard(request):
 
 
 
+
+
+
+
 @login_required
 @require_GET
 def ajax_load_messages(request):
@@ -303,7 +307,11 @@ def ajax_load_messages(request):
 
         "name": convo.customer_name or f"ID: {convo.id}",
         
-        "profile_image": convo.profile_image.url if convo.profile_image else None,
+        "profile_image": (
+                convo.profile_image.url
+                if convo.profile_image and hasattr(convo.profile_image, "url")
+                else None
+            ),
         "chat_summary": convo.chat_summary,
 
         "is_ai_enabled": convo.is_ai_enabled,
@@ -319,7 +327,7 @@ def ajax_load_messages(request):
 
     qs = Message.objects.filter(
         conversation=convo
-    ).order_by("timestamp")
+    ).order_by("id")
 
     if last_msg_id:
         qs = qs.filter(id__gt=last_msg_id)
@@ -344,22 +352,34 @@ def ajax_load_messages(request):
         "messages": messages_data
     })
 
-
 @login_required
 def ajax_load_conversations(request):
-    convos = Conversation.objects.filter(user=request.user).order_by("-timestamp")[:50]
+    convos = Conversation.objects.filter(
+        user=request.user
+    ).order_by("-updated_at")[:50]
 
     data = []
+
     for c in convos:
-        last_msg = c.messages.last()
+        last_msg = c.messages.order_by("-id").first()
+
+        if last_msg:
+            if last_msg.text:
+                last_message = last_msg.text
+            elif last_msg.attachments:
+                last_message = "📷 Image"
+            else:
+                last_message = ""
+        else:
+            last_message = ""
 
         data.append({
             "id": c.id,
-            "name": c.customer_name or f"Conversation {c.id}",
-            "customer_id": c.customer_id ,
+            "customer_name": c.customer_name,
+            "customer_id": c.customer_id,
             "platform": c.platform,
-            "last_message": last_msg.text if last_msg else "",
-            "updated_at": c.updated_at.strftime("%H:%M"),
+            "last_message": last_message,
+            "updated_at": c.updated_at.strftime("%H:%M") if c.updated_at else "",
         })
 
     return JsonResponse({"conversations": data})
@@ -496,6 +516,7 @@ def send_image_ajax(request):
 
     return JsonResponse({
         "status": "ok",
+        "id": msg.id,
         "image_url": image_url,
         "sent_ts": timezone.localtime(msg.timestamp).strftime("%d %b, %Y %H:%M"),
         "message_id": msg.mid,  # Return the saved message_id
@@ -622,7 +643,8 @@ def send_message_ajax(request):
     
     response_data = {
         "status": "ok",
-        "sent_text": msg.text,
+        "id": msg.id,
+        "text": msg.text,
         "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
         
     }

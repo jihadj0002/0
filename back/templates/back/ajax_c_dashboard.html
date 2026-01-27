@@ -648,9 +648,8 @@ AJAX function to toggle AI
 let currentConversation = null;
 let lastMessageId = 0;
 
-
 function loadConversations(){
-
+    
   fetch("{% url 'back:ajax_load_conversations' %}")
     .then(res => res.json())
     .then(data => {
@@ -684,13 +683,57 @@ function loadConversations(){
     });
 }
 loadConversations();
+console.log("Conversation Loaded::::");
+
+
+// Polling Interval 
+let pollingInterval = null;
+
+function startPolling() {
+  if (pollingInterval) return; // already running
+
+  pollingInterval = setInterval(loadNewMessages, 2500);
+  console.log("Polling Started::::");
+}
+
+function stopPolling() {
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    console.log("Polling Stopped::::");
+        
+  }
+}
+
+
+function loadNewMessages() {
+
+  if (!currentConversation) return;
+
+  fetch("{% url 'back:ajax_load_messages' %}?cid="
+        + currentConversation
+        + "&last_id=" + lastMessageId)
+
+    .then(res => res.json())
+    .then(data => {
+      if (data.messages && data.messages.length) {
+        appendMessages(data.messages);
+        console.log("Load New Messege Called. Data::::");
+        console.log(data.messages);
+      }
+      
+      });
+    
+    
+}
 
 
 
 function openConversation(id){
 
+    stopPolling();
   currentConversation = id;
-  lastMessageId = 0;
+  lastMessageId = 0
 
   const chatBox = document.getElementById("chatMessages");
   chatBox.innerHTML = "";
@@ -704,11 +747,14 @@ function openConversation(id){
         console.log("Render Success ")
       // 👉 Load messages
       appendMessages(data.messages);
+        // Start Message Polling
+      startPolling()
 
     });
 
   document.querySelector('.layout').classList.add('chat-open');
 }
+
 
 
 
@@ -838,15 +884,21 @@ document.addEventListener("DOMContentLoaded", initAiButtons);
 
 
 
+const renderedMessageIds = new Set();
 
 
 function appendMessages(messages){
 
   const chatBox = document.getElementById("chatMessages");
-
+    console.log("Append Message Running...!");
   messages.forEach(msg => {
 
     let html = "";
+
+    if (renderedMessageIds.has(msg.id)) return; // 🧠 dedupe Help Removing Duplicate values.
+
+    renderedMessageIds.add(msg.id);
+    
 
     if(msg.text){
       html += `<div class="msg-text">${msg.text}</div>`;
@@ -858,6 +910,8 @@ function appendMessages(messages){
           <img src="${msg.image}" loading="lazy">
         </div>
       `;
+      console.log(msg.sender);
+      console.log(msg.image);
     }
 
     html += `<small>${msg.timestamp}</small>`;
@@ -874,7 +928,7 @@ function appendMessages(messages){
   chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-
+/*
 setInterval(() => {
 
   if(!currentConversation) return;
@@ -894,7 +948,7 @@ setInterval(() => {
 
 }, 2500);
 
-
+*/
 
 
 
@@ -1115,6 +1169,7 @@ chatBox.addEventListener("drop", function(e) {
 
   }
 
+    stopPolling(); // avoid race
 
   // ========== handle response ==========
   request
@@ -1126,6 +1181,9 @@ chatBox.addEventListener("drop", function(e) {
       return;
     }
 
+    msgEl.remove();
+    
+    /*
     // replace optimistic with server version
     let finalHTML = "";
 
@@ -1133,17 +1191,31 @@ chatBox.addEventListener("drop", function(e) {
       finalHTML += `<div class="msg-text">${data.text}</div>`;
     }
 
+     if(data.id){
+      renderedMessageIds.add(data.id);
+      console.log("Rendered Id Added")
+    }
+    
+    
     if(data.image_url){
+
       finalHTML += `
         <div class="msg-image">
           <img src="${data.image_url}" loading="lazy">
         </div>
       `;
+      
     }
-
+    
     finalHTML += `<small>${data.sent_ts}</small>`;
-
+    
     msgEl.innerHTML = finalHTML;
+
+
+    
+    
+
+    
 
 
     // append bot reply if exists
@@ -1160,12 +1232,14 @@ chatBox.addEventListener("drop", function(e) {
     }
 
     msgBox.scrollTop = msgBox.scrollHeight;
-
+    */
   })
   .catch(() => {
     msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
-  });
-
+  })
+  .finally(() => {
+      startPolling();
+    });
 
   // reset attachment
   selectedFile = null;
@@ -1174,6 +1248,7 @@ chatBox.addEventListener("drop", function(e) {
 
 
     sendBtn.onclick = sendMessage;
+    
 
 input.onkeydown = e => {
   if(e.key === "Enter"){
