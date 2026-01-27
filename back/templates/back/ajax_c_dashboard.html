@@ -648,6 +648,7 @@ AJAX function to toggle AI
 let currentConversation = null;
 let lastMessageId = 0;
 
+
 function loadConversations(){
 
   fetch("{% url 'back:ajax_load_conversations' %}")
