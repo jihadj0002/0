@@ -243,7 +243,7 @@ class Conversation(models.Model):
     ai_enable_delay = models.IntegerField(default=300)             # Time in seconds before re-enabling AI
 
     timestamp = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True, null=True , db_index=True)
     chat_summary = models.TextField(blank=True, null=True)
 
     # -----------------------------------------------------
@@ -366,6 +366,15 @@ class Message(models.Model):
             return f"{self.sender}: [attachment]"
 
         return f"{self.sender}: [empty message]"
+    
+    def save(self, *args, **kwargs):
+        is_now = self.pk is None
+        super().save(*args, **kwargs)
+
+        if is_now:
+            Conversation.objects.filter(id=self.conversation_id).update(updated_at=timezone.now())
+
+            
 
 # -----------------------
 # Sales

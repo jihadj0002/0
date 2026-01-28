@@ -574,12 +574,12 @@ body{background:var(--bg);}
 
       {% if selected_convo.is_ai_enabled %}
         <button class="header-btn"
-                onclick="toggleAI('{% url 'bot-disable' username=user id=selected_convo.id %}')">
+                onclick="toggleAI('{% url 'api:bot-disable' username=user id=selected_convo.id %}')">
           Disable AI
         </button>
       {% else %}
         <button class="header-btn"
-                onclick="toggleAI('{% url 'bot-enable' username=user id=selected_convo.id %}')">
+                onclick="toggleAI('{% url 'api:bot-enable' username=user id=selected_convo.id %}')">
           Enable AI
         </button>
       {% endif %}
@@ -648,12 +648,12 @@ body{background:var(--bg);}
 
       {% if selected_convo.is_ai_enabled %}
     <button class="profile-btn" 
-            onclick="toggleAI('{% url 'bot-disable' username=user id=selected_convo.id %}')">
+            onclick="toggleAI('{% url 'api:bot-disable' username=user id=selected_convo.id %}')">
         Disable AI
     </button>
 {% else %}
     <button class="profile-btn"
-            onclick="toggleAI('{% url 'bot-enable' username=user id=selected_convo.id %}')">
+            onclick="toggleAI('{% url 'api:bot-enable' username=user id=selected_convo.id %}')">
         Enable AI
     </button>
 {% endif %}
