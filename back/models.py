@@ -236,6 +236,9 @@ class Conversation(models.Model):
 
     message_text = models.TextField(blank=True, null=True)
     response_text = models.TextField(blank=True, null=True)
+    last_message_type = models.CharField(max_length=50, blank=True, null=True)
+
+
 
     is_ai_generated = models.BooleanField(default=True)
     is_ai_enabled = models.BooleanField(default=True)
@@ -271,7 +274,6 @@ class Conversation(models.Model):
 
     greeted = models.BooleanField(default=False)
     image_allowed = models.BooleanField(default=True)
-    last_message_type = models.CharField(max_length=50, blank=True, null=True)
 
     user_category = models.CharField(max_length=100, blank=True, null=True)
     related_products = models.JSONField(blank=True, null=True)
@@ -368,11 +370,17 @@ class Message(models.Model):
         return f"{self.sender}: [empty message]"
     
     def save(self, *args, **kwargs):
-        is_now = self.pk is None
+        is_new  = self.pk is None
         super().save(*args, **kwargs)
 
-        if is_now:
-            Conversation.objects.filter(id=self.conversation_id).update(updated_at=timezone.now())
+        if is_new :
+            preview = self.text or "📷 Image"
+
+            Conversation.objects.filter(id=self.conversation_id).update(updated_at=timezone.now(),
+                                                                        message_text=preview,
+                                                                        last_message_type="image" if self.attachments else "text"
+                                                                        )
+
 
             
 

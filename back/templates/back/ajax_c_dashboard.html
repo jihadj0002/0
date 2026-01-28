@@ -534,7 +534,7 @@ body{background:var(--bg);}
     <!-- CHAT HEADER -->
     <header class="chat-header">
 
-      <div class="mobile-back">← Back</div>
+      <div class="mobile-back" onclick="closeChat()">← Back</div>
 
       <div class="header-left">
         <div class="header-avatar">
@@ -647,10 +647,21 @@ AJAX function to toggle AI
 <script>
 let currentConversation = null;
 let lastMessageId = 0;
+let activePlatform = "all";
+let searchQuery = "";
+
+
 
 function loadConversations(){
+
+    const params = new URLSearchParams({
+    platform: activePlatform,
+    q: searchQuery
+  });
     
-  fetch("{% url 'back:ajax_load_conversations' %}")
+  
+  fetch(`{% url 'back:ajax_load_conversations' %}?${params}`)
+
     .then(res => res.json())
     .then(data => {
 
@@ -682,8 +693,38 @@ function loadConversations(){
 
     });
 }
+
 loadConversations();
 console.log("Conversation Loaded::::");
+
+// Updated Seach Feature
+let searchTimeout = null;
+
+document.getElementById("searchInput").addEventListener("input", e => {
+  clearTimeout(searchTimeout);
+
+  searchTimeout = setTimeout(() => {
+    searchQuery = e.target.value;
+    loadConversations();
+  }, 300); // debounce
+});
+
+
+
+document.querySelectorAll(".chat-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+
+    // UI active state
+    document.querySelectorAll(".chat-tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+
+    // Set platform
+    activePlatform = tab.dataset.platform;
+
+    // Reload conversations
+    loadConversations();
+  });
+});
 
 
 // Polling Interval 
@@ -1331,6 +1372,17 @@ function closeChat() {
   document.querySelector('.layout')?.classList.remove('chat-open');
   history.pushState({}, "", window.location.pathname);
 }
+/*
+// Handle Open Profile and closing Profile
+function openProfile() {
+  document.querySelector('.layout')?.classList.add('chat-open');
+}
+
+function closeProfile() {
+  document.querySelector('.layout')?.classList.remove('chat-open');
+  history.pushState({}, "", window.location.pathname);
+}
+  */
 
 /* Auto open chat if cid exists (refresh / direct link) */
 document.addEventListener("DOMContentLoaded", function () {

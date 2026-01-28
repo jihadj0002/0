@@ -354,31 +354,53 @@ def ajax_load_messages(request):
 
 @login_required
 def ajax_load_conversations(request):
-    convos = Conversation.objects.filter(
-        user=request.user
-    ).order_by("-updated_at")[:50]
+    platform = request.GET.get("platform", "all")
+    q = request.GET.get("q", "").strip()
+
+    convos = Conversation.objects.filter(user=request.user)
+    
+    if platform != "all":
+        convos = convos.filter(platform=platform)
+        print("Conversation Platform selected")
+        print(platform)
+
+    if q:
+        convos = convos.filter(
+            Q(customer_name__icontains=q) |
+            Q(customer_id__icontains=q)
+            
+        )
+        print("Conversation Query selected")
+        print(q)
+    
+    convos = convos.order_by("-updated_at")[:50]
+
+
 
     data = []
 
     for c in convos:
-        last_msg = c.messages.order_by("-id").first()
+        # This Last message takes hugeeeeeeeeee timeeeeeeeeeeeee n(1) Sooooo BAAAAAADDDDDDDD
+        # Need Optimization
+        # Create a last_message  in chat conversation model or something...!
+        # last_msg = c.messages.order_by("-id").first()
 
-        if last_msg:
-            if last_msg.text:
-                last_message = last_msg.text
-            elif last_msg.attachments:
-                last_message = "📷 Image"
-            else:
-                last_message = ""
-        else:
-            last_message = ""
+        # if last_msg:
+        #     if last_msg.text:
+        #         last_message = last_msg.text
+        #     elif last_msg.attachments:
+        #         last_message = "📷 Image"
+        #     else:
+        #         last_message = ""
+        # else:
+        #     last_message = ""
 
         data.append({
             "id": c.id,
             "customer_name": c.customer_name,
             "customer_id": c.customer_id,
             "platform": c.platform,
-            "last_message": last_message,
+            "last_message": c.message_text  or "New message",
             "updated_at": c.updated_at.strftime("%H:%M") if c.updated_at else "",
         })
 
