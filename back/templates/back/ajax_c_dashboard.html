@@ -645,6 +645,8 @@ AJAX function to toggle AI
 
 
 <script>
+let convoCache = {};        // conversation cache by platform
+let messageCache = {};      // messages cache by conversation_id
 let currentConversation = null;
 let lastMessageId = 0;
 let activePlatform = "all";
@@ -652,49 +654,138 @@ let searchQuery = "";
 
 
 
-function loadConversations(){
+/* ==============================
+   HELPER FUNCTIONS
+============================== */
+function renderConversations(platform) {
+    const listBody = document.querySelector(".chat-list-body");
+    listBody.innerHTML = "";
+
+    const convos = convoCache[platform]?.[searchQuery || "__all__"] || [];
+    convos.forEach(convo => {
+        listBody.innerHTML += `
+            <div class="chat-item" data-platform="${convo.platform}" onclick="openConversation(${convo.id}, this)">
+                <div class="chat-avatar">
+                    <img src="${convo.profile_image || 'https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg'}">
+                </div>
+                <div class="chat-info">
+                    <div class="name">${convo.customer_name || convo.customer_id}</div>
+                    <div class="preview">${convo.last_message || "No messages"}</div>
+                    <div class="time">${convo.updated_at}</div>
+                </div>
+            </div>
+        `;
+    });
+}
+
+
+/*
+function renderMessages(conversationId) {
+    const chatBody = document.querySelector(".chat-body");
+    chatBody.innerHTML = "";
+
+    const messages = messageCache[conversationId] || [];
+    messages.forEach(msg => {
+        chatBody.innerHTML += `
+            <div class="message ${msg.sender}">
+                <div class="text">${msg.text || ""}</div>
+                ${msg.image ? `<img src="${msg.image}" />` : ""}
+                <div class="time">${msg.timestamp}</div>
+            </div>
+        `;
+    });
+
+    chatBody.scrollTop = chatBody.scrollHeight; // scroll to bottom
+}
+*/
+
+/* ==============================
+   MESSAGE FUNCTIONS
+============================== 
+function loadMessages(conversationId) {
+    currentConversation = conversationId;
+    if (!messageCache[conversationId]) messageCache[conversationId] = [];
+
+    // Render cached messages immediately
+    renderMessages(conversationId);
+
+    // Get last message id for incremental fetching
+    let lastId = messageCache[conversationId].length
+        ? messageCache[conversationId][messageCache[conversationId].length - 1].id
+        : 0;
+
+    fetch(`{% url 'back:ajax_load_messages' %}?cid=${conversationId}&last_id=${lastId}`)
+        .then(res => res.json())
+        .then(data => {
+            // Append new messages to cache
+            data.messages.forEach(msg => {
+                messageCache[conversationId].push(msg);
+            });
+
+            // Render again
+            if (conversationId === currentConversation) renderMessages(conversationId);
+        });
+}
+
+*/
+
+
+
+function loadConversations(platform = "all"){
+
+    // 1️⃣ Render cache immediately if exists
+    if (convoCache[platform]) {
+        renderConversations(platform);
+    }
 
     const params = new URLSearchParams({
-    platform: activePlatform,
-    q: searchQuery
-  });
-    
+  platform,
+  q: searchQuery
+});
   
   fetch(`{% url 'back:ajax_load_conversations' %}?${params}`)
 
     .then(res => res.json())
     .then(data => {
 
-      const listBody = document.querySelector(".chat-list-body");
-      listBody.innerHTML = "";
+        // Update cache
+        convoCache[platform] = convoCache[platform] || {};
+        
+        const key = searchQuery || "__all__";
 
-      data.conversations.forEach(convo => {
+        const old = convoCache[platform][key] || [];
+        const incoming = data.conversations;
 
-        listBody.innerHTML += `
-          <div class="chat-item" 
-               data-platform="${convo.platform}"
-               onclick="openConversation(${convo.id})">
+        // Merge by ID (prevent duplicates)
+        const map = {};
 
-            <div class="chat-avatar">
-              <img src="https://img.freepik.com/premium-vector/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
-            </div>
+        old.forEach(c => map[c.id] = c);
+        incoming.forEach(c => map[c.id] = c);
 
-            <div class="chat-info">
-              <div class="name">
-                ${convo.customer_name || convo.customer_id}
-              </div>
-              <div class="preview">
-                ${convo.last_message || "No messages"}
-              </div>
-            </div>
-          </div>
-        `;
-      });
+        convoCache[platform][key] = Object.values(map);
 
-    });
+
+
+        // Update "all" cache too for tab filtering
+            if (platform === "all") {
+                ["messenger", "whatsapp"].forEach(p => {
+                    convoCache[p] = convoCache[p] || {};
+                    convoCache[p][searchQuery || "__all__"] =
+                        data.conversations.filter(c => c.platform === p);
+                });
+            }
+
+            // Render if this tab is active
+            if (platform === activePlatform) {
+                renderConversations(platform);
+            }
+        });
 }
 
-loadConversations();
+      
+      
+
+loadConversations(activePlatform);
 console.log("Conversation Loaded::::");
 
 // Updated Seach Feature
@@ -705,7 +796,7 @@ document.getElementById("searchInput").addEventListener("input", e => {
 
   searchTimeout = setTimeout(() => {
     searchQuery = e.target.value;
-    loadConversations();
+    loadConversations(activePlatform);
   }, 300); // debounce
 });
 
@@ -722,7 +813,7 @@ document.querySelectorAll(".chat-tab").forEach(tab => {
     activePlatform = tab.dataset.platform;
 
     // Reload conversations
-    loadConversations();
+    loadConversations(activePlatform);
   });
 });
 
@@ -758,7 +849,19 @@ function loadNewMessages() {
     .then(res => res.json())
     .then(data => {
       if (data.messages && data.messages.length) {
+        // 🔥 Add to cache
+        if (!messageCache[currentConversation]) {
+          messageCache[currentConversation] = [];
+        }
+
+        data.messages.forEach(msg => {
+          messageCache[currentConversation].push(msg);
+          lastMessageId = msg.id;   // 👈 update pointer
+        });
+
         appendMessages(data.messages);
+        
+        
         console.log("Load New Messege Called. Data::::");
         console.log(data.messages);
       }
@@ -769,32 +872,56 @@ function loadNewMessages() {
 }
 
 
+function openConversation(id, el) {
 
-function openConversation(id){
+  // 🔥 Remove active from all chats
+  document.querySelectorAll('.chat-item').forEach(item => {
+    item.classList.remove('active');
+  });
 
-    stopPolling();
+  // 🔥 Add active to the clicked one
+  if (el) el.classList.add('active');
+
+  stopPolling();
+  
   currentConversation = id;
-  lastMessageId = 0
+  lastMessageId = 0;
 
   const chatBox = document.getElementById("chatMessages");
   chatBox.innerHTML = "";
 
+  
+
+  // 🔥 1. INSTANT render from cache (if exists)
+if (messageCache[id]) {
+
+  appendMessages(messageCache[id]);
+
+  const last = messageCache[id][messageCache[id].length - 1];
+  lastMessageId = last ? last.id : 0;
+
+  startPolling();
+  return;
+}
+
+  // 🔥 2. Otherwise fetch from server
   fetch("{% url 'back:ajax_load_messages' %}?cid=" + id)
     .then(res => res.json())
     .then(data => {
 
-      // 👉 Assign conversation info
       renderConversationUI(data.conversation);
-        console.log("Render Success ")
-      // 👉 Load messages
-      appendMessages(data.messages);
-        // Start Message Polling
-      startPolling()
 
+      // Cache messages
+      messageCache[id] = data.messages;
+
+      appendMessages(data.messages);
+
+      startPolling();
     });
 
   document.querySelector('.layout').classList.add('chat-open');
 }
+
 
 
 
@@ -925,21 +1052,19 @@ document.addEventListener("DOMContentLoaded", initAiButtons);
 
 
 
-const renderedMessageIds = new Set();
+const renderedMessageIds = {}; // convoId -> Set
+
 
 
 function appendMessages(messages){
 
   const chatBox = document.getElementById("chatMessages");
+
     console.log("Append Message Running...!");
+
   messages.forEach(msg => {
 
-    let html = "";
-
-    if (renderedMessageIds.has(msg.id)) return; // 🧠 dedupe Help Removing Duplicate values.
-
-    renderedMessageIds.add(msg.id);
-    
+    let html = "";    
 
     if(msg.text){
       html += `<div class="msg-text">${msg.text}</div>`;
