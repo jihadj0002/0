@@ -399,7 +399,7 @@ def ajax_load_conversations(request):
          # ✅ convert to local timezone
         local_time = timezone.localtime(c.updated_at) if c.updated_at else None
         
-        print(local_time)
+        # print(local_time)
         data.append({
             "id": c.id,
             "customer_name": c.customer_name,

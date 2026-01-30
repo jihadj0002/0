@@ -653,6 +653,7 @@ let currentConversation = null;
 let lastMessageId = 0;
 let activePlatform = "all";
 let searchQuery = "";
+let convoPollingInterval = null;
 
 
 
@@ -738,8 +739,10 @@ function loadConversations(platform = "all"){
       
       
 
-loadConversations(activePlatform);
 console.log("Conversation Loaded::::");
+loadConversations(activePlatform);
+startConversationPolling();
+console.log("Conversation Polling Started::::");
 
 // Updated Seach Feature
 let searchTimeout = null;
@@ -789,6 +792,28 @@ function stopPolling() {
         
   }
 }
+
+
+
+
+function startConversationPolling(){
+  if (convoPollingInterval) return;
+
+  convoPollingInterval = setInterval(() => {
+    loadConversations(activePlatform);
+  }, 5000); // every 5 seconds
+
+  console.log("Conversation polling started");
+}
+
+function stopConversationPolling(){
+  if(convoPollingInterval){
+    clearInterval(convoPollingInterval);
+    convoPollingInterval = null;
+    console.log("Conversation polling stopped");
+  }
+}
+
 
 
 function loadNewMessages() {
@@ -1302,56 +1327,6 @@ chatBox.addEventListener("drop", function(e) {
 
     msgEl.remove();
     
-    /*
-    // replace optimistic with server version
-    let finalHTML = "";
-
-    if(data.text){
-      finalHTML += `<div class="msg-text">${data.text}</div>`;
-    }
-
-     if(data.id){
-      renderedMessageIds.add(data.id);
-      console.log("Rendered Id Added")
-    }
-    
-    
-    if(data.image_url){
-
-      finalHTML += `
-        <div class="msg-image">
-          <img src="${data.image_url}" loading="lazy">
-        </div>
-      `;
-      
-    }
-    
-    finalHTML += `<small>${data.sent_ts}</small>`;
-    
-    msgEl.innerHTML = finalHTML;
-
-
-    
-    
-
-    
-
-
-    // append bot reply if exists
-    if(data.bot_reply){
-
-      const botEl = document.createElement("div");
-      botEl.className = "msg from";
-      botEl.innerHTML = `
-        <div class="msg-text">${data.bot_reply}</div>
-        <small>${data.bot_reply_ts}</small>
-      `;
-
-      msgBox.appendChild(botEl);
-    }
-
-    msgBox.scrollTop = msgBox.scrollHeight;
-    */
   })
   .catch(() => {
     msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
