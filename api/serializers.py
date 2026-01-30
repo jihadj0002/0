@@ -135,6 +135,7 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
             "extra_data",
             "conversation",
             "detected_intent",
+            "updated_at",
         ]
 
     def get_conversation(self, obj):

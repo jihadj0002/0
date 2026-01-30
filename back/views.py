@@ -20,6 +20,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.utils.dateparse import parse_datetime
+from django.db.models.functions import Coalesce
 
 @login_required
 def dashboard(request):
@@ -299,6 +300,9 @@ def ajax_load_messages(request):
     # Conversation meta data
     # ==========================
 
+    local_created = timezone.localtime(convo.timestamp) if convo.timestamp else None
+    local_updated = timezone.localtime(convo.updated_at) if convo.updated_at else None
+
     conversation_data = {
         "id": convo.id,
         "username": username,
@@ -317,8 +321,9 @@ def ajax_load_messages(request):
         "is_ai_enabled": convo.is_ai_enabled,
 
         "last_message": last_msg.text if last_msg else "",
-        "timestamp": convo.timestamp.strftime("%H:%M") if convo.timestamp else "",
-        "updated_at": convo.updated_at.strftime("%H:%M") if convo.updated_at else "",
+        # ✅ local time
+        "timestamp": local_created.strftime("%H:%M") if local_created else "",
+        "updated_at": local_updated.strftime("%H:%M") if local_updated else "",
     }
 
     # ==========================
@@ -335,11 +340,16 @@ def ajax_load_messages(request):
     messages_data = []
 
     for msg in qs:
+        local_msg_time = timezone.localtime(msg.timestamp) if msg.timestamp else None
+
+
         messages_data.append({
             "id": msg.id,
             "sender": msg.sender,
             "text": msg.text,
-            "timestamp": msg.timestamp.strftime("%d %b, %Y %H:%M"),
+            # ✅ local timezone
+            "timestamp": local_msg_time.strftime("%d %b, %Y %H:%M") if local_msg_time else "",
+
             "image": msg.attachments.get("payload", {}).get("url") if msg.attachments else None
         })
 
@@ -373,35 +383,33 @@ def ajax_load_conversations(request):
         print("Conversation Query selected")
         print(q)
     
-    convos = convos.order_by("-updated_at")[:50]
+    # convos = convos.order_by("-updated_at")[:50]
+    
+    convos = convos.annotate(
+        sort_time=Coalesce("updated_at", "timestamp")
+    ).order_by("-sort_time")[:50]
+
 
 
 
     data = []
 
     for c in convos:
-        # This Last message takes hugeeeeeeeeee timeeeeeeeeeeeee n(1) Sooooo BAAAAAADDDDDDDD
-        # Need Optimization
-        # Create a last_message  in chat conversation model or something...!
-        # last_msg = c.messages.order_by("-id").first()
 
-        # if last_msg:
-        #     if last_msg.text:
-        #         last_message = last_msg.text
-        #     elif last_msg.attachments:
-        #         last_message = "📷 Image"
-        #     else:
-        #         last_message = ""
-        # else:
-        #     last_message = ""
-
+         # ✅ convert to local timezone
+        local_time = timezone.localtime(c.updated_at) if c.updated_at else None
+        
+        print(local_time)
         data.append({
             "id": c.id,
             "customer_name": c.customer_name,
             "customer_id": c.customer_id,
             "platform": c.platform,
             "last_message": c.message_text  or "New message",
-            "updated_at": c.updated_at.strftime("%H:%M") if c.updated_at else "",
+            # send formatted local time
+            "updated_at": local_time.strftime("%H:%M") if local_time else "",
+            # send Unformatted Global time
+            # "updated_at": c.updated_at.strftime("%H:%M") if c.updated_at else "",
         })
 
     return JsonResponse({"conversations": data})

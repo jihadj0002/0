@@ -246,7 +246,7 @@ class Conversation(models.Model):
     ai_enable_delay = models.IntegerField(default=300)             # Time in seconds before re-enabling AI
 
     timestamp = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True, null=True , db_index=True)
+    updated_at = models.DateTimeField(auto_now=True, db_index=True)
     chat_summary = models.TextField(blank=True, null=True)
 
     # -----------------------------------------------------
