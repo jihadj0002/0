@@ -440,11 +440,13 @@ body{background:var(--bg);}
   bottom: 0;
   left: 0;
   right: 0;
+
   background: white;
   display: flex;
   gap: 8px;
   padding: 10px;
   border-top: 1px solid var(--border);
+  
 }
 
 .chat-input input {
@@ -494,6 +496,43 @@ body{background:var(--bg);}
 .msg.to .msg-image img {
   margin-left: auto;
 }
+
+.image-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+
+  background: #fff;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+
+  max-height: 30vh;
+  overflow-y: auto;
+
+  display: none;
+}
+
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 20vh;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto;
+}
+
+.image-preview button {
+  margin-top: 6px;
+  width: 100%;
+  background: #f44336;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px;
+}
+
 
 }
 
