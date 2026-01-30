@@ -898,6 +898,12 @@ if (messageCache[id]) {
     });
 
   document.querySelector('.layout').classList.add('chat-open');
+  history.pushState(
+  { chat: true, conversationId: id },
+  '',
+  '#chat-' + id
+);
+
 }
 
 
@@ -1410,6 +1416,15 @@ document.addEventListener("DOMContentLoaded", function () {
     });
   });
 });
+
+window.addEventListener('popstate', () => {
+  const layout = document.querySelector('.layout');
+
+  if (layout?.classList.contains('chat-open')) {
+    closeChat();
+  }
+});
+
 </script>
 
 
@@ -1425,6 +1440,7 @@ function closeChat() {
   document.querySelector('.layout')?.classList.remove('chat-open');
   history.pushState({}, "", window.location.pathname);
 }
+
 /*
 // Handle Open Profile and closing Profile
 function openProfile() {
