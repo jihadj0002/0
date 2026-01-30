@@ -409,7 +409,8 @@ def ajax_load_conversations(request):
             # send formatted local time
             "updated_at": local_time.strftime("%H:%M") if local_time else "",
             # send Unformatted Global time
-            # "updated_at": c.updated_at.strftime("%H:%M") if c.updated_at else "",
+            # raw time for sorting
+            "updated_at_raw": timezone.localtime(c.sort_time).isoformat(),
         })
 
     return JsonResponse({"conversations": data})

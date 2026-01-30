@@ -681,58 +681,6 @@ function renderConversations(platform) {
 }
 
 
-/*
-function renderMessages(conversationId) {
-    const chatBody = document.querySelector(".chat-body");
-    chatBody.innerHTML = "";
-
-    const messages = messageCache[conversationId] || [];
-    messages.forEach(msg => {
-        chatBody.innerHTML += `
-            <div class="message ${msg.sender}">
-                <div class="text">${msg.text || ""}</div>
-                ${msg.image ? `<img src="${msg.image}" />` : ""}
-                <div class="time">${msg.timestamp}</div>
-            </div>
-        `;
-    });
-
-    chatBody.scrollTop = chatBody.scrollHeight; // scroll to bottom
-}
-*/
-
-/* ==============================
-   MESSAGE FUNCTIONS
-============================== 
-function loadMessages(conversationId) {
-    currentConversation = conversationId;
-    if (!messageCache[conversationId]) messageCache[conversationId] = [];
-
-    // Render cached messages immediately
-    renderMessages(conversationId);
-
-    // Get last message id for incremental fetching
-    let lastId = messageCache[conversationId].length
-        ? messageCache[conversationId][messageCache[conversationId].length - 1].id
-        : 0;
-
-    fetch(`{% url 'back:ajax_load_messages' %}?cid=${conversationId}&last_id=${lastId}`)
-        .then(res => res.json())
-        .then(data => {
-            // Append new messages to cache
-            data.messages.forEach(msg => {
-                messageCache[conversationId].push(msg);
-            });
-
-            // Render again
-            if (conversationId === currentConversation) renderMessages(conversationId);
-        });
-}
-
-*/
-
-
-
 function loadConversations(platform = "all"){
 
     // 1️⃣ Render cache immediately if exists
@@ -764,7 +712,10 @@ function loadConversations(platform = "all"){
         old.forEach(c => map[c.id] = c);
         incoming.forEach(c => map[c.id] = c);
 
-        convoCache[platform][key] = Object.values(map);
+        convoCache[platform][key] = Object.values(map)
+        .sort((a,b) => new Date(b.updated_at_raw) - new Date(a.updated_at_raw))
+        .slice(0,50);
+
 
 
 
