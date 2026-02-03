@@ -213,6 +213,74 @@ class OrderItemSerializer(serializers.ModelSerializer):
         product.save(update_fields=["stock_quantity"])
 
         return item
+    
+
+
+    
+
+
+class ExternalOrderItemSerializer(serializers.Serializer):
+    external_product_id = serializers.CharField(max_length=255)
+    external_variation_id = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        allow_null=True
+    )
+    quantity = serializers.IntegerField(min_value=1)
+    price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        default=0
+    )
+    product_name = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    raw_product_data = serializers.JSONField(
+        required=False,
+        default=dict
+    )
+    
+
+
+class ExternalOrderSerializer(serializers.Serializer):
+    customer_id = serializers.CharField(max_length=255)
+    customer_name = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    customer_phone = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    customer_address = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    customer_city = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    customer_state = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    delivered_to = serializers.ChoiceField(
+        choices=["inside_dhaka", "outside_dhaka"],
+        required=False,
+        default="inside_dhaka"
+    )
+
+    items = ExternalOrderItemSerializer(many=True)
+
+    def validate_items(self, value):
+        if not value:
+            raise serializers.ValidationError("At least one item is required.")
+        return value
+
+
 
 
 

@@ -16,7 +16,7 @@ import json
 from django.db import transaction
 from back.models import Package, PackageItem, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
 from .serializers import (
-    UserProfileSerializer, ProductSerializer,MessageSerializer, PackageSerializer,
+    UserProfileSerializer, ProductSerializer,MessageSerializer, PackageSerializer,ExternalOrderSerializer, ExternalOrderItemSerializer,
     ConversationSerializer, SaleSerializer, SettingSerializer, ProductImagesSerializer, OrderItemSerializer, ConversationSummarySerializer
 )
 
@@ -917,145 +917,102 @@ class ExternalSaleCreateAPIView(APIView):
 
 class NewOrderExternal(APIView):
     @transaction.atomic
-    
     def post(self, request, username):
         user = get_object_or_404(User, username=username)
-        
-        data = request.data
 
-        if isinstance(data, list):
-            data = data[0]
+        # 🔹 Validate input using serializer
+        serializer = ExternalOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        data = serializer.validated_data
+        items = data["items"]
+        customer_id = data["customer_id"]
 
-        customer_id = data.get("customer_id")
-        print("Received customer_id:", customer_id)
-
-        # Required fields
-        # items = data.get("items", [])
-        items = []
-        i = 0
-        while f"items[{i}].external_product_id" in data:
-            items.append({
-                "external_product_id": data.get(f"items[{i}].external_product_id"),
-                "external_variation_id": data.get(f"items[{i}].external_variation_id"),
-                "quantity": data.get(f"items[{i}].quantity", 1),
-                "product_name": data.get("product_name"),
-                "price": data.get("price", 0),
-            })
-            i += 1
-
-        print("Received items:", items)
-
-        if not customer_id or not items:
-            return Response(
-                {"error": "customer_id and items are required"},
-                status=status.HTTP_400_BAD_REQUEST,
+        with transaction.atomic():
+            # 🔹 Conversation must exist
+            conversation = get_object_or_404(
+                Conversation,
+                customer_id=customer_id,
+                user=user
             )
 
-        try:
-            with transaction.atomic():
-                # conversation, _ = Conversation.objects.get_or_create(user=user,external_id=customer_id)
-                conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
-                # Create Sale
-                sale = Sale.objects.create(
+            # 🔹 Create Sale
+            sale = Sale.objects.create(
+                user=user,
+                source="external",
+                customer_id=customer_id,
+                conversation=conversation,
+                customer_name=data.get("customer_name", ""),
+                customer_address=data.get("customer_address", ""),
+                customer_phone=data.get("customer_phone", ""),
+                customer_city=data.get("customer_city", ""),
+                customer_state=data.get("customer_state", ""),
+                delivered_to=data.get("delivered_to", "inside_dhaka"),
+                status="draft",
+            )
+
+            total_amount = 0
+
+            # 🔹 Get or create default product (safe)
+            default_product = Product.objects.filter(
+                user=user,
+                name="External Order Placeholder"
+            ).first()
+
+            if not default_product:
+                default_product = Product.objects.create(
                     user=user,
-                    source="external",
-                    # external_order_id=data.get("external_order_id"),
-                    customer_id=customer_id,
-                    conversation=conversation,
-                    customer_name=data.get("customer_name", ""),
-                    customer_address=data.get("customer_address", ""),
-                    customer_phone=data.get("customer_phone", ""),
-                    customer_city=data.get("customer_city", ""),
-                    customer_state=data.get("customer_state", ""),
-                    delivered_to=data.get("delivered_to", "inside_dhaka"),
-                    status="pending",
+                    name="External Order Placeholder",
+                    price=0,
+                    stock_quantity=99999,
                 )
-                print("Created Sale with ID:", sale.id)
 
-                total_amount = 0
+            # 🔹 Create order items
+            order_items = []
+            for item in items:
+                price = item.get("price", 0)
+                quantity = item["quantity"]
 
-                # A default internal product for external items
-                default_product, created = Product.objects.get_or_create(
-                    user=user,
-                    defaults={
-                        "name": "External Order Placeholder",
-                        "price": 0,
-                        "stock_quantity": 99999,
-                        # "status": True,
-                    }
-                )
-                print("Default product for external items:", default_product.pid)
-                for item in items:
-                    price = item.get("price", 0)
-                    quantity = int(item.get("quantity", 1))
-                    
-
-                    OrderItem.objects.create(
+                order_items.append(
+                    OrderItem(
                         order=sale,
-                        product=default_product,  # required FK
+                        product=default_product,
                         internal_product=None,
                         product_name=item.get("product_name", "External Product"),
-                        external_product_id=item.get("external_product_id"),
+                        external_product_id=item["external_product_id"],
                         external_variation_id=item.get("external_variation_id"),
-                        
                         price=price,
                         quantity=quantity,
                         raw_product_data=item.get("raw_product_data", {}),
                     )
-                    
-                    total_amount += price * quantity
+                )
 
-                # Update total amount
-                sale.amount = total_amount
-                sale.save()
+                total_amount += price * quantity
 
-            return Response(
-                {
-                    "message": "External order created successfully",
-                    "order_id": sale.id,
-                    "oid": sale.oid,
-                    "amount": sale.amount,
-                },
-                status=status.HTTP_201_CREATED,
-            )
+            # 🔹 Bulk insert for performance
+            OrderItem.objects.bulk_create(order_items)
 
-        except Product.DoesNotExist:
-            return Response(
-                {"error": "Default external product not found"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-        
-    # Test Order External JSON
-#     {
-#   "external_order_id": "EXT-ORD-12345",
-#   "customer_id": "CUST-001",
-#   "customer_name": "John Doe",
-#   "customer_address": "123 Main Street, Lagos",
-#   "customer_phone": "+2348012345678",
-#   "items": [
-#     {
-#       "external_product_id": "EXT-PROD-001",
-#       "product_name": "Wireless Mouse",
-#       "price": 2500,
-#       "quantity": 2,
-#       "raw_product_data": {
-#         "color": "black",
-#         "brand": "Logitech"
-#       }
-#     },
-#     {
-#       "external_product_id": "EXT-PROD-002",
-#       "product_name": "USB Keyboard",
-#       "price": 4000,
-#       "quantity": 1,
-#       "raw_product_data": {
-#         "layout": "QWERTY",
-#         "connection": "USB"
-#       }
-#     }
-#   ]
-# }
+            # 🔹 Update sale total
+            sale.amount = total_amount
+            sale.save(update_fields=["amount"])
+
+        return Response(
+            {
+                "message": "External order created successfully",
+                "order_id": sale.id,
+                "oid": sale.oid,
+                "amount": sale.amount,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+    def put(self, request, username):
+        return Response(
+            {"error": "PUT method not allowed on this endpoint"},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+    
+
 
 def get_ai_status(user, platform):
         integration = Integration.objects.filter(
