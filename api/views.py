@@ -151,7 +151,6 @@ class OrderStartView(APIView):
             customer_id=customer_id,
             status="draft"
         )
-
         return Response(
             {
                 "order_id": sale.oid,
@@ -998,6 +997,7 @@ class NewOrderExternal(APIView):
 
         return Response(
             {
+                "status" : "success",
                 "message": "External order created successfully",
                 "order_id": sale.id,
                 "oid": sale.oid,
@@ -1006,103 +1006,260 @@ class NewOrderExternal(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+class NewOrderExternalUpdate(APIView):
+
+    def get_sale(self, user, order_id):
+        return get_object_or_404(
+            Sale,
+            oid=order_id,   # or id=order_id
+            user=user,
+            source="external",
+        )
+
+    # =========================
+    # UPDATE (FULL REPLACE)
+    # =========================
     @transaction.atomic
     def put(self, request, username, order_id):
         user = get_object_or_404(User, username=username)
+        sale = self.get_sale(user, order_id)
 
-        # 🔹 Validate payload
         serializer = ExternalOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        items = data["items"]
         customer_id = data["customer_id"]
+        items = data["items"]
 
-        with transaction.atomic():
-            # 🔹 Fetch order (user-scoped)
-            sale = get_object_or_404(
-                Sale,
-                id=order_id,
-                user=user,
-                source="external",
+        conversation = get_object_or_404(
+            Conversation,
+            customer_id=customer_id,
+            user=user
+        )
+
+        # Update sale fields
+        sale.customer_id = customer_id
+        sale.conversation = conversation
+        sale.customer_name = data.get("customer_name", "")
+        sale.customer_phone = data.get("customer_phone", "")
+        sale.customer_address = data.get("customer_address", "")
+        sale.customer_city = data.get("customer_city", "")
+        sale.customer_state = data.get("customer_state", "")
+        sale.delivered_to = data.get("delivered_to", sale.delivered_to)
+        sale.status = "draft"
+        sale.save()
+
+        # Remove old items
+        OrderItem.objects.filter(order=sale).delete()
+
+        default_product, _ = Product.objects.get_or_create(
+            user=user,
+            name="External Order Placeholder",
+            defaults={"price": 0, "stock_quantity": 99999}
+        )
+
+        total_amount = 0
+
+        for item in items:
+            price = item.get("price", 0)
+            qty = item["quantity"]
+
+            OrderItem.objects.create(
+                order=sale,
+                product=default_product,
+                internal_product=None,
+                product_name=item.get("product_name", "External Product"),
+                external_product_id=item["external_product_id"],
+                external_variation_id=item.get("external_variation_id"),
+                price=price,
+                quantity=qty,
+                raw_product_data=item.get("raw_product_data", {}),
             )
 
-            # 🔹 Conversation (update if customer_id changed)
-            conversation = get_object_or_404(
-                Conversation,
-                customer_id=customer_id,
-                user=user
-            )
+            total_amount += price * qty
 
-            # 🔹 Update Sale fields
-            sale.customer_id = customer_id
-            sale.conversation = conversation
-            sale.customer_name = data.get("customer_name", sale.customer_name)
-            sale.customer_phone = data.get("customer_phone", sale.customer_phone)
-            sale.customer_address = data.get("customer_address", sale.customer_address)
-            sale.customer_city = data.get("customer_city", sale.customer_city)
-            sale.customer_state = data.get("customer_state", sale.customer_state)
-            sale.delivered_to = data.get("delivered_to", sale.delivered_to)
-            sale.status = "draft"
-            sale.save()
-
-            # 🔹 Remove existing items
-            sale.items.all().delete()  # assumes related_name="items"
-
-            total_amount = 0
-
-            # 🔹 Default product
-            default_product = Product.objects.filter(
-                user=user,
-                name="External Order Placeholder"
-            ).first()
-
-            if not default_product:
-                default_product = Product.objects.create(
-                    user=user,
-                    name="External Order Placeholder",
-                    price=0,
-                    stock_quantity=99999,
-                )
-
-            # 🔹 Re-create order items
-            order_items = []
-            for item in items:
-                price = item.get("price", 0)
-                quantity = item["quantity"]
-
-                order_items.append(
-                    OrderItem(
-                        order=sale,
-                        product=default_product,
-                        internal_product=None,
-                        product_name=item.get("product_name", "External Product"),
-                        external_product_id=item["external_product_id"],
-                        external_variation_id=item.get("external_variation_id"),
-                        price=price,
-                        quantity=quantity,
-                        raw_product_data=item.get("raw_product_data", {}),
-                    )
-                )
-
-                total_amount += price * quantity
-
-            OrderItem.objects.bulk_create(order_items)
-
-            # 🔹 Update total
-            sale.amount = total_amount
-            sale.save(update_fields=["amount"])
+        sale.amount = total_amount
+        sale.save(update_fields=["amount"])
 
         return Response(
             {
-                "message": "External order updated successfully",
-                "order_id": sale.id,
+                "message": "Order updated successfully",
                 "oid": sale.oid,
                 "amount": sale.amount,
             },
             status=status.HTTP_200_OK,
         )
-    
+
+    # =========================
+    # PARTIAL UPDATE
+    # =========================
+    @transaction.atomic
+    def patch(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+        sale = self.get_sale(user, order_id)
+
+        serializer = ExternalOrderSerializer(
+            data=request.data,
+            partial=True,
+            context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        # =========================
+        # Update conversation if needed
+        # =========================
+        if "customer_id" in data:
+            conversation = get_object_or_404(
+                Conversation,
+                customer_id=data["customer_id"],
+                user=user
+            )
+            sale.customer_id = data["customer_id"]
+            sale.conversation = conversation
+
+        # =========================
+        # Update sale fields
+        # =========================
+        sale_fields = [
+            "customer_name",
+            "customer_phone",
+            "customer_address",
+            "customer_city",
+            "customer_state",
+            "delivered_to",
+            "status",
+        ]
+
+        for field in sale_fields:
+            if field in data:
+                setattr(sale, field, data[field])
+
+        sale.save()
+
+        # =========================
+        # APPEND / UPDATE ITEMS
+        # =========================
+        if "items" in data:
+            default_product, _ = Product.objects.get_or_create(
+                user=user,
+                name="External Order Placeholder",
+                defaults={"price": 0, "stock_quantity": 99999},
+            )
+
+            total_amount = sale.amount or 0
+
+            for item in data["items"]:
+                lookup = {
+                    "order": sale,
+                    "external_product_id": item["external_product_id"],
+                    "external_variation_id": item.get("external_variation_id"),
+                }
+
+                order_item, created = OrderItem.objects.get_or_create(
+                    **lookup,
+                    defaults={
+                        "product": default_product,
+                        "internal_product": None,
+                        "product_name": item.get("product_name", "External Product"),
+                        "price": item.get("price", 0),
+                        "quantity": item.get("quantity", 1),
+                        "raw_product_data": item.get("raw_product_data", {}),
+                    }
+                )
+
+                if not created:
+                    # adjust total: remove old amount
+                    total_amount -= order_item.price * order_item.quantity
+
+                    # update fields
+                    order_item.price = item.get("price", order_item.price)
+                    order_item.quantity = item.get("quantity", order_item.quantity)
+                    order_item.product_name = item.get(
+                        "product_name", order_item.product_name
+                    )
+                    order_item.raw_product_data = item.get(
+                        "raw_product_data", order_item.raw_product_data
+                    )
+                    order_item.save()
+
+                # add new amount
+                total_amount += order_item.price * order_item.quantity
+
+            sale.amount = total_amount
+            sale.save(update_fields=["amount"])
+
+        return Response(
+            {
+                "message": "Order updated successfully",
+                "oid": sale.oid,
+                "amount": sale.amount,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+    # =========================
+    # DELETE
+    # =========================
+    @transaction.atomic
+    def delete(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+        sale = self.get_sale(user, order_id)
+
+        OrderItem.objects.filter(order=sale).delete()
+        sale.delete()
+
+        return Response(
+            {"message": "Order deleted successfully"},
+            status=status.HTTP_204_NO_CONTENT,
+        )
+
+class ExternalOrderConfirmView(APIView):
+
+    @transaction.atomic
+    def post(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+
+        sale = get_object_or_404(
+            Sale,
+            oid=order_id,   # or id=order_id
+            user=user,
+            source="external",
+        )
+
+        # =========================
+        # Validation
+        # =========================
+        if sale.status == "pending":
+            return Response(
+                {"error": "Order already pending"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not OrderItem.objects.filter(order=sale).exists():
+            return Response(
+                {"error": "Cannot confirm order without items"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # =========================
+        # Confirm order
+        # =========================
+        sale.status = "pending"
+        sale.save(update_fields=["status"])
+
+        return Response(
+            {
+                "message": "Order confirmed successfully",
+                "oid": sale.oid,
+                "amount": sale.amount,
+                "status": sale.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 
 
 def get_ai_status(user, platform):

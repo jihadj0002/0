@@ -273,7 +273,7 @@ class ExternalOrderSerializer(serializers.Serializer):
         default="inside_dhaka"
     )
 
-    items = ExternalOrderItemSerializer(many=True)
+    items = ExternalOrderItemSerializer(many=True, required=False)
 
     def validate_items(self, value):
         if not value:
