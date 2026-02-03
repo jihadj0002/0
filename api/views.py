@@ -1006,10 +1006,101 @@ class NewOrderExternal(APIView):
             status=status.HTTP_201_CREATED,
         )
 
-    def put(self, request, username):
+    @transaction.atomic
+    def put(self, request, username, order_id):
+        user = get_object_or_404(User, username=username)
+
+        # 🔹 Validate payload
+        serializer = ExternalOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        items = data["items"]
+        customer_id = data["customer_id"]
+
+        with transaction.atomic():
+            # 🔹 Fetch order (user-scoped)
+            sale = get_object_or_404(
+                Sale,
+                id=order_id,
+                user=user,
+                source="external",
+            )
+
+            # 🔹 Conversation (update if customer_id changed)
+            conversation = get_object_or_404(
+                Conversation,
+                customer_id=customer_id,
+                user=user
+            )
+
+            # 🔹 Update Sale fields
+            sale.customer_id = customer_id
+            sale.conversation = conversation
+            sale.customer_name = data.get("customer_name", sale.customer_name)
+            sale.customer_phone = data.get("customer_phone", sale.customer_phone)
+            sale.customer_address = data.get("customer_address", sale.customer_address)
+            sale.customer_city = data.get("customer_city", sale.customer_city)
+            sale.customer_state = data.get("customer_state", sale.customer_state)
+            sale.delivered_to = data.get("delivered_to", sale.delivered_to)
+            sale.status = "draft"
+            sale.save()
+
+            # 🔹 Remove existing items
+            sale.items.all().delete()  # assumes related_name="items"
+
+            total_amount = 0
+
+            # 🔹 Default product
+            default_product = Product.objects.filter(
+                user=user,
+                name="External Order Placeholder"
+            ).first()
+
+            if not default_product:
+                default_product = Product.objects.create(
+                    user=user,
+                    name="External Order Placeholder",
+                    price=0,
+                    stock_quantity=99999,
+                )
+
+            # 🔹 Re-create order items
+            order_items = []
+            for item in items:
+                price = item.get("price", 0)
+                quantity = item["quantity"]
+
+                order_items.append(
+                    OrderItem(
+                        order=sale,
+                        product=default_product,
+                        internal_product=None,
+                        product_name=item.get("product_name", "External Product"),
+                        external_product_id=item["external_product_id"],
+                        external_variation_id=item.get("external_variation_id"),
+                        price=price,
+                        quantity=quantity,
+                        raw_product_data=item.get("raw_product_data", {}),
+                    )
+                )
+
+                total_amount += price * quantity
+
+            OrderItem.objects.bulk_create(order_items)
+
+            # 🔹 Update total
+            sale.amount = total_amount
+            sale.save(update_fields=["amount"])
+
         return Response(
-            {"error": "PUT method not allowed on this endpoint"},
-            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+            {
+                "message": "External order updated successfully",
+                "order_id": sale.id,
+                "oid": sale.oid,
+                "amount": sale.amount,
+            },
+            status=status.HTTP_200_OK,
         )
     
 
