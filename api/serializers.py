@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from back.models import Package, PackageImages, UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
 from django.db import transaction
-
+from .utils.files import download_to_storage
 
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -63,50 +63,43 @@ class ConversationSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ("user",)
 
+        
 class MessageSerializer(serializers.ModelSerializer):
 
-    # replied_to = serializers.CharField(required=False,allow_blank=True,allow_null=True)
-    replied_to = serializers.SlugRelatedField(
-            slug_field="mid",
-            queryset=Message.objects.all(),
-            required=False,
-            allow_null=True
-        )
-    text = serializers.CharField(required=False,allow_blank=True,allow_null=True)
+    def create(self, validated_data):
+        conversation = validated_data["conversation"]
+        attachments = validated_data.get("attachments")
 
-    attachments = serializers.JSONField(required=False,allow_null=True)
+        if (
+            conversation.platform == "whatsapp"
+            and attachments
+            and isinstance(attachments, dict)
+        ):
+            payload = attachments.get("payload", {})
+            url = payload.get("url")
 
-    mid = serializers.CharField(required=False,allow_blank=True,allow_null=True)
-    
-    
+            if url:
+                try:
+                    public_url = download_to_storage(
+                        url,
+                        folder="whatsapp_media"
+                    )
+
+                    payload["url"] = public_url
+                    attachments["stored"] = True
+
+                except Exception as e:
+                    attachments["download_error"] = str(e)
+
+            attachments["payload"] = payload
+            validated_data["attachments"] = attachments
+
+        return super().create(validated_data)
 
     class Meta:
         model = Message
-        fields = [
-            "id",
-            "conversation",
-            "mid",
-            "sender",
-            "text",
-            "attachments",
-            "replied_to",
-            "timestamp",
-        ]
-        read_only_fields = ["id", "timestamp"]
+        fields = "__all__"
 
-    def validate(self, data):
-        """
-        Require at least text OR attachments
-        """
-        text = data.get("text")
-        attachments = data.get("attachments")
-
-        if not text and not attachments:
-            raise serializers.ValidationError(
-                "Either text or attachments must be provided."
-            )
-
-        return data
     
 class MessageMiniSerializer(serializers.ModelSerializer):
     class Meta:
