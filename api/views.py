@@ -978,8 +978,8 @@ class NewOrderExternal(APIView):
                         product=default_product,
                         internal_product=None,
                         product_name=item.get("product_name", "External Product"),
-                        external_product_id=item["external_product_id"],
-                        external_variation_id=item.get("external_variation_id"),
+                        external_product_id=item["product_id"],
+                        external_variation_id=item.get("variation_id"),
                         price=price,
                         quantity=quantity,
                         raw_product_data=item.get("raw_product_data", {}),
@@ -1069,8 +1069,8 @@ class NewOrderExternalUpdate(APIView):
                 product=default_product,
                 internal_product=None,
                 product_name=item.get("product_name", "External Product"),
-                external_product_id=item["external_product_id"],
-                external_variation_id=item.get("external_variation_id"),
+                external_product_id=item["product_id"],
+                external_variation_id=item.get("variation_id"),
                 price=price,
                 quantity=qty,
                 raw_product_data=item.get("raw_product_data", {}),
@@ -1152,8 +1152,8 @@ class NewOrderExternalUpdate(APIView):
             for item in data["items"]:
                 lookup = {
                     "order": sale,
-                    "external_product_id": item["external_product_id"],
-                    "external_variation_id": item.get("external_variation_id"),
+                    "external_product_id": item["product_id"],
+                    "external_variation_id": item.get("variation_id"),
                 }
 
                 order_item, created = OrderItem.objects.get_or_create(
