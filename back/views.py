@@ -510,7 +510,7 @@ def send_image_ajax(request):
     # WhatsApp Integration
     # =======================
     elif convo.platform == "whatsapp":
-        integration = user.integration_set.filter(platform="whatsapp").first()
+        integration = user.integrations.filter(platform="whatsapp").first()
         if not integration:
             return HttpResponseForbidden("WhatsApp integration not configured.")
 
@@ -521,11 +521,11 @@ def send_image_ajax(request):
             attachments={"payload": {"url": image_url}}
         )
 
-        url = "https://www.wasenderapi.com/api/send-image"
+        url = "https://www.wasenderapi.com/api/send-message"
         headers = {"Authorization": f"Bearer {integration.access_token}"}
         data = {
             "to": convo.customer_id,
-            "image": image_url
+            "imageUrl": image_url
         }
 
         response = requests.post(url, headers=headers, json=data)
@@ -637,8 +637,8 @@ def send_message_ajax(request):
     
     if convo.platform == "whatsapp":
 
-        access_token = user.integration_set.filter(platform="whatsapp").first().access_token
-        sender_id = user.integration_set.filter(platform="whatsapp").first().integration_id
+        access_token = user.integrations.filter(platform="whatsapp").first().access_token
+        sender_id = user.integrations.filter(platform="whatsapp").first().integration_id
         if not access_token and sender_id:
             return HttpResponseForbidden("WhatsApp integration not configured.")
         else:
