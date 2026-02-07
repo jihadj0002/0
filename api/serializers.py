@@ -270,23 +270,35 @@ class ExternalOrderSerializer(serializers.Serializer):
     items = ExternalOrderItemSerializer(many=True, required=False)
 
     def to_internal_value(self, data):
-        """
-        Allow `items` to be sent as:
-        - real list
-        - JSON string of a list
-        """
         items = data.get("items")
 
+        # Case 1: items is a string → parse it
         if isinstance(items, str):
             try:
-                data = data.copy()
-                data["items"] = json.loads(items)
+                items = json.loads(items)
             except json.JSONDecodeError:
                 raise serializers.ValidationError(
                     {"items": "Invalid JSON string for items"}
                 )
 
+        # Case 2: items is a list with ONE string inside → parse that string
+        if (
+            isinstance(items, list)
+            and len(items) == 1
+            and isinstance(items[0], str)
+        ):
+            try:
+                items = json.loads(items[0])
+            except json.JSONDecodeError:
+                raise serializers.ValidationError(
+                    {"items": "Invalid JSON string for items"}
+                )
+
+        data = data.copy()
+        data["items"] = items
+
         return super().to_internal_value(data)
+
 
 
     def validate_items(self, value):
