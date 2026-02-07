@@ -1118,7 +1118,7 @@ class NewOrderExternalUpdate(APIView):
 
         serializer = ExternalOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data[0]
+        data = serializer.validated_data
 
         customer_id = data["customer_id"]
         items = data["items"]
@@ -1196,7 +1196,7 @@ class NewOrderExternalUpdate(APIView):
             context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data[0]
+        data = serializer.validated_data
 
         # =========================
         # Update conversation if needed
