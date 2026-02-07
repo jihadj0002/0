@@ -34,6 +34,7 @@ urlpatterns = [
     path('<str:username>/orders/newex/<str:order_id>', views.NewOrderExternalUpdate.as_view(), name='user-order-update-external'),
     path('<str:username>/orders/newex/<str:order_id>/confirm', views.ExternalOrderConfirmView.as_view(), name='user-order-confirm-external'),
     path('<str:username>/orders/newex', views.NewOrderExternal.as_view(), name='user-order-new-external'),
+    path('<str:username>/orders/newex/confirm', views.NewOrderExternalConfirm.as_view(), name='user-order-new-external-confirm'),
     path('<str:username>/orders/monowa', views.ExternalSaleCreateAPIView.as_view(), name='monowa-user-order-new-external'),
     path('<str:username>/orders/<str:order_id>/update-ext-success', views.Update_External_Order_Item_To_Web.as_view(), name='user-order-update-external-success'),
     

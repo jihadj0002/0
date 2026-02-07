@@ -213,8 +213,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
 
 
 class ExternalOrderItemSerializer(serializers.Serializer):
-    external_product_id = serializers.CharField(max_length=255)
-    external_variation_id = serializers.CharField(
+    product_id = serializers.CharField(max_length=255)
+    variation_id = serializers.CharField(
         max_length=255,
         required=False,
         allow_blank=True,

@@ -1006,6 +1006,98 @@ class NewOrderExternal(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+class NewOrderExternalConfirm(APIView):
+    @transaction.atomic
+    def post(self, request, username):
+        user = get_object_or_404(User, username=username)
+
+        # 🔹 Validate input using serializer
+        serializer = ExternalOrderSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        items = data["items"]
+        customer_id = data["customer_id"]
+
+        with transaction.atomic():
+            # 🔹 Conversation must exist
+            conversation = get_object_or_404(
+                Conversation,
+                customer_id=customer_id,
+                user=user
+            )
+
+            # 🔹 Create Sale
+            sale = Sale.objects.create(
+                user=user,
+                source="external",
+                customer_id=customer_id,
+                conversation=conversation,
+                customer_name=data.get("customer_name", ""),
+                customer_address=data.get("customer_address", ""),
+                customer_phone=data.get("customer_phone", ""),
+                customer_city=data.get("customer_city", ""),
+                customer_state=data.get("customer_state", ""),
+                delivered_to=data.get("delivered_to", "inside_dhaka"),
+                status="pending",
+            )
+
+            total_amount = 0
+
+            # 🔹 Get or create default product (safe)
+            default_product = Product.objects.filter(
+                user=user,
+                name="External Order Placeholder"
+            ).first()
+
+            if not default_product:
+                default_product = Product.objects.create(
+                    user=user,
+                    name="External Order Placeholder",
+                    price=0,
+                    stock_quantity=99999,
+                )
+
+            # 🔹 Create order items
+            order_items = []
+            for item in items:
+                price = item.get("price", 0)
+                quantity = item["quantity"]
+
+                order_items.append(
+                    OrderItem(
+                        order=sale,
+                        product=default_product,
+                        internal_product=None,
+                        product_name=item.get("product_name", "External Product"),
+                        external_product_id=item["product_id"],
+                        external_variation_id=item.get("variation_id"),
+                        price=price,
+                        quantity=quantity,
+                        raw_product_data=item.get("raw_product_data", {}),
+                    )
+                )
+
+                total_amount += price * quantity
+
+            # 🔹 Bulk insert for performance
+            OrderItem.objects.bulk_create(order_items)
+
+            # 🔹 Update sale total
+            sale.amount = total_amount
+            sale.save(update_fields=["amount"])
+
+        return Response(
+            {
+                "status" : "success",
+                "message": "External order created successfully",
+                "order_id": sale.id,
+                "oid": sale.oid,
+                "amount": sale.amount,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
 class NewOrderExternalUpdate(APIView):
 
     def get_sale(self, user, order_id):
@@ -1026,7 +1118,7 @@ class NewOrderExternalUpdate(APIView):
 
         serializer = ExternalOrderSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        data = serializer.validated_data[0]
 
         customer_id = data["customer_id"]
         items = data["items"]
@@ -1104,7 +1196,7 @@ class NewOrderExternalUpdate(APIView):
             context={"request": request}
         )
         serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
+        data = serializer.validated_data[0]
 
         # =========================
         # Update conversation if needed
