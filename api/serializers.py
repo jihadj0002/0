@@ -1,3 +1,4 @@
+import json
 from rest_framework import serializers
 from back.models import Package, PackageImages, UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
 from django.db import transaction
@@ -267,6 +268,26 @@ class ExternalOrderSerializer(serializers.Serializer):
     )
 
     items = ExternalOrderItemSerializer(many=True, required=False)
+
+    def to_internal_value(self, data):
+        """
+        Allow `items` to be sent as:
+        - real list
+        - JSON string of a list
+        """
+        items = data.get("items")
+
+        if isinstance(items, str):
+            try:
+                data = data.copy()
+                data["items"] = json.loads(items)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError(
+                    {"items": "Invalid JSON string for items"}
+                )
+
+        return super().to_internal_value(data)
+
 
     def validate_items(self, value):
         if not value:
