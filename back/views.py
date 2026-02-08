@@ -909,6 +909,66 @@ def sett(request):
 
     return render(request, "back/options.html", context)
 
+def get_whatsapp_username(api_key):
+    if not api_key:
+        return None
+
+    try:
+        response = requests.get(
+            "https://www.wasenderapi.com/api/user",
+            headers={
+                "Authorization": f"Bearer {api_key}"
+            },
+            timeout=10
+        )
+
+        print("WhatsApp API Response:", response.status_code, response.text)
+
+        if response.status_code == 200:
+            payload = response.json()
+
+            # Expected structure:
+            # {
+            #   "success": true,
+            #   "data": {
+            #     "id": "...",
+            #     "name": "...",
+            #     "lid": "..."
+            #   }
+            # }
+
+            if payload.get("success") and payload.get("data"):
+                return payload["data"].get("name")
+
+    except requests.RequestException as e:
+        print("WhatsApp API error:", e)
+
+    return None
+
+
+def get_messenger_username(access_token):
+    if not access_token:
+        return None
+
+    try:
+        response = requests.get(
+            "https://graph.facebook.com/v18.0/me",
+            params={
+                "fields": "name",
+                "access_token": access_token
+            },
+            timeout=10
+        )
+        print("Messenger API Response:", response.status_code, response.text)
+
+        if response.status_code == 200:
+            data = response.json()
+            return data.get("name")
+    except requests.RequestException:
+        pass
+
+    return None
+
 
 @login_required
 def settingss(request):
@@ -926,6 +986,11 @@ def settingss(request):
         }
     )
     print("Integration WhatsApp:", integration_whatsapp, "Created:", created)
+    # 🔹 Fetch connected account names
+    messenger_name = get_messenger_username(integration.access_token)
+    whatsapp_name = get_whatsapp_username(integration_whatsapp.access_token)
+    total_messages = Message.objects.filter(
+        conversation__user=user, sender='bot').count()
 
     if request.method == "POST":
         platform = request.POST.get("platform")
@@ -966,6 +1031,11 @@ def settingss(request):
         "deactivated_conversations": deactivated_conversations,
         "active_conversations_wp": active_conversations_wp,
         "deactivated_conversations_wp": deactivated_conversations_wp,
+        
+        "total_messages": total_messages,
+
+        "messenger_name": messenger_name,
+        "whatsapp_name": whatsapp_name,
     }
 
     return render(request, "back/options.html", context)

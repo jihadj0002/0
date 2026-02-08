@@ -142,6 +142,20 @@
   }
 }
 
+.connected-account {
+  margin: 10px 0 15px;
+  font-size: 14px;
+}
+
+.status.connected {
+  color: #2e7d32;
+}
+
+.status.not-connected {
+  color: #c62828;
+}
+
+
 
 
 /* ==============================
@@ -338,12 +352,14 @@
 
     <!-- Wallet Strip -->
 <div class="wallet-section">
-  <div id="wallet"
-       data-balance="{{ wallet_balance|default:'15.00' }}"
-       data-cost="{{ message_cost|default:'0.50' }}"
-       data-max-balance="{{ max_balance|default:'5000.00' }}"
-       data-warning-threshold="{{ warning_threshold|default:'5.00' }}">
+<div id="wallet"
+     data-balance="{{ wallet_balance|default:'2000.00' }}"
+     data-cost-per-message="{{ message_cost|default:'0.50' }}"
+     data-total-messages="{{ total_messages|default:'0' }}"
+     data-max-balance="{{ max_balance|default:'5000.00' }}"
+     data-warning-threshold="{{ warning_threshold|default:'5.00' }}">
 
+     
     <div class="wallet-item">
       <span class="label">Per Msg</span>
       <span id="costPerMessage" class="value">
@@ -355,7 +371,7 @@
 
     <div class="wallet-item">
       <span class="label">Msgs</span>
-      <span id="message" class="value">{{ total_conversations }}</span>
+      <span id="totalMessage" class="value">{{ total_messages }}</span>
     </div>
 
 
@@ -422,6 +438,19 @@
       <h3>Messenger Integration</h3>
     </div>
 
+    <div class="connected-account">
+  {% if messenger_name %}
+    <p class="status connected">
+      Connected as: <strong>{{ messenger_name }}</strong>
+    </p>
+  {% else %}
+    <p class="status not-connected">
+      Not connected
+    </p>
+  {% endif %}
+</div>
+
+
     <div class="panel-body">
       <form method="POST" class="form">
         {% csrf_token %}
@@ -482,6 +511,19 @@
     <div class="panel-header">
       <h3>WhatsApp Integration</h3>
     </div>
+
+    <div class="connected-account">
+  {% if whatsapp_name %}
+    <p class="status connected">
+      Connected as: <strong>{{ whatsapp_name }}</strong>
+    </p>
+  {% else %}
+    <p class="status not-connected">
+      Not connected
+    </p>
+  {% endif %}
+</div>
+
 
     <div class="panel-body">
       <form method="POST" class="form">
@@ -620,22 +662,23 @@
 
 
 
-
 <script>
 const walletEl = document.getElementById("wallet");
 
 const WalletState = {
   balance: parseFloat(walletEl.dataset.balance),
-  costPerMessage: parseFloat(walletEl.dataset.cost),
+  costPerMessage: parseFloat(walletEl.dataset.costPerMessage),
+  totalMessages: parseInt(walletEl.dataset.totalMessages),
   maxBalance: parseFloat(walletEl.dataset.maxBalance),
   warningThreshold: parseFloat(walletEl.dataset.warningThreshold)
 };
 
 function renderWallet() {
-  const messagesLeft = Math.floor(
-    WalletState.balance / WalletState.costPerMessage
-  );
+  // ✅ TOTAL COST
+  const totalCost =
+    WalletState.totalMessages * WalletState.costPerMessage;
 
+  // wallet status
   walletEl.dataset.state =
     WalletState.balance <= WalletState.warningThreshold
       ? "warning"
@@ -643,20 +686,21 @@ function renderWallet() {
       ? "maxed"
       : "normal";
 
+  // update UI
   document.getElementById("balance").textContent =
-    `$${WalletState.balance.toFixed(2)}`;
-    
+    `৳${WalletState.balance.toFixed(2)}`;
+
   document.getElementById("quota").textContent =
-    messagesLeft;
+    `৳${totalCost.toFixed(2)}`;
 }
 
 document.getElementById("addMoney").onclick = () => {
-  // Redirect to Django payment page
   window.location.href = "{% url 'back:options' %}";
 };
 
 renderWallet();
 </script>
+
 
 
 {% endblock %}

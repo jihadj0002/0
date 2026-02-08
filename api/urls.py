@@ -48,6 +48,9 @@ urlpatterns = [
 
     # Conversation AI Management
     path('<str:username>/conv/', views.UserConvCreateView.as_view(), name='convo-handler'),
+    path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
+
+    
     path('<str:username>/conv/msgs/<str:id>', views.GetLastMessages.as_view(), name='get-last-messages'),
     path('<str:username>/conv/msg/<str:id>', views.LastMessageView.as_view(), name='get-last-messages-multi'),
     
@@ -55,7 +58,6 @@ urlpatterns = [
     
     path('<str:username>/conv/<str:aid>/update', views.UserConvUpdateView.as_view(), name='chat-convo-update'),
 
-    path('<str:username>/conv/<str:aid>/msg', views.MessageCreateView.as_view(), name='chat-handler'),
     path('<str:username>/conv/<str:aid>/msg/<str:mid>', views.MessageRetrieveView.as_view(), name='chat-msg-retrieve'),
 
     

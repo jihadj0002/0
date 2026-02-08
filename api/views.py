@@ -1465,7 +1465,7 @@ class MessageCreateView(APIView):
         serializer = MessageSerializer(data=data)
         if serializer.is_valid():
             message = serializer.save()
-
+            print("Message created:", serializer.data)
             # optional: update conversation.last_message or auto_enable_ai()
             # conversation.auto_enable_ai()
             

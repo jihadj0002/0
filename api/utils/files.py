@@ -5,9 +5,14 @@ import uuid
 
 
 def download_to_storage(url, folder="whatsapp"):
+    # user = requests.request.user
+    # integration = user.integrations.filter(platform="whatsapp").first()
+    # headers = {"Authorization": f"Bearer {integration.access_token}"}
+
+
     r = requests.get(url, timeout=15)
     r.raise_for_status()
-
+    print(f"Downloaded media from {url} with status code {r.status_code}")
     filename = f"{folder}/{uuid.uuid4().hex}"
 
     path = default_storage.save(
