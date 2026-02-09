@@ -352,6 +352,50 @@ body{background:var(--bg);}
   font-size:12px;
 }
 
+.profile-avatar {
+  width: 120px;
+  height: 120px;
+  margin: 0 auto 16px;
+
+  border-radius: 50%;
+  background-color: #e5e7eb; /* fallback gray */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  position: relative;
+  overflow: hidden;
+}
+
+/* If you later place an <img> inside */
+.profile-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+/* Optional online indicator */
+.profile-avatar::after {
+  content: "";
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+
+  background-color: #22c55e; /* green */
+  border: 2px solid #fff;
+}
+
+
 
 
 /* responsive */
@@ -654,11 +698,11 @@ body{background:var(--bg);}
 
     <button class="profile-btn" id="profileToggleAiBtn">Loading...</button>
 
-    <button class="profile-btn btn-primary">
+    <button class="profile-btn btn-primary" id="profileManageOrdersBtn">
       Manage Orders
     </button>
 
-    <button class="profile-btn">
+    <button class="profile-btn" id="profileCreateOrderBtn">
       Create Order
     </button>
 

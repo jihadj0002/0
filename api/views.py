@@ -1423,15 +1423,13 @@ class UserConvCreateView(APIView):
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvUpdateView(APIView):
-    parser_classes = (MultiPartParser, FormParser, JSONParser)
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
 
-    def put(self, request, username, aid):
+    def patch(self, request, username, aid):
         user = get_object_or_404(User, username=username)
 
-        # Ensure conversation belongs to user
         conversation = get_object_or_404(
             Conversation,
             customer_id=aid,
@@ -1440,6 +1438,7 @@ class UserConvUpdateView(APIView):
 
         data = request.data.copy()
         profile_image = data.get("profile_image")
+
         print("Received profile_image:", profile_image)
 
         # ===============================
@@ -1447,22 +1446,22 @@ class UserConvUpdateView(APIView):
         # ===============================
         if isinstance(profile_image, str) and profile_image.startswith("http"):
             try:
-                image_url = download_profile_to_storage(profile_image)
-                print("Downloaded image URL:", image_url)
-                conversation.profile_image = image_url
+                path = download_profile_to_storage(profile_image)
+                conversation.profile_image = path
                 conversation.save(update_fields=["profile_image"])
-                return Response({"profile_image": image_url})
+                return Response(
+                    {"profile_image": conversation.profile_image.url},
+                    status=status.HTTP_200_OK
+                )
             except Exception as e:
                 return Response(
-                    {"profile_image": f"Failed to download image: {str(e)}"},
+                    {"error": str(e)},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
         # ===============================
         # CASE 2: profile_image is FILE
-        # (DRF handles it automatically)
         # ===============================
-
         serializer = ConversationSerializer(
             conversation,
             data=data,
@@ -1471,10 +1470,13 @@ class UserConvUpdateView(APIView):
 
         if serializer.is_valid():
             serializer.save()
-            conversation.save()
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Optional: allow PUT to behave same as PATCH
+    def put(self, request, username, aid):
+        return self.patch(request, username, aid)
 
 
 @method_decorator(csrf_exempt, name='dispatch')    
