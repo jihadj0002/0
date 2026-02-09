@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from django.shortcuts import render, redirect
 from django.core.files.storage import default_storage
 
@@ -233,6 +234,15 @@ def update_order_status(request):
 
 
 @login_required
+def c_dashboard_demo(request):
+    # ==========================
+    # DEMO CONVERSATIONS
+    # ==========================
+
+    return render(request, "back/c_dashboard_demo.html")
+
+
+@login_required
 def c_dashboard(request):
     all_convo = Conversation.objects.filter(user=request.user).order_by('-timestamp')
 
@@ -401,6 +411,11 @@ def ajax_load_conversations(request):
         
         # print(local_time)
         data.append({
+
+            # "image": msg.attachments.get("payload", {}).get("url") if msg.attachments else None
+            "profile_image": (c.profile_image.url if c.profile_image and hasattr(c.profile_image, "url")
+                else None
+            ),
             "id": c.id,
             "customer_name": c.customer_name,
             "customer_id": c.customer_id,
@@ -412,6 +427,7 @@ def ajax_load_conversations(request):
             # raw time for sorting
             "updated_at_raw": timezone.localtime(c.sort_time).isoformat(),
         })
+
 
     return JsonResponse({"conversations": data})
 

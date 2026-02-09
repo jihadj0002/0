@@ -12,6 +12,9 @@ from rest_framework import serializers
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from .utils.files import download_profile_to_storage
+
 import json
 from django.db import transaction
 from back.models import Package, PackageItem, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, OrderItem, Integration
@@ -1423,22 +1426,55 @@ class UserConvCreateView(APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class UserConvUpdateView(APIView):
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
     def put(self, request, username, aid):
         user = get_object_or_404(User, username=username)
 
+        # Ensure conversation belongs to user
+        conversation = get_object_or_404(
+            Conversation,
+            customer_id=aid,
+            user=user
+        )
 
-        # Only allow sending messages to conversations owned by user
-        conversation = get_object_or_404(Conversation, customer_id=aid, user=user)
+        data = request.data.copy()
+        profile_image = data.get("profile_image")
+        print("Received profile_image:", profile_image)
+
+        # ===============================
+        # CASE 1: profile_image is a URL
+        # ===============================
+        if isinstance(profile_image, str) and profile_image.startswith("http"):
+            try:
+                image_url = download_profile_to_storage(profile_image)
+                print("Downloaded image URL:", image_url)
+                conversation.profile_image = image_url
+                conversation.save(update_fields=["profile_image"])
+                return Response({"profile_image": image_url})
+            except Exception as e:
+                return Response(
+                    {"profile_image": f"Failed to download image: {str(e)}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # ===============================
+        # CASE 2: profile_image is FILE
+        # (DRF handles it automatically)
+        # ===============================
+
         serializer = ConversationSerializer(
-            conversation, data=request.data, partial=True
+            conversation,
+            data=data,
+            partial=True
         )
 
         if serializer.is_valid():
             serializer.save()
-            return Response(serializer.data)
+            conversation.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 
 @method_decorator(csrf_exempt, name='dispatch')    

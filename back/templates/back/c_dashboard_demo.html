@@ -1,0 +1,1690 @@
+
+<!DOCTYPE html>
+<!-- saved from url=(0039)http://127.0.0.1:8000/dbchats#chat-7026 -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard | Matrix AI</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com/">
+  <link href="./Dashboard _ Matrix AI_files/css2" rel="stylesheet">
+
+  <style>
+/* ==============================
+   ROOT VARIABLES & BASE STYLES
+============================== */
+:root {
+  --bg: #f7fbff;
+  --panel: #ffffff;
+  --muted: #64748b;
+  --accent: #2563eb;
+  --soft: #f1f5f9;
+  --radius: 12px;
+  --shadow: 0 6px 20px rgba(16, 24, 40, 0.08);
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+}
+
+.app {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ==============================
+   SIDEBAR
+============================== */
+.sidebar {
+  width: 260px;
+  background: linear-gradient(180deg, #fff, #fbfdff);
+  padding: 28px;
+  border-right: 1px solid #eef2f6;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  transition: transform 0.3s ease;
+  z-index: 1001;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--accent), #60a5fa);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.brand-text {
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 18px;
+}
+
+.nav-item {
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: #0f172a;
+  text-decoration: none;
+  font-weight: 600;
+  opacity: 0.88;
+  transition: background 0.2s ease;
+}
+
+.nav-item:hover {
+  background: var(--soft);
+}
+
+.nav-item.active {
+  background: linear-gradient(90deg, #eef2ff, #f5faff);
+  box-shadow: var(--shadow);
+}
+
+/* ==============================
+   MAIN LAYOUT
+============================== */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-left: 260px;
+  transition: margin-left 0.3s ease;
+}
+
+/* ==============================
+   TOPBAR
+============================== */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 28px;
+  background: #fff;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.search-wrap {
+  flex: 1;
+  max-width: 640px;
+}
+
+.search {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid #e6eefc;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Buttons & Avatar */
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.btn-primary:hover {
+  background: #1e4ed8;
+}
+
+.avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #eef2ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* ==============================
+   CONTENT & FOOTER
+============================== */
+.content {
+  padding: 20px 28px 40px;
+}
+
+.footer {
+  padding: 18px 28px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+/* ==============================
+   HAMBURGER MENU
+============================== */
+.menu-toggle {
+  background: none;
+  border: none;
+  font-size: 1.6rem;
+  cursor: pointer;
+  display: none;
+  padding: 6px 10px;
+}
+
+/* ==============================
+   OVERLAY (MOBILE BACKDROP)
+============================== */
+.overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(15, 23, 42, 0.5);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+}
+
+.overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* ==============================
+   RESPONSIVE DESIGN
+============================== */
+@media (max-width: 1000px) {
+  .menu-toggle {
+    display: block; /* show hamburger */
+  }
+
+  .sidebar {
+    transform: translateX(-100%);
+  }
+
+  .sidebar.active {
+    transform: translateX(0);
+  }
+
+  .main {
+    margin-left: 0;
+  }
+
+  body.sidebar-open {
+    overflow: hidden; /* prevent scroll when sidebar open */
+  }
+
+  .search-wrap {
+    display: none; /* hide search if screen too small */
+  }
+}
+
+@media (max-width: 600px) {
+  .btn-primary {
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+
+  .topbar {
+    padding: 16px;
+  }
+
+  .content {
+    padding: 16px;
+  }
+}
+</style>
+
+
+
+  
+<style>
+/* ---------- ROOT ---------- */
+:root{
+  --bg:#f5f7fb;
+  --white:#fff;
+  --primary:#7c3aed;
+  --primary-soft:#ede9fe;
+  --border:#e5e7eb;
+  --muted:#6b7280;
+  --radius:14px;
+  --shadow:0 4px 14px rgba(0,0,0,0.08);
+  font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+}
+*{box-sizing:border-box; margin:0; padding:0}
+body{background:var(--bg);}
+
+/* LAYOUT as grid for responsive spacing */
+.layout {
+  display: grid;
+  grid-template-columns: 320px 1fr 320px;
+  gap:18px;
+  height: calc(100vh - 40px);
+  padding:20px;
+  align-items: start;
+}
+
+/* ---------- CHAT LIST PANEL ---------- */
+.chat-list{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  padding:16px;
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.chat-search{
+  padding:10px 14px;
+  width:100%;
+  border:1px solid var(--border);
+  border-radius:12px;
+}
+
+.msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
+
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
+
+.chat-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}
+
+.chat-tab {
+  background: transparent;
+  border: none;
+  padding: 6px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.chat-tab.active {
+  color: #fff;
+  background: var(--primary);
+  border-radius: 6px;
+}
+
+
+.chat-list-body{
+  margin-top:12px;
+  overflow-y:auto;
+  padding-right:6px;
+}
+
+/* Chat item */
+.chat-item{
+  padding:12px;
+  border-radius:12px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-top:10px;
+  cursor:pointer;
+  transition:0.15s;
+  text-decoration:none;
+  color:inherit;
+}
+.chat-item:hover,
+.chat-item.active{
+  background:var(--primary-soft);
+}
+
+.chat-avatar{
+  width:44px; height:44px;
+  border-radius:50%;
+  background:#ddd;
+  flex-shrink:0;
+}
+
+.chat-info .name{
+  font-weight:600;
+}
+.chat-info .preview{
+  font-size:13px;
+  color:var(--muted);
+  max-width:200px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+/* ---------- MESSAGES PANEL ---------- */
+.chat-window{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:hidden;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  gap: 12px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-info strong {
+  font-size: 16px;
+}
+
+.header-info small {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.header-btn {
+  padding: 6px 12px;
+  font-size: 13px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+
+.header-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
+}
+
+.header-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
+.chat-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  overflow: hidden;          /* clips image into circle */
+  background: #ddd;
+  flex-shrink: 0;            /* prevents squishing */
+}
+
+.chat-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;         /* perfect crop */
+  display: block;            /* removes inline gap */
+}
+
+
+.chat-messages{
+  flex:1;
+  padding:20px;
+  overflow-y:auto;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.9));
+}
+
+.msg{
+  padding:10px 14px;
+  border-radius:12px;
+  max-width:75%;
+  line-height:1.4;
+  word-wrap:break-word;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.msg.to{
+  align-self:flex-end;
+  background:var(--primary);
+  color:white;
+}
+
+.msg.from{
+  align-self:flex-start;
+  background:#f3f4f6;
+  color:#111827;
+}
+
+/* nice timestamp small */
+.msg small {
+  display:block;
+  font-size:11px;
+  color:var(--muted);
+  margin-top:6px;
+}
+
+/* input area */
+.chat-input{
+  padding:14px;
+  border-top:1px solid var(--border);
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
+.chat-input input{
+  flex:1;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+}
+.chat-input button{
+  padding:10px 18px;
+  border:none;
+  background:var(--primary);
+  color:white;
+  border-radius:10px;
+  cursor:pointer;
+}
+
+/* ---------- PROFILE PANEL ---------- */
+.profile{
+  background:var(--white);
+  border-radius:12px;
+  border:1px solid var(--border);
+  padding:22px;
+  height:100%;
+  box-shadow: var(--shadow);
+  overflow:auto;
+}
+
+.profile .avatar{
+  width:90px; height:90px;
+  border-radius:50%;
+  background:#ddd;
+  margin:auto;
+}
+
+.profile h3{
+  margin-top:12px;
+  text-align:center;
+}
+
+.profile small{
+  display:block;
+  margin:auto;
+  text-align:center;
+  color:var(--muted);
+  margin-bottom:20px;
+}
+
+.profile-btn{
+  width:100%;
+  padding:10px 12px;
+  border-radius:10px;
+  border:1px solid var(--border);
+  text-align:center;
+  font-weight:600;
+  cursor:pointer;
+  margin-top:10px;
+}
+
+.btn-primary{
+  background:var(--primary);
+  color:white;
+  border:none;
+}
+  /* Back button */
+  .mobile-back {
+    display: none;
+  }
+
+
+  .image-preview{
+  padding:6px;
+}
+
+.image-preview img{
+  max-width:140px;
+  border-radius:8px;
+  display:block;
+}
+
+.image-preview button{
+  background:#ff4444;
+  color:#fff;
+  border:none;
+  padding:2px 6px;
+  border-radius:6px;
+  cursor:pointer;
+  margin-top:4px;
+  font-size:12px;
+}
+
+
+
+/* responsive */
+@media (max-width: 920px) {
+  .layout { grid-template-columns: 1fr; height: auto; }
+  .chat-list, .chat-window, .profile { height: auto; }
+}
+
+
+/* ---------- MOBILE VIEW FIRST ---------- */
+@media (max-width: 768px) {
+
+  body {
+    overflow: hidden;
+    margin: 0;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    height: 100vh;
+    padding: 0;
+  }
+
+  .chat-list,
+  .chat-window {
+    display: none;
+    border-radius: 0;
+    height: 100vh;
+    box-shadow: none;
+    display: flex;
+    flex-direction: column;
+  }
+  
+
+  .profile {
+    display: none;
+  }
+
+  /* Chat window visibility */
+  .chat-list  {
+    display: flex;
+  }
+
+  .layout.chat-open .chat-list {
+    display: none;
+  }
+
+  .layout.chat-open .chat-window  .chat-input {
+    display: flex;
+  }
+  .header-btn {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* Header sticky */
+  .chat-header {
+    position: sticky;
+    top: 0;
+    background: white;
+    z-index: 10;
+    padding: 10px;
+    flex-shrink: 0;
+  }
+
+  /* Messages scrollable */
+  .chat-messages {
+    flex: 1;               /* take remaining height */
+    overflow-y: auto;      /* scroll if overflow */
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .msg {
+    max-width: 90%;
+    font-size: 15px;
+    word-wrap: break-word;
+  }
+
+  /* Footer (input area) sticky at bottom */
+.chat-input {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+
+  background: white;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  
+}
+
+.chat-input input {
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
+  .chat-input button {
+    padding: 8px 12px;
+    font-size: 14px;
+    
+    border-radius: 10px;
+    border: none;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+  }
+
+  /* Touch-friendly chat items */
+  .chat-item {
+    padding: 16px;
+  }
+
+  /* Back button for mobile */
+  .mobile-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  .msg-image img {
+  max-width: 240px;
+  border-radius: 10px;
+  display: block;
+  margin-top: 6px;
+}
+
+.msg.from .msg-image img {
+  margin-right: auto;
+}
+
+.msg.to .msg-image img {
+  margin-left: auto;
+}
+
+.image-preview {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+
+  background: #fff;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+
+  max-height: 30vh;
+  overflow-y: auto;
+
+  display: none;
+}
+
+
+.image-preview img {
+  max-width: 100%;
+  max-height: 20vh;
+  object-fit: contain;
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto;
+}
+
+.image-preview button {
+  margin-top: 6px;
+  width: 100%;
+  background: #f44336;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+
+}
+
+
+</style>
+
+</head>
+
+<body>
+  <div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="logo">MA</div>
+      <div class="brand-text">Matrix AI</div>
+    </div>
+    <nav class="nav">
+      <a class="nav-item " href="http://127.0.0.1:8000/db">🏠 Dashboard</a>
+      <a class="nav-item " href="http://127.0.0.1:8000/dbproducts">📦 Products</a>
+      <a class="nav-item " href="http://127.0.0.1:8000/dbpackages">🧾 Packages</a>
+      <a class="nav-item " href="http://127.0.0.1:8000/dborders">🧾 Orders</a>
+      <a class="nav-item active" href="http://127.0.0.1:8000/dbchats">🧾 Messages</a>
+      <a class="nav-item " href="http://127.0.0.1:8000/dboptions">🧾 Settings</a>
+      
+      
+      
+      
+      <a class="nav-item" href="http://127.0.0.1:8000/logout">⚙️ Logout</a>
+    </nav>
+  </aside>
+
+ <!-- Overlay -->
+    <div id="overlay" class="overlay"></div>
+
+  <!-- Main -->
+  <main class="main">
+    <header class="topbar">
+        <div class="left-section">
+          <!-- Hamburger button (only visible on mobile) -->
+          <button id="menuToggle" class="menu-toggle">☰</button>
+
+          <div class="search-wrap">
+            <input class="search" placeholder="Search conversations, products...">
+          </div>
+        </div>
+
+        <div class="top-actions">
+          <button id="connectBtn" class="btn-primary">Connect Messenger</button>
+          <div class="avatar" id="avatarMenu">Z</div>
+        </div>
+      </header>
+
+
+    <section class="content">
+      
+<div class="layout chat-open">
+
+  <!-- CHAT LIST -->
+  <aside class="chat-list">
+
+    <input type="text" id="searchInput" class="chat-search" placeholder="Search conversations…">
+
+    <div class="chat-tabs">
+      <button class="chat-tab active" data-platform="all">All</button>
+      <button class="chat-tab" data-platform="messenger">Messenger</button>
+      <button class="chat-tab" data-platform="whatsapp">WhatsApp</button>
+    </div>
+
+    <div class="chat-list-body">
+            <div class="chat-item" data-platform="messenger" onclick="openConversation(7026, this)">
+                <div class="chat-avatar">
+                    <img src="./Dashboard _ Matrix AI_files/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+                </div>
+                <div class="chat-info">
+                    <div class="name">24948900104720511</div>
+                    <div class="preview">hmm same</div>
+                    <div class="time">18:28</div>
+                </div>
+            </div>
+        
+            <div class="chat-item" data-platform="messenger" onclick="openConversation(14325, this)">
+                <div class="chat-avatar">
+                    <img src="./Dashboard _ Matrix AI_files/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+                </div>
+                <div class="chat-info">
+                    <div class="name">25479400998393818</div>
+                    <div class="preview">ki ki product ache</div>
+                    <div class="time">00:36</div>
+                </div>
+            </div>
+        
+            <div class="chat-item" data-platform="messenger" onclick="openConversation(9653, this)">
+                <div class="chat-avatar">
+                    <img src="./Dashboard _ Matrix AI_files/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+                </div>
+                <div class="chat-info">
+                    <div class="name">25352297867743033</div>
+                    <div class="preview">ok</div>
+                    <div class="time">01:20</div>
+                </div>
+            </div>
+        
+            <div class="chat-item" data-platform="messenger" onclick="openConversation(7084, this)">
+                <div class="chat-avatar">
+                    <img src="./Dashboard _ Matrix AI_files/vector-flat-illustration-grayscale-avatar-user-profile-person-icon-gender-neutral-silhouette-profile-picture-suitable-social-media-profiles-icons-screensavers-as-templatex9xa_719432-2210.jpg">
+                </div>
+                <div class="chat-info">
+                    <div class="name">33733622522918788</div>
+                    <div class="preview">New message</div>
+                    <div class="time">00:49</div>
+                </div>
+            </div>
+        </div>
+
+    <button id="loadMoreChats" hidden="">
+      Load more
+    </button>
+
+  </aside>
+
+  <!-- CHAT WINDOW -->
+  <main class="chat-window">
+
+    <!-- CHAT HEADER -->
+    <header class="chat-header">
+
+      <div class="mobile-back" onclick="closeChat()">← Back</div>
+
+      <div class="header-left">
+        <div class="header-avatar">
+          <img src="./Dashboard _ Matrix AI_files/customer.jpg" alt="Avatar" class="header-avatar-img">
+        </div>
+
+        <div class="header-info">
+          <strong class="header-customer-id">ID: 7026</strong><br>
+          <small class="header-ai-status" id="header-ai-status-text">AI Enabled ✨</small>
+        </div>
+      </div>
+
+      <button class="header-btn" id="toggleAiBtn" data-enable-url="/api/zyberseo/conv/enable/7026" data-disable-url="/api/zyberseo/conv/disable/7026">Disable AI</button>
+
+    </header>
+
+    <!-- CHAT MESSAGES -->
+    <section class="chat-messages" id="chatMessages"><div class="msg from"><div class="msg-text">Hi</div><small>25 Jan, 2026 20:25</small></div><div class="msg to"><div class="msg-text">আসসালামু আলাইকুম। প্রাইজ এবং বিস্তারিত তথ্য জানার জন্য আপনার পছন্দের প্রোডাক্টটির ছবি বা স্ক্রিনশট দিয়ে সহযোগিতা করবেন প্লিজ।</div><small>25 Jan, 2026 20:26</small></div><div class="msg to"><div class="msg-text">yo</div><small>25 Jan, 2026 20:26</small></div><div class="msg to"><div class="msg-text">Yayyy</div><small>25 Jan, 2026 20:30</small></div><div class="msg to"><div class="msg-text">saas</div><small>25 Jan, 2026 21:40</small></div><div class="msg to"><div class="msg-text">fghj</div><small>25 Jan, 2026 21:51</small></div><div class="msg to"><div class="msg-text">hiiiii</div><small>25 Jan, 2026 23:59</small></div><div class="msg to"><div class="msg-text">hi</div><small>26 Jan, 2026 00:22</small></div><div class="msg to"><div class="msg-text">asdsa</div><small>26 Jan, 2026 02:07</small></div><div class="msg to"><div class="msg-text">jknj</div><small>26 Jan, 2026 02:11</small></div><div class="msg to"><div class="msg-text">asdsadasd</div><small>26 Jan, 2026 02:31</small></div><div class="msg to"><div class="msg-text">helllo world</div><small>26 Jan, 2026 02:48</small></div><div class="msg to"><div class="msg-text">asdas</div><small>26 Jan, 2026 04:17</small></div><div class="msg to"><div class="msg-text">asd</div><small>26 Jan, 2026 04:19</small></div><div class="msg to"><div class="msg-text">asd</div><small>26 Jan, 2026 04:20</small></div><div class="msg to"><div class="msg-text">Yo..!</div><small>26 Jan, 2026 04:29</small></div><div class="msg to"><div class="msg-text">asd</div><small>26 Jan, 2026 04:34</small></div><div class="msg to"><div class="msg-text">afdsf</div><small>26 Jan, 2026 04:43</small></div><div class="msg to"><div class="msg-text">asdas</div><small>26 Jan, 2026 04:44</small></div><div class="msg to"><div class="msg-text">testt</div><small>26 Jan, 2026 04:52</small></div><div class="msg to"><div class="msg-text">jjjj</div><small>26 Jan, 2026 05:13</small></div><div class="msg to"><small>26 Jan, 2026 06:14</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126001858_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:18</small></div><div class="msg to"><div class="msg-text">good job</div><small>26 Jan, 2026 06:20</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126002130_Screenshot 2025-10-23 223046.png" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:21</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126002155_Screenshot 2025-10-23 223046.png" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:21</small></div><div class="msg to"><div class="msg-text">dsfsfsd</div><small>26 Jan, 2026 06:22</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126002920_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:29</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126003023_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:30</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126003045_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:30</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126003217_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:32</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126003402_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:34</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126004119_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:41</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126004723_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:47</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126005355_aaaaaaaaa.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 06:53</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126010245_aaaaaaaaa.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:02</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126010644_Untitled Diagram (1).jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:06</small></div><div class="msg to"><div class="msg-text">llll</div><small>26 Jan, 2026 07:09</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126010912_Screenshot 2025-10-23 223046.png" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:09</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126010925_Screenshot 2025-10-23 223046.png" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:09</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011142_asssss.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:11</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011211_image.png" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:12</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011354_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:13</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011506_asssss.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:15</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011607_asssss.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:16</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126011929_uml-diagram-tool-3-v3.webp" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:19</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126012324_uml-diagram-tool-3-v3.webp" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:23</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126012750_Untitled Diagram (1).jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 07:27</small></div><div class="msg to"><div class="msg-text">আপনি দুঃখিত, মনে হচ্ছে আপনি যে ছবিটি পাঠিয়েছেন, সেটি কোনো প্রোডাক্টের ছবি নয়। এই ছবিতে কোনো ইসলামিক গিফট আইটেম দেখা যাচ্ছে না।
+
+আপনি যদি কোনো উপহারের প্যাকেজ বা নির্দিষ্ট কোনো পণ্য দেখতে চান, তাহলে অনুগ্রহ করে সেই পণ্যের ছবি বা নাম দিন। আমি আপনাকে সেরা উপহারের প্যাকেজগুলো দেখাতে পারব, যেমন আমাদের **Luxury Islamic Gift Package** (১১৯৯ টাকা) বা **Gold Islamic Gift Package** (১৬৯৯ টাকা)।
+
+আপনাকে কিভাবে সাহায্য করতে পারি ভাই?</div><small>26 Jan, 2026 07:30</small></div><div class="msg to"><div class="msg-text">Yo</div><small>26 Jan, 2026 07:30</small></div><div class="msg to"><div class="msg-text">Hi</div><small>26 Jan, 2026 07:37</small></div><div class="msg from"><div class="msg-text">Hello</div><small>26 Jan, 2026 07:38</small></div><div class="msg to"><div class="msg-text">হ্যালো ভাইয়া, কেমন আছেন? আপনি কি কোনো নির্দিষ্ট প্যাকেজ বা প্রোডাক্টের ছবি দেখাতে পারবেন?</div><small>26 Jan, 2026 07:38</small></div><div class="msg to"><div class="msg-text">gu</div><small>26 Jan, 2026 13:56</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126075612_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>26 Jan, 2026 13:56</small></div><div class="msg to"><div class="msg-text">hie</div><small>27 Jan, 2026 01:32</small></div><div class="msg to"><div class="msg-text">fuck you</div><small>27 Jan, 2026 01:36</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126193740_ad21s3.jpg" loading="lazy">
+        </div>
+      <small>27 Jan, 2026 01:37</small></div><div class="msg to"><div class="msg-text">ok</div><small>27 Jan, 2026 03:19</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260126211940_image.png" loading="lazy">
+        </div>
+      <small>27 Jan, 2026 03:19</small></div><div class="msg from"><div class="msg-text">Hi</div><small>27 Jan, 2026 16:42</small></div><div class="msg from"><div class="msg-text">Anyone?</div><small>27 Jan, 2026 16:42</small></div><div class="msg to"><div class="msg-text">ok</div><small>27 Jan, 2026 17:34</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127113506_image.png" loading="lazy">
+        </div>
+      <small>27 Jan, 2026 17:35</small></div><div class="msg from"><div class="msg-text">Hi</div><small>27 Jan, 2026 20:13</small></div><div class="msg from"><div class="msg-text">Okk</div><small>27 Jan, 2026 20:14</small></div><div class="msg to"><div class="msg-text">Whassap??</div><small>28 Jan, 2026 01:51</small></div><div class="msg from"><div class="msg-text">Yooo</div><small>28 Jan, 2026 01:51</small></div><div class="msg to"><div class="msg-text">bhaii</div><small>28 Jan, 2026 01:52</small></div><div class="msg from"><div class="msg-text">Yes bhai</div><small>28 Jan, 2026 01:53</small></div><div class="msg from"><div class="msg-text">Ki hal chal</div><small>28 Jan, 2026 01:53</small></div><div class="msg to"><div class="msg-text">bhalna</div><small>28 Jan, 2026 01:53</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127195345_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 01:53</small></div><div class="msg from"><div class="msg-text">This</div><small>28 Jan, 2026 01:54</small></div><div class="msg to"><div class="msg-text">no</div><small>28 Jan, 2026 01:54</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127195511_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 01:55</small></div><div class="msg from"><div class="msg-text">Img Data: 33877BL</div><small>28 Jan, 2026 02:33</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/619229960_1195995049348766_5966924775634061170_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 02:33</small></div><div class="msg to"><div class="msg-text">nice</div><small>28 Jan, 2026 02:34</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127203456_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 02:34</small></div><div class="msg from"><div class="msg-text">Yo</div><small>28 Jan, 2026 03:19</small></div><div class="msg from"><div class="msg-text">Whatsapp</div><small>28 Jan, 2026 03:19</small></div><div class="msg to"><div class="msg-text">ki obostha</div><small>28 Jan, 2026 03:19</small></div><div class="msg from"><div class="msg-text">Mane?</div><small>28 Jan, 2026 03:20</small></div><div class="msg to"><div class="msg-text">আমি দুঃখিত, আপনার পাঠানো মেসেজটি পরিষ্কার নয়। আপনি কি কোনো প্যাকেজ বা প্রোডাক্ট সম্পর্কে জানতে চাইছেন? আপনি যদি কোনো নির্দিষ্ট উপহার প্যাকেজ খুঁজছেন, তাহলে তার ছবি বা নাম বলতে পারেন। আমি আপনাকে আমাদের সেরা প্যাকেজগুলোর ছবি দেখাতে পারি এবং দাম জানাতে পারি।</div><small>28 Jan, 2026 03:20</small></div><div class="msg from"><div class="msg-text">Img Data: 33877BL</div><small>28 Jan, 2026 03:21</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/619229960_1195995049348766_5966924775634061170_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:21</small></div><div class="msg to"><div class="msg-text">আপনি যে কোডটি দিয়েছেন, তা সম্ভবত কোনো প্যাকেজ বা প্রোডাক্ট কোড। নিশ্চিত হওয়ার জন্য আমি এটি দিয়ে প্যাকেজ বা প্রোডাক্ট খুঁজে বের করার চেষ্টা করছি।
+
+আপনি কি **Luxury Islamic Gift Package (17 Items)** প্যাকেজটি খুঁজছেন?
+
+আমি বিস্তারিত তথ্য এবং ছবি পাঠানোর জন্য টুল ব্যবহার করছি।</div><small>28 Jan, 2026 03:22</small></div><div class="msg to"><div class="msg-text">ok bhai</div><small>28 Jan, 2026 03:23</small></div><div class="msg to"><div class="msg-text">okk</div><small>28 Jan, 2026 03:24</small></div><div class="msg to"><div class="msg-text">no</div><small>28 Jan, 2026 03:24</small></div><div class="msg to"><div class="msg-text">..</div><small>28 Jan, 2026 03:24</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127212731_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:27</small></div><div class="msg to"><div class="msg-text">ok</div><small>28 Jan, 2026 03:35</small></div><div class="msg to"><div class="msg-text">hi</div><small>28 Jan, 2026 03:35</small></div><div class="msg to"><div class="msg-text">laaaaaaaaaa</div><small>28 Jan, 2026 03:41</small></div><div class="msg from"><div class="msg-text">Hi</div><small>28 Jan, 2026 03:42</small></div><div class="msg from"><div class="msg-text">🙃</div><small>28 Jan, 2026 03:42</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127214321_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:43</small></div><div class="msg to"><div class="msg-text">okk</div><small>28 Jan, 2026 03:44</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127214710_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:47</small></div><div class="msg to"><div class="msg-text">sdasds</div><small>28 Jan, 2026 03:48</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127214907_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:49</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127215020_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:50</small></div><div class="msg to"><div class="msg-text">adsfadf</div><small>28 Jan, 2026 03:55</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127215551_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:55</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127215718_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 03:57</small></div><div class="msg from"><div class="msg-text">Img Data: Microsoft 365 Professional Plus</div><small>28 Jan, 2026 04:00</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/620649924_1234444261351034_7869587192108922340_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:00</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127220030_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:00</small></div><div class="msg to"><div class="msg-text">asdasd</div><small>28 Jan, 2026 04:02</small></div><div class="msg to"><div class="msg-text">okkkkkkkkkk</div><small>28 Jan, 2026 04:03</small></div><div class="msg from"><div class="msg-text">Img Data: There is no baby product name or SKU visible in the provided image.</div><small>28 Jan, 2026 04:04</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/618799767_1260154635965784_3147159893763710826_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:04</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127220503_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:05</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127221317_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:13</small></div><div class="msg to"><div class="msg-text">asfsdfadf</div><small>28 Jan, 2026 04:13</small></div><div class="msg from"><div class="msg-text">Img Data: There is no baby product, SKU, or relevant name/type in the provided image.</div><small>28 Jan, 2026 04:16</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/618799767_1260154635965784_3147159893763710826_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:16</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127221730_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:17</small></div><div class="msg to"><div class="msg-text">kkkkkkkkkk</div><small>28 Jan, 2026 04:17</small></div><div class="msg to"><div class="msg-text">aaaaaaaaaaaaaaaaaaaaaaaaaa</div><small>28 Jan, 2026 04:21</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127222117_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:21</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127223201_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:32</small></div><div class="msg to"><div class="msg-text">okkkk</div><small>28 Jan, 2026 04:32</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127223236_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:32</small></div><div class="msg from"><div class="msg-text">Img Data: No product name or SKU found.</div><small>28 Jan, 2026 04:32</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/618799767_1260154635965784_3147159893763710826_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:32</small></div><div class="msg from"><div class="msg-text">Img Data: Microsoft 365 Professional Plus</div><small>28 Jan, 2026 04:32</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/620649924_1234444261351034_7869587192108922340_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:32</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127223301_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:33</small></div><div class="msg from"><div class="msg-text">Img Data: There is no baby product, SKU, or relevant name/type of product in the image. So, no output.</div><small>28 Jan, 2026 04:34</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/618799767_1260154635965784_3147159893763710826_n.jpg" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:34</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127223438_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:34</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127224250_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:42</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/20260127224333_image.png" loading="lazy">
+        </div>
+      <small>28 Jan, 2026 04:43</small></div><div class="msg from"><div class="msg-text">Hello brother ki obostha???</div><small>28 Jan, 2026 04:44</small></div><div class="msg to"><div class="msg-text">হ্যালো ভাইয়া, কেমন আছেন? আপনি কি কোনো প্যাকেজিং বা বিশেষ কোনো উপহার খুঁজছেন? আমাকে জানালে আমি আপনাকে সাহায্য করতে পারব।</div><small>28 Jan, 2026 04:44</small></div><div class="msg from"><div class="msg-text">Fuck you</div><small>28 Jan, 2026 04:45</small></div><div class="msg to"><div class="msg-text">আমি আন্তরিকভাবে দুঃখিত যে আপনি বিরক্ত হয়েছেন। আমার উদ্দেশ্য আপনাকে সাহায্য করা। আপনি যদি কোনো উপহার বা প্যাকেজ খুঁজতে চান, তবে দয়া করে আমাকে বলুন। আমি আপনাকে সাহায্য করতে প্রস্তুত।</div><small>28 Jan, 2026 04:45</small></div><div class="msg from"><div class="msg-text">Fuck you</div><small>28 Jan, 2026 22:13</small></div><div class="msg to"><div class="msg-text">আমি আন্তরিকভাবে দুঃখিত যে আপনি বিরক্ত হয়েছেন। আমার উদ্দেশ্য আপনাকে সাহায্য করা। আপনি যদি কোনো উপহার বা প্যাকেজ খুঁজতে চান, তবে দয়া করে আমাকে বলুন। আমি আপনাকে সাহায্য করতে প্রস্তুত।</div><small>28 Jan, 2026 22:14</small></div><div class="msg from"><div class="msg-text">Hi</div><small>30 Jan, 2026 19:14</small></div><div class="msg from"><div class="msg-text">Hi</div><small>30 Jan, 2026 19:25</small></div><div class="msg from"><div class="msg-text">Ki ache ekhon?</div><small>31 Jan, 2026 03:52</small></div><div class="msg from"><div class="msg-text">Pic den</div><small>31 Jan, 2026 03:54</small></div><div class="msg from"><div class="msg-text">Hi</div><small>31 Jan, 2026 03:56</small></div><div class="msg from"><div class="msg-text">Ki product ache?</div><small>31 Jan, 2026 03:56</small></div><div class="msg from"><div class="msg-text">Dekhan dekhi</div><small>31 Jan, 2026 03:57</small></div><div class="msg from"><div class="msg-text">Pic den dekhi</div><small>31 Jan, 2026 04:02</small></div><div class="msg to"><div class="msg-text">আরে আপু, আপনি কি নির্দিষ্ট কোনো আচারের ছবি দেখতে চান? নাকি সবগুলোর ছবি আরেকবার দেবো?</div><small>31 Jan, 2026 04:02</small></div><div class="msg from"><div class="msg-text">Hm</div><small>31 Jan, 2026 04:02</small></div><div class="msg to"><div class="msg-text">আপু, তাহলে কোন আচারের ছবি দেখতে চান, একটু বলবেন?</div><small>31 Jan, 2026 04:03</small></div><div class="msg from"><div class="msg-text">Borui</div><small>31 Jan, 2026 04:03</small></div><div class="msg to"><div class="msg-text">এই নেন আপু, আপনার জন্য বড়ই আচারের ছবি। এইটা আপনার কেমন লাগলো?</div><small>31 Jan, 2026 04:03</small></div><div class="msg to">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/borui_achar_01.jpg" loading="lazy">
+        </div>
+      <small>31 Jan, 2026 04:03</small></div><div class="msg from"><div class="msg-text">Hi</div><small>05 Feb, 2026 16:30</small></div><div class="msg to"><div class="msg-text">আরে আপু, হাই! কেমন আছেন? আপনার কি নতুন করে কিছু জানার আছে?</div><small>05 Feb, 2026 16:30</small></div><div class="msg from"><div class="msg-text">Ki ache?</div><small>05 Feb, 2026 16:33</small></div><div class="msg from"><div class="msg-text">Available?</div><small>06 Feb, 2026 01:22</small></div><div class="msg from"><div class="msg-text">Img Data: 33877BL</div><small>06 Feb, 2026 01:22</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/623361683_739349128968269_6494049792432012980_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 01:22</small></div><div class="msg from"><div class="msg-text">Available?</div><small>06 Feb, 2026 06:00</small></div><div class="msg from"><div class="msg-text">Img Data: 33877BL</div><small>06 Feb, 2026 06:00</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/623361683_739349128968269_6494049792432012980_n(1).jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:01</small></div><div class="msg from"><div class="msg-text">Img Data: 14004BG</div><small>06 Feb, 2026 06:03</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/625903096_2310430479449948_6309030464617596863_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:03</small></div><div class="msg from"><div class="msg-text">Img Data: 39563</div><small>06 Feb, 2026 06:08</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/625004167_2473015713145030_1212409740434461182_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:08</small></div><div class="msg from"><div class="msg-text">Bhalo kore khuje dekhen eita ache naki</div><small>06 Feb, 2026 06:09</small></div><div class="msg from"><div class="msg-text">Img Data: 38259</div><small>06 Feb, 2026 06:10</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/627973006_954669573560436_5755797227908645016_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:10</small></div><div class="msg from"><div class="msg-text">Hum eita nibo 2 ta</div><small>06 Feb, 2026 06:11</small></div><div class="msg from"><div class="msg-text">Name; jihad
+Phone: 01793504010
+Address: Block d, Rd 09, basundhara R/A, dhaka</div><small>06 Feb, 2026 06:12</small></div><div class="msg from"><div class="msg-text">Confirm order</div><small>06 Feb, 2026 06:13</small></div><div class="msg from"><div class="msg-text">?</div><small>06 Feb, 2026 06:14</small></div><div class="msg from"><div class="msg-text">Img Data: 40519BB</div><small>06 Feb, 2026 06:20</small></div><div class="msg from"><div class="msg-text">Eita 2 ta order korbo</div><small>06 Feb, 2026 06:20</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/629306170_1398403971331450_5010590904560340932_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:20</small></div><div class="msg from"><div class="msg-text">Hmm add kore den eitaw</div><small>06 Feb, 2026 06:21</small></div><div class="msg from"><div class="msg-text">14cm er ta</div><small>06 Feb, 2026 06:22</small></div><div class="msg from"><div class="msg-text">Ji oi address ei</div><small>06 Feb, 2026 06:22</small></div><div class="msg from"><div class="msg-text">Confirm koren</div><small>06 Feb, 2026 06:23</small></div><div class="msg from"><div class="msg-text">Koi?</div><small>06 Feb, 2026 06:30</small></div><div class="msg from"><div class="msg-text">Korsen confirm?</div><small>06 Feb, 2026 06:33</small></div><div class="msg from"><div class="msg-text">Img Data: 40494</div><small>06 Feb, 2026 06:35</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/625964125_1452774426264694_8118402435195911646_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:35</small></div><div class="msg from"><div class="msg-text">Ji</div><small>06 Feb, 2026 06:37</small></div><div class="msg from"><div class="msg-text">2 ta</div><small>06 Feb, 2026 06:37</small></div><div class="msg from"><div class="msg-text">Na eita alada order koren</div><small>06 Feb, 2026 06:37</small></div><div class="msg from"><div class="msg-text">Same details</div><small>06 Feb, 2026 06:39</small></div><div class="msg from"><div class="msg-text">Ok</div><small>06 Feb, 2026 06:39</small></div><div class="msg from"><div class="msg-text">?</div><small>06 Feb, 2026 06:45</small></div><div class="msg from"><div class="msg-text">Alada kore arekta order kora lagbe</div><small>06 Feb, 2026 06:46</small></div><div class="msg from"><div class="msg-text">Img Data: 32165RS</div><small>06 Feb, 2026 06:47</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/625523340_947132627880206_3611089549247313985_n.jpg" loading="lazy">
+        </div>
+      <small>06 Feb, 2026 06:47</small></div><div class="msg from"><div class="msg-text">3 ta</div><small>06 Feb, 2026 06:48</small></div><div class="msg from"><div class="msg-text">??</div><small>06 Feb, 2026 06:52</small></div><div class="msg from"><div class="msg-text">Ok</div><small>06 Feb, 2026 06:53</small></div><div class="msg from"><div class="msg-text">hi</div><small>07 Feb, 2026 17:56</small></div><div class="msg from"><div class="msg-text">Eishob bad den</div><small>07 Feb, 2026 17:57</small></div><div class="msg from"><div class="msg-text">Img Data: 1954B</div><small>07 Feb, 2026 18:01</small></div><div class="msg from">
+        <div class="msg-image">
+          <img src="./Dashboard _ Matrix AI_files/491022770_4069286026728859_7397075350693746963_n.png" loading="lazy">
+        </div>
+      <small>07 Feb, 2026 18:01</small></div><div class="msg from"><div class="msg-text">hmm 3 ta nibo eita</div><small>07 Feb, 2026 18:19</small></div><div class="msg from"><div class="msg-text">Nah change korte hobe...!
+Name hobe Rahim Uddin</div><small>07 Feb, 2026 18:28</small></div><div class="msg from"><div class="msg-text">hmm same</div><small>07 Feb, 2026 18:28</small></div></section>
+
+    <!-- CHAT INPUT -->
+    <footer class="chat-input">
+
+      <div id="imagePreview" class="image-preview" hidden=""></div>
+
+      <input type="file" id="fileInput" accept="image/*" hidden="">
+
+      <input type="text" id="messageInput" placeholder="Type a message…" autocomplete="off">
+
+      <button id="attachBtn" type="button" aria-label="Attach file">
+        📎
+      </button>
+
+      <button id="sendBtn" type="button">
+        Send
+      </button>
+
+    </footer>
+
+  </main>
+
+  <!-- PROFILE PANEL -->
+  <aside class="profile">
+
+    <div class="profile-avatar"><img src="./Dashboard _ Matrix AI_files/customer.jpg" alt="Avatar"></div>
+
+    <h3 class="profile-customer-id">24948900104720511</h3>
+
+    <small class="profile-joined">Last updated: 18:28</small>
+
+    <button class="profile-btn" id="profileToggleAiBtn" data-enable-url="/api/zyberseo/conv/enable/7026" data-disable-url="/api/zyberseo/conv/disable/7026">Disable AI</button>
+
+    <button class="profile-btn btn-primary">
+      Manage Orders
+    </button>
+
+    <button class="profile-btn">
+      Create Order
+    </button>
+
+    <h4>Summary</h4>
+    <p class="profile-summary"></p>
+
+    <h4>Meta</h4>
+    <p class="profile-meta">Platform: messenger</p>
+
+  </aside>
+
+</div>
+
+
+
+
+
+
+
+
+<script>
+/*
+setInterval(() => {
+
+  if(!currentConversation) return;
+
+  fetch("/dbchats/ajax_messages?cid=" 
+        + currentConversation 
+        + "&last_id=" + lastMessageId)
+
+    .then(res => res.json())
+    .then(data => {
+
+      if(data.messages.length){
+        appendMessages(data.messages);
+      }
+
+    });
+
+}, 2500);
+
+*/
+
+
+
+
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  // Auto-scroll chat to bottom
+  const msgBox = document.getElementById("chatMessages");
+  if (msgBox) {
+    msgBox.scrollTop = msgBox.scrollHeight;
+  }
+
+  // simple search filter on client side
+  const searchInput = document.getElementById("searchInput");
+  if (searchInput) {
+    searchInput.addEventListener("input", function() {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll(".chat-list .chat-item").forEach(function(item) {
+        const name = item.querySelector(".name").textContent.toLowerCase();
+        const preview = item.querySelector(".preview").textContent.toLowerCase();
+        if (name.includes(q) || preview.includes(q)) {
+          item.style.display = "flex";
+        } else {
+          item.style.display = "none";
+        }
+      });
+    });
+  }
+
+  // CSRF helper for fetch
+  function getCookie(name) {
+      let cookieValue = null;
+      if (document.cookie && document.cookie !== '') {
+          const cookies = document.cookie.split(';');
+          for (let i = 0; i < cookies.length; i++) {
+              const cookie = cookies[i].trim();
+              if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                  cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                  break;
+              }
+          }
+      }
+      return cookieValue;
+  }
+  const csrftoken = getCookie('csrftoken');
+  // Send message functionality
+  const sendBtn = document.getElementById("sendBtn");
+  const input = document.getElementById("messageInput");
+  const fileInput = document.getElementById("fileInput");
+  const attachBtn = document.getElementById("attachBtn");
+  const imagePreview = document.getElementById("imagePreview");
+  const chatBox = document.querySelector(".chat-messages");
+
+  let selectedFile = null;
+  // Handle image selection
+
+  
+/* =====================
+   FILE SELECT
+===================== */
+  document.getElementById('fileInput').addEventListener('change', function(event) {
+    const file = event.target.files[0]; // Get the first selected file
+    if (file) {
+      selectedFile = file;
+      //colsole.log("Selected file:", file);
+      showPreview(file);
+      
+        // Proceed if the file is selected
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            // Do something with the image data, like sending it or displaying it
+            // sendMessageWithImage(e.target.result);
+            console.log("Image data ready to send:", e.target.result);
+        };
+        reader.readAsDataURL(file); // Read file as a base64 URL
+    } else {
+        // Handle the case when no file is selected
+        console.error("No file selected.");
+    }
+        
+});
+
+
+/* =====================
+   PASTE IMAGE
+===================== */
+
+document.addEventListener("paste", function(e) {
+
+  const items = e.clipboardData.items;
+
+  for (let item of items) {
+
+    if (item.type.startsWith("image")) {
+
+      const file = item.getAsFile();
+      if (!file) return;
+
+      selectedFile = file;
+      showPreview(file);
+
+      break; // only one image
+    }
+  }
+});
+
+/* =====================
+   DRAG & DROP
+===================== */
+
+chatBox.addEventListener("dragover", e => e.preventDefault());
+
+chatBox.addEventListener("drop", function(e) {
+
+  e.preventDefault();
+
+  if (!e.dataTransfer.files.length) return;
+
+  const file = e.dataTransfer.files[0];
+
+  if (!file.type.startsWith("image")) return;
+
+  selectedFile = file;
+  showPreview(file);
+});
+
+  
+  
+  function sendMessage(){
+
+  if(!currentConversation) {
+    alert("Select a conversation first");
+    return;
+  }
+
+  const text = input.value.trim();
+
+  if(!text && !selectedFile) return;
+
+  // ========== optimistic UI ==========
+  const msgEl = document.createElement("div");
+  msgEl.className = "msg to";
+
+  let html = "";
+
+  if(text){
+    html += `<div class="msg-text">${text}</div>`;
+  }
+
+  if(selectedFile){
+    const preview = URL.createObjectURL(selectedFile);
+    html += `
+      <div class="msg-image">
+        <img src="${preview}">
+      </div>
+    `;
+  }
+
+  html += `<small>Sending...</small>`;
+
+  msgEl.innerHTML = html;
+
+  msgBox.appendChild(msgEl);
+  msgBox.scrollTop = msgBox.scrollHeight;
+
+  input.value = "";
+
+
+  // ========== prepare request ==========
+  let request;
+
+  if(selectedFile){
+
+    const formData = new FormData();
+    formData.append("conversation_id", currentConversation);
+    formData.append("image", selectedFile);
+    if(text) formData.append("text", text);
+
+    request = fetch("/dbsend_image",{
+      method:"POST",
+      headers:{
+        "X-CSRFToken": csrftoken
+      },
+      body: formData
+    });
+
+  } else {
+
+    request = fetch("/dbsend_message",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "X-CSRFToken": csrftoken
+      },
+      body: JSON.stringify({
+        conversation_id: currentConversation,
+        text: text
+      })
+    });
+
+  }
+
+    stopPolling(); // avoid race
+
+  // ========== handle response ==========
+  request
+  .then(res => res.json())
+  .then(data => {
+
+    if(data.status !== "ok"){
+      msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
+      return;
+    }
+
+    msgEl.remove();
+    
+  })
+  .catch(() => {
+    msgEl.innerHTML = `<em style="color:red">Failed to send</em>`;
+  })
+  .finally(() => {
+      startPolling();
+    });
+
+  // reset attachment
+  selectedFile = null;
+  imagePreview.style.display = "none";
+}
+
+
+    sendBtn.onclick = sendMessage;
+    
+
+input.onkeydown = e => {
+  if(e.key === "Enter"){
+    e.preventDefault();
+    sendMessage();
+  }
+};
+
+
+
+
+
+
+
+
+document.querySelector("#attachBtn").addEventListener("click", () => fileInput.click());
+
+  function showPreview(file){
+  if (!file || !file.type.startsWith("image")) return;
+
+  const url = URL.createObjectURL(file);
+
+  imagePreview.innerHTML = `
+    <img src="${url}">
+    <button id="removePreview">Remove</button>
+  `;
+
+  imagePreview.style.display = "block";
+
+  document.getElementById("removePreview").onclick = () => {
+    selectedFile = null;
+    fileInput.value = "";
+    imagePreview.style.display = "none";
+  };
+}
+
+});
+</script>
+
+
+
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const tabs = document.querySelectorAll(".chat-tab");
+  const chats = document.querySelectorAll(".chat-item");
+
+  tabs.forEach(tab => {
+    tab.addEventListener("click", function () {
+      const platform = this.dataset.platform;
+
+      // toggle active tab
+      tabs.forEach(t => t.classList.remove("active"));
+      this.classList.add("active");
+
+      // filter chats
+      chats.forEach(chat => {
+        if (platform === "all") {
+          chat.style.display = "flex";
+        } else {
+          chat.style.display =
+            chat.dataset.platform === platform ? "flex" : "none";
+        }
+      });
+    });
+  });
+});
+
+window.addEventListener('popstate', () => {
+  const layout = document.querySelector('.layout');
+
+  if (layout?.classList.contains('chat-open')) {
+    closeChat();
+  }
+});
+
+</script>
+
+
+
+
+
+<script>
+function openChat() {
+  document.querySelector('.layout')?.classList.add('chat-open');
+}
+
+function closeChat() {
+  document.querySelector('.layout')?.classList.remove('chat-open');
+  history.pushState({}, "", window.location.pathname);
+}
+
+
+  <script>
+    document.getElementById('connectBtn').addEventListener('click', function(){
+      const token = prompt('Paste your Messenger Page Access Token or Webhook URL:');
+      if(token) alert('Saved (demo). In production you would POST this securely to your backend.');
+    });
+  </script>
+
+
+  <script>
+    
+  const avatar = document.getElementById('avatarMenu');
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('overlay');
+
+  avatar.addEventListener('click', () => {
+    sidebar.classList.toggle('active');
+    overlay.classList.toggle('active');
+  });
+
+  overlay.addEventListener('click', () => {
+    sidebar.classList.remove('active');
+    overlay.classList.remove('active');
+  });
+</script>
+
+ <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('overlay');
+      const menuToggle = document.getElementById('menuToggle');
+
+      if (menuToggle && sidebar && overlay) {
+        menuToggle.addEventListener('click', () => {
+          sidebar.classList.toggle('active');
+          overlay.classList.toggle('active');
+          document.body.classList.toggle('sidebar-open');
+        });
+
+        overlay.addEventListener('click', () => {
+          sidebar.classList.remove('active');
+          overlay.classList.remove('active');
+          document.body.classList.remove('sidebar-open');
+        });
+      }
+    });
+  </script>
+
+
+  
+
+
+<iframe frameborder="0" scrolling="no" style="background-color: transparent; border: 0px; display: none;" src="./Dashboard _ Matrix AI_files/saved_resource.html"></iframe><div id="GOOGLE_INPUT_CHEXT_FLAG" input="" input_stat="{&quot;tlang&quot;:true,&quot;tsbc&quot;:true,&quot;pun&quot;:true,&quot;mk&quot;:true,&quot;ss&quot;:true}" style="display: none;"></div></body></html>

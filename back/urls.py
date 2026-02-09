@@ -29,6 +29,7 @@ urlpatterns = [
     path("chats/disable-all", views.disable_all_bots, name="disable_all_bots"),
     path("chats/enable-all", views.enable_all_bots, name="enable_all_bots"),
 
+    # path("chats", views.c_dashboard_demo, name="c_dashboard"),
     path("chats", views.message_dashboard, name="c_dashboard"),
 
 
