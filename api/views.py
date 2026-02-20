@@ -950,7 +950,7 @@ class NewOrderExternal(APIView):
                 customer_city=data.get("customer_city", ""),
                 customer_state=data.get("customer_state", ""),
                 delivered_to=data.get("delivered_to", "inside_dhaka"),
-                status="draft",
+                status="pending",
             )
 
             total_amount = 0

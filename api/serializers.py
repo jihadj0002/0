@@ -118,7 +118,9 @@ class ConversationSummarySerializer(serializers.ModelSerializer):
         model = Conversation
         fields = [
             "id",
+            "customer_name",
             "customer_id",
+
 
             "chat_summary",
             "current_product",
