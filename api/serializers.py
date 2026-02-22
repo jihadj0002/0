@@ -1,3 +1,4 @@
+from decimal import Decimal
 import json
 from rest_framework import serializers
 from back.models import Package, PackageImages, UserProfile, Product, Conversation, Sale, Setting, ProductImages, Message, OrderItem
@@ -243,6 +244,28 @@ class ExternalOrderItemSerializer(serializers.Serializer):
 
 class ExternalOrderSerializer(serializers.Serializer):
     customer_id = serializers.CharField(max_length=255)
+    
+    price = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        required=False,
+        allow_null=True
+    )
+
+    quantity = serializers.IntegerField(
+        required=False,
+        allow_null=True
+    )
+    def validate_price(self, value):
+        if value is None:
+            return Decimal("0.00")
+        return value
+
+    def validate_quantity(self, value):
+        if value is None:
+            return 1
+        return value
+
     customer_name = serializers.CharField(
         required=False,
         allow_blank=True
