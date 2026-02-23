@@ -1857,7 +1857,6 @@ class GetLastMessages(APIView):
             safe=False
         )
 
-
 class LastMessageView(APIView):
     def get(self, request, username, id):
         customer_id = str(id)
@@ -1878,7 +1877,15 @@ class LastMessageView(APIView):
                     status=status.HTTP_404_NOT_FOUND
                 )
 
-            # ✅ Check if current product/package is NULL
+            # Serialize normally first
+            serializer = ConversationSummarySerializer(
+                conversation,
+                context={'request': request}
+            )
+
+            response_data = serializer.data.copy()
+
+            # ✅ If no active product/package
             if not conversation.current_product and not conversation.current_package:
 
                 top_products = Product.objects.filter(
@@ -1901,29 +1908,12 @@ class LastMessageView(APIView):
                         "image": image_url,
                         "price": product.price
                     })
-                    # ✅ Otherwise return normal conversation summary
-                    serializer = ConversationSummarySerializer(
-                        conversation,
-                        context={'request': request}
-                    )
 
-                return Response({
-                    "status": "no_active_selection",
-                    "conversation": serializer.data,
-                    "message": "No product or package currently selected.",
-                    "suggested_products": suggested_products
-                }, status=status.HTTP_200_OK)
+                # 🔥 Add extra field without changing serializer structure
+                response_data["suggested_products"] = suggested_products
+                response_data["no_active_selection"] = True
 
-            # ✅ Otherwise return normal conversation summary
-            serializer = ConversationSummarySerializer(
-                conversation,
-                context={'request': request}
-            )
-
-            return Response({
-                "status": "active_selection",
-                "conversation": serializer.data
-            }, status=status.HTTP_200_OK)
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response(
