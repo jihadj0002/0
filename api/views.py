@@ -116,7 +116,6 @@ class UserProductUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
 class ProductSearchView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
@@ -149,9 +148,46 @@ class ProductSearchView(APIView):
 
         products = products.order_by("-id")
 
-        serializer = ProductSerializer(products, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # ✅ If products found
+        if products.exists():
+            serializer = ProductSerializer(
+                products,
+                many=True,
+                context={'request': request}
+            )
+            return Response({
+                "status": "success",
+                "count": products.count(),
+                "results": serializer.data
+            }, status=status.HTTP_200_OK)
 
+        # ❌ If no products found
+        else:
+            top_products = Product.objects.filter(
+                user=user,
+                status=True
+            ).order_by("-id")[:5]
+
+            top_products_data = []
+
+            for product in top_products:
+                image_url = (
+                    request.build_absolute_uri(product.image.url)
+                    if product.image else ""
+                )
+
+                top_products_data.append({
+                    "name": product.name,
+                    "pid": product.pid,
+                    "image": image_url,
+                    "price": product.price
+                })
+
+            return Response({
+                "status": "not_found",
+                "message": "No products found.",
+                "suggested_products": top_products_data
+            }, status=status.HTTP_200_OK)
 
 
 
@@ -169,7 +205,7 @@ class ProductDetailByPIDView(APIView):
         serializer = ProductSerializer(product, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
     
-    
+
 class UserOrderListCreateView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
