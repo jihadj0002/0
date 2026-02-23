@@ -17,6 +17,10 @@ urlpatterns = [
     path('<str:username>/product_list', views.UserProductListView.as_view(), name='user-product-list'),
     path('<str:username>/product/<int:pk>/', views.UserProductDataView.as_view(), name='user-product-view'),
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
+    
+    # Search and Product Detail by PID endpoints
+    path('<str:username>/product_search', views.ProductSearchView.as_view(), name='user-product-search'),
+    path('<str:username>/product_by_pid/<str:pid>/', views.ProductDetailByPIDView.as_view(), name='user-product-detail-by-pid'),
 
     path('<str:username>/package_list', views.UserPackageListView.as_view(), name='user-package-list'),
     path('<str:username>/package/<str:pacid>/', views.UserPackageDataView.as_view(), name='user-package-view'),

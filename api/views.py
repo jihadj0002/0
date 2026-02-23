@@ -14,6 +14,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from .utils.files import download_profile_to_storage
+from django.db.models import Q
 
 import json
 from django.db import transaction
@@ -115,6 +116,60 @@ class UserProductUpdateView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+
+class ProductSearchView(APIView):
+    def get(self, request, username):
+        user = get_object_or_404(User, username=username)
+
+        query = request.GET.get("query")
+        pid = request.GET.get("pid")
+        min_price = request.GET.get("min_price")
+        max_price = request.GET.get("max_price")
+
+        products = Product.objects.filter(user=user, status=True)
+
+        # 🔎 Search by PID
+        if pid:
+            products = products.filter(pid__iexact=pid)
+
+        # 🔎 Text Search
+        if query:
+            products = products.filter(
+                Q(name__icontains=query) |
+                Q(description__icontains=query) |
+                Q(pid__icontains=query)
+            )
+
+        # 💰 Price Filter
+        if min_price:
+            products = products.filter(price__gte=min_price)
+
+        if max_price:
+            products = products.filter(price__lte=max_price)
+
+        products = products.order_by("-id")
+
+        serializer = ProductSerializer(products, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+
+class ProductDetailByPIDView(APIView):
+    def get(self, request, username, pid):
+        user = get_object_or_404(User, username=username)
+
+        product = get_object_or_404(
+            Product,
+            user=user,
+            pid=pid,
+            status=True
+        )
+
+        serializer = ProductSerializer(product, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
+    
 class UserOrderListCreateView(APIView):
     def get(self, request, username):
         user = get_object_or_404(User, username=username)
