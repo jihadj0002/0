@@ -1901,9 +1901,15 @@ class LastMessageView(APIView):
                         "image": image_url,
                         "price": product.price
                     })
+                    # ✅ Otherwise return normal conversation summary
+                    serializer = ConversationSummarySerializer(
+                        conversation,
+                        context={'request': request}
+                    )
 
                 return Response({
                     "status": "no_active_selection",
+                    "conversation": serializer.data,
                     "message": "No product or package currently selected.",
                     "suggested_products": suggested_products
                 }, status=status.HTTP_200_OK)
