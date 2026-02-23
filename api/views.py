@@ -1858,27 +1858,69 @@ class GetLastMessages(APIView):
         )
 
 
-
 class LastMessageView(APIView):
     def get(self, request, username, id):
         customer_id = str(id)
+
         try:
             user = get_object_or_404(User, username__iexact=username)
-            conversation = (Conversation.objects.filter(user=user, customer_id=customer_id).order_by("-id").first())
-            
-            # conversation = get_object_or_404(Conversation,customer_id=customer_id, user=user)
+
+            conversation = (
+                Conversation.objects
+                .filter(user=user, customer_id=customer_id)
+                .order_by("-id")
+                .first()
+            )
 
             if not conversation:
                 return Response(
                     {"error": "Conversation not found"},
-                    status=404
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # ✅ Check if current product/package is NULL
+            if not conversation.current_product and not conversation.current_package:
+
+                top_products = Product.objects.filter(
+                    user=user,
+                    status=True,
+                    stock_quantity__gt=0
+                ).order_by("-id")[:5]
+
+                suggested_products = []
+
+                for product in top_products:
+                    image_url = (
+                        request.build_absolute_uri(product.image.url)
+                        if product.image else ""
+                    )
+
+                    suggested_products.append({
+                        "name": product.name,
+                        "pid": product.pid,
+                        "image": image_url,
+                        "price": product.price
+                    })
+
+                return Response({
+                    "status": "no_active_selection",
+                    "message": "No product or package currently selected.",
+                    "suggested_products": suggested_products
+                }, status=status.HTTP_200_OK)
+
+            # ✅ Otherwise return normal conversation summary
+            serializer = ConversationSummarySerializer(
+                conversation,
+                context={'request': request}
             )
-            # messages = (Message.objects.filter(conversation=conversation).order_by("-timestamp")[:10])
-            # if not messages.exists():
-            #     return JsonResponse({"text": "Starting new Converstation"}, status=200)
-            # messages = reversed(messages)
-            serializer = ConversationSummarySerializer(conversation)
-            print("Serialized conversation summary:", serializer.data)
-            return Response(serializer.data)
+
+            return Response({
+                "status": "active_selection",
+                "conversation": serializer.data
+            }, status=status.HTTP_200_OK)
+
         except Exception as e:
-            return JsonResponse({"error": str(e)}, status=500)            
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
