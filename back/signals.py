@@ -123,18 +123,34 @@ def update_message_counters(sender, instance, created, **kwargs):
 
     conv = instance.conversation
 
-    # Customer message
     if instance.sender == "customer":
         conv.customer_sent_count += 1
         conv.bot_received_count += 1
-
-    # Bot message
     elif instance.sender == "bot":
         conv.bot_sent_count += 1
-
-    # Agent message
     elif instance.sender == "agent":
         conv.agent_sent_count += 1
-        conv.bot_received_count += 1  # bot "receives" agent msg too (optional)
+        conv.bot_received_count += 1
 
     conv.save()
+
+
+@receiver(post_save, sender=Message, dispatch_uid="trigger_ai_pipeline")
+def trigger_ai_pipeline(sender, instance, created, **kwargs):
+    """Fire the AI pipeline after a new customer message is saved."""
+    if not created or instance.sender != "customer":
+        return
+
+    conv = instance.conversation
+    if not conv.is_ai_enabled:
+        return
+
+    # Lazy import avoids circular dependency (api → back, not back → api at module level)
+    try:
+        from api.ai.pipeline import run
+        run(conv, instance)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "AI pipeline failed conv=%s msg=%s", conv.pk, instance.pk
+        )

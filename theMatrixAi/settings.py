@@ -33,6 +33,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-!$#k@v1z&2e3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0")
 ENCRYPT_KEY = env("ENCRYPT_KEY", default="default_encrypt_key_please_change_me_1234567890")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
@@ -64,6 +65,8 @@ INSTALLED_APPS = [
     "api",
     "rest_framework",
     "msg",
+    "context",
+    "billing",
 
     "shortuuid",
     

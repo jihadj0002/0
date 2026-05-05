@@ -40,6 +40,7 @@ urlpatterns = [
     path("stats", views.stats, name="stats"),
     path("options", views.settingss, name="options"),
     
+    path('chats/bot-preview', views.bot_preview, name='bot_preview'),
     path('send_message', views.send_message_ajax, name='send_message'),
     path('send_image', views.send_image_ajax, name='send_image'),
     path('send_message_with_image', views.send_message_with_image_ajax, name='send_message_with_image'),
@@ -53,9 +54,6 @@ urlpatterns = [
 
     # path('webhook-api/', views.webhook_api, name='webhook_api'),
 
-    
-    # path("contact", views.contact, name="contact"),
-    # path("", views.home, name="home"),
-    # path("login", views.login_view, name="login"),
-    # path("logout", views.logout_view, name="logout"),
+    path("settings/", views.settings_view, name="settings"),
+    path("billing/", views.billing_dashboard, name="billing"),
 ]

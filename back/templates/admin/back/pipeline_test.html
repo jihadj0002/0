@@ -1,0 +1,120 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>AI Pipeline Test</h1>
+<p style="color:#666">Runs the full AI pipeline (LLM + tools) without sending to the messaging platform. Credits are NOT deducted.</p>
+
+<form method="post" id="testForm">
+  {% csrf_token %}
+  <table class="form-table" style="width:100%;max-width:700px">
+    <tr>
+      <th><label for="user_id">User</label></th>
+      <td>
+        <select id="user_id" name="user_id" required onchange="this.form.submit()" style="min-width:240px">
+          <option value="">— select user —</option>
+          {% for u in users %}
+            <option value="{{ u.pk }}" {% if selected_user and selected_user.pk == u.pk %}selected{% endif %}>
+              {{ u.username }} ({{ u.email }})
+            </option>
+          {% endfor %}
+        </select>
+      </td>
+    </tr>
+    {% if conversations %}
+    <tr>
+      <th><label for="conv_id">Conversation</label></th>
+      <td>
+        <select id="conv_id" name="conv_id" required style="min-width:240px">
+          <option value="">— select conversation —</option>
+          {% for c in conversations %}
+            <option value="{{ c.pk }}" {% if selected_conv and selected_conv.pk == c.pk %}selected{% endif %}>
+              [{{ c.platform }}] {{ c.customer_name|default:c.customer_id }} ({{ c.message_count }} msgs)
+            </option>
+          {% endfor %}
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="message">Test Message</label></th>
+      <td>
+        <textarea id="message" name="message" rows="4" style="width:100%;max-width:500px;font-size:14px" placeholder="Type a customer message to test…" required>{{ message|default:'' }}</textarea>
+      </td>
+    </tr>
+    <tr>
+      <th></th>
+      <td>
+        <input type="submit" name="run" value="Run Pipeline" class="default">
+      </td>
+    </tr>
+    {% elif selected_user %}
+    <tr>
+      <td colspan="2" style="color:#888;padding:12px 0">No conversations found for this user.</td>
+    </tr>
+    {% endif %}
+  </table>
+</form>
+
+{% if result %}
+<hr style="margin:28px 0">
+<h2>Result</h2>
+
+<table style="width:100%;max-width:700px;border-collapse:collapse">
+  <tr>
+    <th style="text-align:left;padding:6px 10px;background:#f8f8f8;width:160px">User</th>
+    <td style="padding:6px 10px">{{ result.user }}</td>
+  </tr>
+  <tr>
+    <th style="text-align:left;padding:6px 10px;background:#f8f8f8">Conversation</th>
+    <td style="padding:6px 10px">[{{ result.platform }}] {{ result.customer }}</td>
+  </tr>
+  <tr>
+    <th style="text-align:left;padding:6px 10px;background:#f8f8f8">Model</th>
+    <td style="padding:6px 10px">{{ result.model }}</td>
+  </tr>
+  <tr>
+    <th style="text-align:left;padding:6px 10px;background:#f8f8f8">Iterations</th>
+    <td style="padding:6px 10px">{{ result.iterations }}</td>
+  </tr>
+  <tr>
+    <th style="text-align:left;padding:6px 10px;background:#f8f8f8">Tokens</th>
+    <td style="padding:6px 10px">{{ result.input_tokens }} in / {{ result.output_tokens }} out</td>
+  </tr>
+</table>
+
+{% if result.tool_calls %}
+<h3 style="margin-top:20px">Tool Calls</h3>
+<table style="width:100%;max-width:700px;border-collapse:collapse;font-size:13px">
+  <thead>
+    <tr style="background:#f0f0f0">
+      <th style="text-align:left;padding:6px 10px">#</th>
+      <th style="text-align:left;padding:6px 10px">Tool</th>
+      <th style="text-align:left;padding:6px 10px">Arguments</th>
+      <th style="text-align:left;padding:6px 10px">Result (truncated)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for tc in result.tool_calls %}
+    <tr style="border-top:1px solid #eee">
+      <td style="padding:6px 10px">{{ forloop.counter }}</td>
+      <td style="padding:6px 10px;font-weight:bold">{{ tc.name }}</td>
+      <td style="padding:6px 10px;font-family:monospace;font-size:12px">{{ tc.args }}</td>
+      <td style="padding:6px 10px;font-family:monospace;font-size:12px;color:#555">{{ tc.result }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3 style="margin-top:20px">AI Response</h3>
+{% if result.error %}
+  <div style="background:#fff0f0;border:1px solid #f99;padding:12px 16px;border-radius:6px;color:#c00">
+    <strong>Error:</strong> {{ result.error }}
+  </div>
+{% else %}
+  <div style="background:#f0fff4;border:1px solid #9c9;padding:16px 20px;border-radius:6px;white-space:pre-wrap;font-size:14px">{{ result.response }}</div>
+  {% if result.images %}
+  <p style="margin-top:12px"><strong>Images collected:</strong></p>
+  <ul>{% for img in result.images %}<li><a href="{{ img }}" target="_blank">{{ img }}</a></li>{% endfor %}</ul>
+  {% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

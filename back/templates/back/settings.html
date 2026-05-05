@@ -1,0 +1,393 @@
+{% extends 'back/base.html' %}
+{% load static %}
+{% block title %}AI Settings | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 4px; }
+.page-header p  { color: var(--muted); margin: 0; font-size: .9rem; }
+
+/* Tab nav */
+.tab-nav {
+  display: flex; gap: 4px; background: var(--soft);
+  border-radius: 12px; padding: 4px; width: fit-content;
+  margin-bottom: 28px; flex-wrap: wrap;
+}
+.tab-btn {
+  padding: 8px 18px; border: none; background: transparent;
+  border-radius: 9px; font-weight: 600; font-size: .9rem;
+  cursor: pointer; color: var(--muted); transition: all .2s;
+}
+.tab-btn.active {
+  background: #fff; color: var(--accent);
+  box-shadow: 0 2px 8px rgba(37,99,235,.12);
+}
+
+/* Tab panes */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* Settings card */
+.settings-card {
+  background: #fff; border-radius: 14px;
+  box-shadow: var(--shadow); padding: 28px; margin-bottom: 20px;
+}
+.settings-card h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 6px; }
+.settings-card .desc { color: var(--muted); font-size: .85rem; margin: 0 0 24px; }
+
+/* Form grid */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media(max-width:640px){ .form-grid { grid-template-columns: 1fr; } }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-group label { font-weight: 600; font-size: .85rem; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 10px 13px; border: 1.5px solid #e2e8f0;
+  border-radius: 9px; font-size: .9rem;
+  transition: border-color .2s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+.form-group textarea { min-height: 90px; resize: vertical; }
+
+/* Toggle row */
+.toggle-section { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: var(--soft); border-radius: 10px;
+}
+.toggle-label h4 { margin: 0 0 2px; font-size: .9rem; }
+.toggle-label p  { margin: 0; font-size: .78rem; color: var(--muted); }
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: #cbd5e1; border-radius: 24px; transition: .3s;
+}
+.slider::before {
+  content: ''; position: absolute; height: 18px; width: 18px;
+  left: 3px; bottom: 3px; background: #fff;
+  border-radius: 50%; transition: .3s;
+}
+input:checked + .slider { background: var(--accent); }
+input:checked + .slider::before { transform: translateX(20px); }
+
+/* Integration model row */
+.intg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: var(--soft); border-radius: 10px; gap: 12px;
+}
+.intg-info h4 { margin: 0 0 2px; font-size: .9rem; text-transform: capitalize; }
+.intg-info p  { margin: 0; font-size: .78rem; color: var(--muted); }
+.intg-row select { min-width: 220px; }
+
+/* Image preview */
+.img-preview {
+  width: 80px; height: 80px; border-radius: 50%;
+  object-fit: cover; border: 3px solid var(--soft); margin-bottom: 10px;
+}
+
+/* Save button */
+.save-row { display: flex; justify-content: flex-end; margin-top: 20px; }
+.btn-save {
+  background: var(--accent); color: #fff; border: none;
+  padding: 11px 28px; border-radius: 10px; font-weight: 700;
+  font-size: .9rem; cursor: pointer; transition: background .2s;
+}
+.btn-save:hover { background: #1d4ed8; }
+
+/* Messages */
+.msg-success {
+  background: #ecfdf5; border: 1px solid #6ee7b7;
+  color: #065f46; padding: 12px 16px; border-radius: 10px;
+  margin-bottom: 20px; font-weight: 600; font-size: .9rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>AI Settings</h1>
+  <p>Configure your store, AI agent identity, behavior rules, and model preferences.</p>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="msg-success">✓ {{ msg }}</div>
+  {% endfor %}
+{% endif %}
+
+<!-- Tab navigation -->
+<div class="tab-nav">
+  <button class="tab-btn {% if active_tab == 'store' %}active{% endif %}" data-tab="store">🏪 Store</button>
+  <button class="tab-btn {% if active_tab == 'agent' %}active{% endif %}" data-tab="agent">🤖 Agent</button>
+  <button class="tab-btn {% if active_tab == 'behavior' %}active{% endif %}" data-tab="behavior">💬 Behavior</button>
+  <button class="tab-btn {% if active_tab == 'ai_model' %}active{% endif %}" data-tab="ai_model">⚡ AI Model</button>
+  <button class="tab-btn {% if active_tab == 'knowledge' %}active{% endif %}" data-tab="knowledge">📚 Knowledge Base</button>
+</div>
+
+<!-- ── STORE ── -->
+<div class="tab-pane {% if active_tab == 'store' %}active{% endif %}" id="tab-store">
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="section" value="store">
+    <div class="settings-card">
+      <h2>Store Information</h2>
+      <p class="desc">This data is included in your AI agent's context so it can answer store-related questions.</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Store Name</label>
+          <input type="text" name="store_name" value="{{ store.store_name|default:'' }}" placeholder="e.g. Monowa Mart">
+        </div>
+        <div class="form-group">
+          <label>WhatsApp Number</label>
+          <input type="text" name="whatsapp_number" value="{{ store.whatsapp_number|default:'' }}" placeholder="+8801XXXXXXXXX">
+        </div>
+        <div class="form-group full">
+          <label>Address</label>
+          <textarea name="address">{{ store.address|default:'' }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Delivery Charge — Inside Dhaka ({{ store.currency|default:'BDT' }})</label>
+          <input type="number" name="delivery_charge_inside" value="{{ store.delivery_charge_inside|default:'0' }}" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Delivery Charge — Outside Dhaka ({{ store.currency|default:'BDT' }})</label>
+          <input type="number" name="delivery_charge_outside" value="{{ store.delivery_charge_outside|default:'0' }}" step="0.01">
+        </div>
+        <div class="form-group">
+          <label>Support Opens</label>
+          <input type="time" name="support_open_time" value="{{ store.support_open_time|default:'09:00' }}">
+        </div>
+        <div class="form-group">
+          <label>Support Closes</label>
+          <input type="time" name="support_close_time" value="{{ store.support_close_time|default:'21:00' }}">
+        </div>
+        <div class="form-group">
+          <label>Timezone</label>
+          <select name="timezone">
+            {% for tz in timezones %}
+              <option value="{{ tz }}" {% if store.timezone == tz %}selected{% endif %}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Currency</label>
+          <input type="text" name="currency" value="{{ store.currency|default:'BDT' }}" placeholder="BDT">
+        </div>
+      </div>
+    </div>
+    <div class="save-row"><button type="submit" class="btn-save">Save Store Settings</button></div>
+  </form>
+</div>
+
+<!-- ── AGENT ── -->
+<div class="tab-pane {% if active_tab == 'agent' %}active{% endif %}" id="tab-agent">
+  <form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="hidden" name="section" value="agent">
+    <div class="settings-card">
+      <h2>Agent Identity</h2>
+      <p class="desc">How your AI presents itself to customers.</p>
+
+      {% if identity.image %}
+        <img src="{{ identity.image.url }}" class="img-preview" alt="Agent avatar">
+      {% endif %}
+
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Agent Name</label>
+          <input type="text" name="name" value="{{ identity.name|default:'Assistant' }}" placeholder="e.g. Aria">
+        </div>
+        <div class="form-group">
+          <label>Role / Job Title</label>
+          <input type="text" name="role" value="{{ identity.role|default:'' }}" placeholder="e.g. Sales Executive">
+        </div>
+        <div class="form-group">
+          <label>Tone</label>
+          <select name="tone">
+            <option value="friendly"     {% if identity.tone == 'friendly'     %}selected{% endif %}>Friendly</option>
+            <option value="formal"       {% if identity.tone == 'formal'       %}selected{% endif %}>Formal</option>
+            <option value="professional" {% if identity.tone == 'professional' %}selected{% endif %}>Professional</option>
+            <option value="casual"       {% if identity.tone == 'casual'       %}selected{% endif %}>Casual</option>
+            <option value="humorous"     {% if identity.tone == 'humorous'     %}selected{% endif %}>Humorous</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Communication Style</label>
+          <select name="style">
+            <option value="conversational" {% if identity.style == 'conversational' %}selected{% endif %}>Conversational</option>
+            <option value="concise"        {% if identity.style == 'concise'        %}selected{% endif %}>Concise</option>
+            <option value="detailed"       {% if identity.style == 'detailed'       %}selected{% endif %}>Detailed</option>
+            <option value="formal"         {% if identity.style == 'formal'         %}selected{% endif %}>Formal</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Default Language</label>
+          <select name="language">
+            <option value="en" {% if identity.language == 'en' %}selected{% endif %}>English</option>
+            <option value="bn" {% if identity.language == 'bn' %}selected{% endif %}>Bengali</option>
+            <option value="ar" {% if identity.language == 'ar' %}selected{% endif %}>Arabic</option>
+            <option value="hi" {% if identity.language == 'hi' %}selected{% endif %}>Hindi</option>
+            <option value="fr" {% if identity.language == 'fr' %}selected{% endif %}>French</option>
+            <option value="es" {% if identity.language == 'es' %}selected{% endif %}>Spanish</option>
+            <option value="tr" {% if identity.language == 'tr' %}selected{% endif %}>Turkish</option>
+            <option value="id" {% if identity.language == 'id' %}selected{% endif %}>Indonesian</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Agent Profile Image</label>
+          <input type="file" name="image" accept="image/*">
+        </div>
+      </div>
+    </div>
+    <div class="save-row"><button type="submit" class="btn-save">Save Agent Identity</button></div>
+  </form>
+</div>
+
+<!-- ── BEHAVIOR ── -->
+<div class="tab-pane {% if active_tab == 'behavior' %}active{% endif %}" id="tab-behavior">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="section" value="behavior">
+    <div class="settings-card">
+      <h2>Greeting & Messages</h2>
+      <p class="desc">Sent to customers automatically based on context.</p>
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Greeting Message</label>
+          <textarea name="greeting_message" placeholder="e.g. Hi! Welcome to Monowa Mart 👋 How can I help you today?">{{ rules.greeting_message|default:'' }}</textarea>
+        </div>
+        <div class="form-group full">
+          <label>Out-of-Hours Message</label>
+          <textarea name="out_of_hours_message" placeholder="e.g. We're currently offline. We'll get back to you during business hours.">{{ rules.out_of_hours_message|default:'' }}</textarea>
+        </div>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h2>AI Behavior Toggles</h2>
+      <p class="desc">Control how the AI engages with customers.</p>
+      <div class="toggle-section">
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <h4>Chit-Chat</h4>
+            <p>Allow the AI to engage in casual conversation</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="chit_chat_enabled" {% if rules.chit_chat_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <h4>Cross-Sell Products</h4>
+            <p>Suggest related products after an order</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="cross_sell_enabled" {% if rules.cross_sell_enabled %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <h4>Ask Open-Ended Questions</h4>
+            <p>Probe customer needs before recommending products</p>
+          </div>
+          <label class="switch">
+            <input type="checkbox" name="ask_open_ended" {% if rules.ask_open_ended %}checked{% endif %}>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+      <div class="form-group" style="max-width:260px">
+        <label>Chit-Chat Style</label>
+        <select name="chit_chat_style">
+          <option value="off"      {% if rules.chit_chat_style == 'off'      %}selected{% endif %}>Off</option>
+          <option value="minimal"  {% if rules.chit_chat_style == 'minimal'  %}selected{% endif %}>Minimal</option>
+          <option value="moderate" {% if rules.chit_chat_style == 'moderate' %}selected{% endif %}>Moderate</option>
+          <option value="full"     {% if rules.chit_chat_style == 'full'     %}selected{% endif %}>Full</option>
+        </select>
+      </div>
+    </div>
+    <div class="save-row"><button type="submit" class="btn-save">Save Behavior Rules</button></div>
+  </form>
+</div>
+
+<!-- ── AI MODEL ── -->
+<div class="tab-pane {% if active_tab == 'ai_model' %}active{% endif %}" id="tab-ai_model">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="section" value="ai_model">
+    <div class="settings-card">
+      <h2>AI Model per Integration</h2>
+      <p class="desc">Select which OpenRouter model to use for each connected platform. Leave blank to use the system default (openai/gpt-4o-mini).</p>
+      {% if integrations %}
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          {% for intg in integrations %}
+          <div class="intg-row">
+            <div class="intg-info">
+              <h4>{{ intg.platform }}</h4>
+              <p>Current: {{ intg.ai_model|default:'System default' }}</p>
+            </div>
+            <select name="ai_model_{{ intg.pk }}">
+              <option value="">System default (openai/gpt-4o-mini)</option>
+              {% for model_id in available_models %}
+                <option value="{{ model_id }}" {% if intg.ai_model == model_id %}selected{% endif %}>{{ model_id }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p style="color:var(--muted);">No integrations connected yet. Add one from <a href="{% url 'back:options' %}">Integrations</a>.</p>
+      {% endif %}
+    </div>
+    {% if integrations %}
+      <div class="save-row"><button type="submit" class="btn-save">Save Model Settings</button></div>
+    {% endif %}
+  </form>
+</div>
+
+<!-- ── KNOWLEDGE BASE ── -->
+<div class="tab-pane {% if active_tab == 'knowledge' %}active{% endif %}" id="tab-knowledge">
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="section" value="knowledge">
+    <div class="settings-card">
+      <h2>Knowledge Base</h2>
+      <p class="desc">Write facts the AI should always know. One fact per line. The bot reads this before every reply.</p>
+      <div class="form-group full" style="margin-top:16px;">
+        <label>Store Knowledge &amp; Policies</label>
+        <textarea
+          name="knowledge_base"
+          rows="18"
+          style="font-family: 'Courier New', monospace; font-size: 0.88rem; line-height: 1.7;"
+          placeholder="Write anything the bot should know. Examples:&#10;- Return policy: 7 days, no questions asked.&#10;- We don't deliver to Sylhet yet.&#10;- Ramadan special: 10% off orders above ৳2000.&#10;- Never mention competitor prices.&#10;- If customer asks for a discount, offer 5% on orders over ৳1500.&#10;- Our packaging is eco-friendly and biodegradable.&#10;- Product X is currently out of stock until next Friday."
+        >{{ rules.knowledge_base|default:'' }}</textarea>
+        <p style="font-size:0.78rem;color:var(--muted);margin-top:8px;">
+          Each line is a separate fact. Use plain language — the bot reads this verbatim. Changes take effect on the next customer message.
+        </p>
+      </div>
+    </div>
+    <div class="save-row"><button type="submit" class="btn-save">Save Knowledge Base</button></div>
+  </form>
+</div>
+
+<script>
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,738 @@
+{% extends "back/base.html" %}
+{% load static %}
+
+{% block title %}Billing — Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ==============================
+   BILLING PAGE STYLES
+============================== */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 28px;
+}
+
+.page-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.page-subtitle {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: 2px;
+}
+
+/* ==============================
+   STAT CARDS
+============================== */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 18px;
+  margin-bottom: 28px;
+}
+
+.stat-card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid #eef2f6;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.stat-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.stat-card.accent-blue .stat-value { color: var(--accent); }
+.stat-card.accent-green .stat-value { color: #16a34a; }
+.stat-card.accent-orange .stat-value { color: #d97706; }
+
+/* ==============================
+   CREDIT BAR
+============================== */
+.credit-bar-wrap {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid #eef2f6;
+  margin-bottom: 28px;
+}
+
+.credit-bar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.credit-bar-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.credit-bar-numbers {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.credit-bar-numbers strong {
+  color: #0f172a;
+}
+
+.credit-bar-track {
+  height: 12px;
+  border-radius: 999px;
+  background: var(--soft);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.credit-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #60a5fa);
+  transition: width 0.6s ease;
+}
+
+.credit-bar-fill.danger {
+  background: linear-gradient(90deg, #ef4444, #f87171);
+}
+
+.credit-bar-fill.warning {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.credit-bar-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.plan-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #eef2ff;
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+/* ==============================
+   CHART
+============================== */
+.chart-section {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid #eef2f6;
+  margin-bottom: 28px;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.chart-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+.chart-canvas-wrap {
+  position: relative;
+  height: 200px;
+}
+
+canvas#billingChart {
+  width: 100% !important;
+}
+
+/* ==============================
+   TWO-COLUMN SECTION
+============================== */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+@media (max-width: 900px) {
+  .two-col { grid-template-columns: 1fr; }
+}
+
+/* ==============================
+   MONTH TOTALS
+============================== */
+.month-totals {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid #eef2f6;
+}
+
+.section-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #0f172a;
+  margin-bottom: 18px;
+}
+
+.totals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--soft);
+  font-size: 0.9rem;
+}
+
+.total-row:last-child { border-bottom: none; }
+
+.total-label { color: var(--muted); }
+.total-value { font-weight: 700; color: #0f172a; }
+
+/* ==============================
+   TRANSACTIONS TABLE
+============================== */
+.transactions {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  border: 1px solid #eef2f6;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  margin-top: 4px;
+}
+
+table.txn-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.txn-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid var(--soft);
+}
+
+.txn-table td {
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--soft);
+  color: #0f172a;
+}
+
+.txn-table tr:last-child td { border-bottom: none; }
+
+.txn-table tr:hover td { background: var(--soft); }
+
+.txn-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.txn-type.deduction { background: #fef2f2; color: #ef4444; }
+.txn-type.top_up    { background: #f0fdf4; color: #16a34a; }
+.txn-type.renewal   { background: #eef2ff; color: var(--accent); }
+
+.amount-negative { color: #ef4444; font-weight: 700; }
+.amount-positive { color: #16a34a; font-weight: 700; }
+
+/* ==============================
+   PLANS GRID
+============================== */
+.plans-section {
+  margin-bottom: 28px;
+}
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.plan-card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+  border: 2px solid #eef2f6;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+  position: relative;
+}
+
+.plan-card.current {
+  border-color: var(--accent);
+}
+
+.plan-card:hover:not(.current) {
+  border-color: #c7d2fe;
+  transform: translateY(-2px);
+}
+
+.current-tag {
+  position: absolute;
+  top: -10px;
+  right: 14px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.plan-name {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+  text-transform: capitalize;
+}
+
+.plan-price {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+
+.plan-price span {
+  font-size: 0.85rem;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.plan-features {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 18px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.plan-features li::before { content: "✓ "; color: #16a34a; font-weight: 700; }
+
+.plan-btn {
+  width: 100%;
+  padding: 9px 0;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s ease;
+}
+
+.plan-btn.outline {
+  background: var(--soft);
+  color: #0f172a;
+}
+
+.plan-btn.outline:hover { background: #e2e8f0; }
+
+.plan-btn.filled {
+  background: var(--accent);
+  color: #fff;
+}
+
+.plan-btn.filled:hover { background: #1e4ed8; }
+
+/* ==============================
+   EMPTY STATE
+============================== */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--muted);
+}
+
+.empty-state .empty-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <div class="page-title">Billing & Credits</div>
+    <div class="page-subtitle">Monitor your usage, manage your plan, and track credit history</div>
+  </div>
+  {% if balance %}
+    <div class="plan-badge">
+      <span>&#x2B50;</span>
+      {{ balance.plan.get_name_display }} Plan
+    </div>
+  {% endif %}
+</div>
+
+<!-- Stat Cards -->
+<div class="stats-grid">
+  <div class="stat-card accent-blue">
+    <div class="stat-label">Credits Remaining</div>
+    <div class="stat-value">
+      {% if balance %}{{ balance.credits_remaining|floatformat:0 }}{% else %}—{% endif %}
+    </div>
+    <div class="stat-sub">
+      {% if balance %}of {{ balance.credits_total|floatformat:0 }} total this period{% else %}No balance found{% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card accent-green">
+    <div class="stat-label">Replies Today</div>
+    <div class="stat-value">{% if today_summary %}{{ today_summary.total_replies }}{% else %}0{% endif %}</div>
+    <div class="stat-sub">
+      {% if today_summary %}{{ today_summary.total_ai_calls }} AI calls · {{ today_summary.total_credits_used|floatformat:2 }} credits used{% else %}No activity yet{% endif %}
+    </div>
+  </div>
+
+  <div class="stat-card accent-orange">
+    <div class="stat-label">This Month</div>
+    <div class="stat-value">{% if month_totals.replies %}{{ month_totals.replies }}{% else %}0{% endif %}</div>
+    <div class="stat-sub">
+      {% if month_totals.credits %}{{ month_totals.credits|floatformat:2 }}{% else %}0{% endif %} credits used this month
+    </div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-label">Renewal Date</div>
+    <div class="stat-value" style="font-size:1.2rem;">
+      {% if balance %}{{ balance.renewal_date|date:"M d" }}{% else %}—{% endif %}
+    </div>
+    <div class="stat-sub">
+      {% if balance %}{{ balance.messages_used }} messages used so far{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Credit Progress Bar -->
+{% if balance %}
+<div class="credit-bar-wrap">
+  <div class="credit-bar-header">
+    <div class="credit-bar-title">Credit Usage</div>
+    <div class="credit-bar-numbers">
+      <strong>{{ balance.credits_remaining|floatformat:2 }}</strong> remaining of
+      <strong>{{ balance.credits_total|floatformat:2 }}</strong>
+    </div>
+  </div>
+  {% with pct=balance.usage_percent %}
+  <div class="credit-bar-track">
+    <div
+      class="credit-bar-fill {% if pct >= 90 %}danger{% elif pct >= 70 %}warning{% endif %}"
+      style="width: {{ pct }}%"
+    ></div>
+  </div>
+  <div class="credit-bar-meta">
+    <span>{{ pct }}% used</span>
+    <span>Renews {{ balance.renewal_date|date:"N j, Y" }}</span>
+  </div>
+  {% endwith %}
+</div>
+{% endif %}
+
+<!-- 7-Day Chart -->
+<div class="chart-section">
+  <div class="chart-header">
+    <div class="chart-title">7-Day Usage</div>
+    <div class="chart-legend">
+      <span><span class="legend-dot" style="background:#2563eb;"></span>Credits</span>
+      <span><span class="legend-dot" style="background:#10b981;"></span>Replies</span>
+    </div>
+  </div>
+  <div class="chart-canvas-wrap">
+    <canvas id="billingChart"></canvas>
+  </div>
+</div>
+
+<!-- Month Totals + Transactions -->
+<div class="two-col">
+
+  <!-- Month Totals -->
+  <div class="month-totals">
+    <div class="section-title">This Month's Totals</div>
+    <div class="totals-list">
+      <div class="total-row">
+        <span class="total-label">Total Replies</span>
+        <span class="total-value">{% if month_totals.replies %}{{ month_totals.replies }}{% else %}0{% endif %}</span>
+      </div>
+      <div class="total-row">
+        <span class="total-label">AI Pipeline Calls</span>
+        <span class="total-value">{% if month_totals.ai_calls %}{{ month_totals.ai_calls }}{% else %}0{% endif %}</span>
+      </div>
+      <div class="total-row">
+        <span class="total-label">Input Tokens</span>
+        <span class="total-value">{% if month_totals.tokens_in %}{{ month_totals.tokens_in|floatformat:0 }}{% else %}0{% endif %}</span>
+      </div>
+      <div class="total-row">
+        <span class="total-label">Output Tokens</span>
+        <span class="total-value">{% if month_totals.tokens_out %}{{ month_totals.tokens_out|floatformat:0 }}{% else %}0{% endif %}</span>
+      </div>
+      <div class="total-row">
+        <span class="total-label">Credits Spent</span>
+        <span class="total-value" style="color:#ef4444;">{% if month_totals.credits %}{{ month_totals.credits|floatformat:4 }}{% else %}0.0000{% endif %}</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="transactions">
+    <div class="section-title">Recent Transactions</div>
+    {% if recent_txns %}
+    <div class="table-wrap">
+      <table class="txn-table">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Balance After</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for txn in recent_txns %}
+          <tr>
+            <td>
+              <span class="txn-type {{ txn.transaction_type }}">
+                {% if txn.transaction_type == "deduction" %}↓ Deduction
+                {% elif txn.transaction_type == "top_up" %}↑ Top Up
+                {% elif txn.transaction_type == "renewal" %}↻ Renewal
+                {% else %}{{ txn.transaction_type|capfirst }}
+                {% endif %}
+              </span>
+            </td>
+            <td>
+              {% if txn.amount < 0 %}
+                <span class="amount-negative">{{ txn.amount|floatformat:4 }}</span>
+              {% else %}
+                <span class="amount-positive">+{{ txn.amount|floatformat:4 }}</span>
+              {% endif %}
+            </td>
+            <td>{{ txn.balance_after|floatformat:2 }}</td>
+            <td style="color:var(--muted);font-size:0.82rem;">{{ txn.timestamp|date:"M d, H:i" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📭</div>
+      <div>No transactions yet</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Plans -->
+<div class="plans-section">
+  <div class="section-title">Available Plans</div>
+  <div class="plans-grid">
+    {% for plan in plans %}
+    <div class="plan-card {% if balance and balance.plan.pk == plan.pk %}current{% endif %}">
+      {% if balance and balance.plan.pk == plan.pk %}
+        <div class="current-tag">Current</div>
+      {% endif %}
+      <div class="plan-name">{{ plan.get_name_display }}</div>
+      <div class="plan-price">
+        ${{ plan.price_per_month|floatformat:0 }}<span>/mo</span>
+      </div>
+      <ul class="plan-features">
+        <li>{{ plan.monthly_credits|floatformat:0 }} credits/month</li>
+        <li>
+          {% if plan.max_messages_per_month == 0 %}Unlimited messages
+          {% else %}{{ plan.max_messages_per_month }} messages/month
+          {% endif %}
+        </li>
+        {% if plan.allowed_models %}
+        <li>{{ plan.allowed_models|length }} model(s) available</li>
+        {% endif %}
+      </ul>
+      {% if balance and balance.plan.pk == plan.pk %}
+        <button class="plan-btn outline" disabled>Active Plan</button>
+      {% else %}
+        <button class="plan-btn filled" onclick="alert('Plan switching coming soon.')">Upgrade</button>
+      {% endif %}
+    </div>
+    {% empty %}
+    <p style="color:var(--muted);">No plans available.</p>
+    {% endfor %}
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  const raw = {{ chart_data|safe }};
+  const labels = raw.map(d => d.date);
+  const credits = raw.map(d => d.credits);
+  const replies = raw.map(d => d.replies);
+
+  const canvas = document.getElementById('billingChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const W = canvas.parentElement.clientWidth;
+  const H = 200;
+  canvas.width = W;
+  canvas.height = H;
+
+  const pad = { top: 20, right: 20, bottom: 40, left: 48 };
+  const iW = W - pad.left - pad.right;
+  const iH = H - pad.top - pad.bottom;
+
+  const maxCredits = Math.max(...credits, 1);
+  const maxReplies = Math.max(...replies, 1);
+  const n = labels.length;
+  const stepX = n > 1 ? iW / (n - 1) : iW;
+
+  function xFor(i) { return pad.left + i * stepX; }
+  function yForCredits(v) { return pad.top + iH - (v / maxCredits) * iH; }
+  function yForReplies(v) { return pad.top + iH - (v / maxReplies) * iH; }
+
+  // Grid lines
+  ctx.strokeStyle = '#f1f5f9';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= 4; t++) {
+    const y = pad.top + (iH / 4) * t;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + iW, y); ctx.stroke();
+  }
+
+  // Credits area fill
+  const gradientC = ctx.createLinearGradient(0, pad.top, 0, pad.top + iH);
+  gradientC.addColorStop(0, 'rgba(37,99,235,0.18)');
+  gradientC.addColorStop(1, 'rgba(37,99,235,0)');
+  ctx.beginPath();
+  ctx.moveTo(xFor(0), yForCredits(credits[0]));
+  for (let i = 1; i < n; i++) ctx.lineTo(xFor(i), yForCredits(credits[i]));
+  ctx.lineTo(xFor(n - 1), pad.top + iH);
+  ctx.lineTo(xFor(0), pad.top + iH);
+  ctx.closePath();
+  ctx.fillStyle = gradientC;
+  ctx.fill();
+
+  // Credits line
+  ctx.beginPath();
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.moveTo(xFor(0), yForCredits(credits[0]));
+  for (let i = 1; i < n; i++) ctx.lineTo(xFor(i), yForCredits(credits[i]));
+  ctx.stroke();
+
+  // Replies line
+  ctx.beginPath();
+  ctx.strokeStyle = '#10b981';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 4]);
+  ctx.moveTo(xFor(0), yForReplies(replies[0]));
+  for (let i = 1; i < n; i++) ctx.lineTo(xFor(i), yForReplies(replies[i]));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Dots — credits
+  credits.forEach((v, i) => {
+    ctx.beginPath();
+    ctx.arc(xFor(i), yForCredits(v), 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  });
+
+  // X labels
+  ctx.fillStyle = '#64748b';
+  ctx.font = '11px Inter, system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  labels.forEach((lbl, i) => ctx.fillText(lbl, xFor(i), H - 8));
+
+  // Y label (left axis — credits)
+  ctx.textAlign = 'right';
+  for (let t = 0; t <= 4; t++) {
+    const val = Math.round((maxCredits / 4) * (4 - t));
+    const y = pad.top + (iH / 4) * t;
+    ctx.fillText(val, pad.left - 6, y + 4);
+  }
+})();
+</script>
+{% endblock %}

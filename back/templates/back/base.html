@@ -287,12 +287,10 @@ html, body {
       <a class="nav-item {% if request.resolver_match.url_name == 'packages' %}active{% endif %}" href="{% url 'back:packages' %}">🧾 Packages</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'orders' %}active{% endif %}" href="{% url 'back:orders' %}">🧾 Orders</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'c_dashboard' %}active{% endif %}" href="{% url 'back:c_dashboard' %}">🧾 Messages</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}">🧾 Settings</a>
-      {% comment %} <a class="nav-item" href="{% url 'back:products' %}">📦 Products</a> {% endcomment %}
-      {% comment %} <a class="nav-item" href="{% url 'back:orders' %}">🧾 Orders</a> {% endcomment %}
-      {% comment %} <a class="nav-item" href="{% url 'back:c_dashboard' %}">🧾 Messages</a> {% endcomment %}
-      {% comment %} <a class="nav-item" href="{% url 'back:options' %}">🧾 Settings</a> {% endcomment %}
-      <a class="nav-item" href="{% url 'front:logout' %}">⚙️ Logout</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}">⚙️ Integrations</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'back:settings' %}">🤖 AI Settings</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'billing' %}active{% endif %}" href="{% url 'back:billing' %}">💳 Billing</a>
+      <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
     </nav>
   </aside>
 

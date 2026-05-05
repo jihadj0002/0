@@ -49,6 +49,12 @@ def dashboard(request):
         else 0
     )
 
+    try:
+        from billing.models import UserBalance
+        balance = UserBalance.objects.select_related('plan').get(user=user)
+    except Exception:
+        balance = None
+
     context = {
         "total_sales": total_sales,
         "total_conversations": total_conversations,
@@ -56,7 +62,7 @@ def dashboard(request):
         "active_products": active_products,
         "top_products": top_products,
         "orders_count": orders_count,
-
+        "balance": balance,
     }
     return render(request, "back/dashboard.html", context)
 
@@ -274,6 +280,91 @@ def c_dashboard(request):
 @login_required
 def message_dashboard(request):
     return render(request, "back/ajax_c_dashboard.html")
+
+
+@login_required
+@require_POST
+def bot_preview(request):
+    """Dry-run the AI pipeline for a given conversation + message. No platform send, no credit deduction."""
+    import json as _json
+    from api.ai.context import build_system_prompt, get_conversation_history
+    from api.ai.providers import call_llm
+    from api.ai.tools import TOOL_DEFINITIONS, execute_tool
+
+    try:
+        body = _json.loads(request.body)
+    except Exception:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    conv_id = body.get("conversation_id")
+    message_text = (body.get("message") or "").strip()
+
+    if not conv_id or not message_text:
+        return JsonResponse({"error": "conversation_id and message are required"}, status=400)
+
+    conversation = get_object_or_404(Conversation, id=conv_id, user=request.user)
+    user = request.user
+
+    integration = user.integrations.filter(platform=conversation.platform).first()
+    model = (integration.ai_model or None) if integration else None
+
+    system_prompt = build_system_prompt(user, conversation)
+    history = get_conversation_history(conversation, limit=20)
+    history.append({"role": "user", "content": message_text})
+    messages_list = [{"role": "system", "content": system_prompt}] + history
+
+    tool_calls_log = []
+    final_text = None
+    total_input = 0
+    total_output = 0
+    error = None
+
+    try:
+        for _ in range(5):
+            llm_msg, usage = call_llm(messages=messages_list, tools=TOOL_DEFINITIONS, model=model)
+            total_input += usage.get("input_tokens", 0)
+            total_output += usage.get("output_tokens", 0)
+
+            if not llm_msg.tool_calls:
+                final_text = llm_msg.content or ""
+                break
+
+            messages_list.append(llm_msg)
+
+            for tc in llm_msg.tool_calls:
+                fn_name = tc.function.name
+                try:
+                    fn_args = _json.loads(tc.function.arguments or "{}")
+                except Exception:
+                    fn_args = {}
+
+                tc_result = execute_tool(fn_name, fn_args, user, conversation)
+                tool_calls_log.append({"name": fn_name, "args": fn_args})
+
+                messages_list.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": _json.dumps(tc_result, default=str),
+                })
+
+                if fn_name == "transfer_chat":
+                    final_text = "I'm connecting you with a human agent now."
+                    break
+
+            if final_text:
+                break
+
+    except Exception as exc:
+        error = str(exc)
+
+    return JsonResponse({
+        "response": final_text or "",
+        "tool_calls": tool_calls_log,
+        "input_tokens": total_input,
+        "output_tokens": total_output,
+        "model": model or "gpt-4o-mini",
+        "error": error,
+    })
 
 
 
@@ -988,73 +1079,51 @@ def get_messenger_username(access_token):
 
 @login_required
 def settingss(request):
+    import secrets
     user = request.user
+    username = user.username
 
-    # get or create integrations
-    integration, created = Integration.objects.get_or_create(user=user,platform="messenger",
-                                                             defaults={"is_enabled": False,"is_connected": False,})
-    print("Integration:", integration, "Created:", created)
+    PLATFORMS = ["messenger", "whatsapp", "instagram", "telegram"]
 
-    integration_whatsapp, created = Integration.objects.get_or_create(user=user,platform="whatsapp",
-        defaults={
-            "is_enabled": False,
-            "is_connected": False,
-        }
-    )
-    print("Integration WhatsApp:", integration_whatsapp, "Created:", created)
-    # 🔹 Fetch connected account names
-    messenger_name = get_messenger_username(integration.access_token)
-    whatsapp_name = get_whatsapp_username(integration_whatsapp.access_token)
-    total_messages = Message.objects.filter(
-        conversation__user=user, sender='bot').count()
+    # Ensure all 4 integrations exist; auto-generate webhook URL + verify token
+    base = request.build_absolute_uri(f"/api/{username}/webhook/")
+    integrations = {}
+    for platform in PLATFORMS:
+        obj, _ = Integration.objects.get_or_create(
+            user=user, platform=platform,
+            defaults={"is_enabled": False, "is_connected": False},
+        )
+        # Always keep webhook_url fresh (in case domain changes)
+        obj.webhook_url = f"{base}{platform}/"
+        # Auto-generate a verify token once (needed for Meta hub verification)
+        if not obj.verify_token:
+            obj.verify_token = secrets.token_urlsafe(24)
+        obj.save(update_fields=["webhook_url", "verify_token"])
+        integrations[platform] = obj
 
     if request.method == "POST":
         platform = request.POST.get("platform")
-        # Select the correct integration
-        if platform == "messenger":
-            target = integration
-            print("Updating Messenger Integration settings...")
-
-
-            print(target)
-        elif platform == "whatsapp":
-            target = integration_whatsapp
-            print(target)
-        else:
-            messages.error(request, "Unknown platform")
+        if platform not in PLATFORMS:
+            messages.error(request, "Unknown platform.")
             return redirect("back:options")
-        
-        # Update fields
-        target.webhook_url = request.POST.get("webhook_url")
-        target.access_token = request.POST.get("access_token")
-        target.integration_id = request.POST.get("integration_id")
-        target.is_enabled = request.POST.get("is_enabled") == "on"
-        target.save()
 
-        messages.success(request, f"{platform.capitalize()} settings updated")
+        target = integrations[platform]
+        target.access_token  = request.POST.get("access_token", "").strip() or None
+        target.app_secret    = request.POST.get("app_secret", "").strip() or None
+        target.integration_id = request.POST.get("integration_id", "").strip() or None
+        target.is_enabled    = request.POST.get("is_enabled") == "on"
+        target.save(update_fields=["access_token", "app_secret", "integration_id", "is_enabled"])
+        messages.success(request, f"{platform.capitalize()} settings saved.")
         return redirect("back:options")
-    
-    # counts for UI
+
     active_conversations = Conversation.objects.filter(user=user, is_ai_enabled=True).count()
     deactivated_conversations = Conversation.objects.filter(user=user, is_ai_enabled=False).count()
-    active_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=True, platform="whatsapp").count()
-    deactivated_conversations_wp = Conversation.objects.filter(user=user, is_ai_enabled=False, platform="whatsapp").count()
 
-    context = {
-        "integration": integration,
-        "integration_wp": integration_whatsapp,
+    return render(request, "back/options.html", {
+        "integrations": integrations,
         "active_conversations": active_conversations,
         "deactivated_conversations": deactivated_conversations,
-        "active_conversations_wp": active_conversations_wp,
-        "deactivated_conversations_wp": deactivated_conversations_wp,
-        
-        "total_messages": total_messages,
-
-        "messenger_name": messenger_name,
-        "whatsapp_name": whatsapp_name,
-    }
-
-    return render(request, "back/options.html", context)
+    })
 
 @login_required
 def disable_all_bots(request):
@@ -1260,3 +1329,140 @@ def import_products(request):
         return redirect("back:products")
 
     return render(request, "back/import_products.html")
+
+# =====================================================================
+# Settings — Store, Agent Identity, Behavior Rules, AI Model
+# =====================================================================
+@login_required
+def settings_view(request):
+    from context.models import AgentIdentity, StoreConfig, BehaviorRules
+    from billing.models import ModelPricing
+
+    user = request.user
+    identity, _ = AgentIdentity.objects.get_or_create(user=user)
+    store, _ = StoreConfig.objects.get_or_create(user=user)
+    rules, _ = BehaviorRules.objects.get_or_create(user=user)
+    integrations = list(Integration.objects.filter(user=user))
+    available_models = list(ModelPricing.objects.filter(is_active=True).values_list('model_id', flat=True))
+
+    if request.method == 'POST':
+        section = request.POST.get('section', '')
+
+        if section == 'store':
+            store.store_name = request.POST.get('store_name', '')
+            store.address = request.POST.get('address', '')
+            store.whatsapp_number = request.POST.get('whatsapp_number', '')
+            store.delivery_charge_inside = request.POST.get('delivery_charge_inside') or 0
+            store.delivery_charge_outside = request.POST.get('delivery_charge_outside') or 0
+            store.support_open_time = request.POST.get('support_open_time') or '09:00'
+            store.support_close_time = request.POST.get('support_close_time') or '21:00'
+            store.timezone = request.POST.get('timezone') or 'Asia/Dhaka'
+            store.currency = request.POST.get('currency') or 'BDT'
+            store.save()
+            messages.success(request, 'Store settings saved.')
+
+        elif section == 'agent':
+            identity.name = request.POST.get('name') or 'Assistant'
+            identity.role = request.POST.get('role', '')
+            identity.tone = request.POST.get('tone') or 'friendly'
+            identity.style = request.POST.get('style') or 'conversational'
+            identity.language = request.POST.get('language') or 'en'
+            if 'image' in request.FILES:
+                identity.image = request.FILES['image']
+            identity.save()
+            messages.success(request, 'Agent identity saved.')
+
+        elif section == 'behavior':
+            rules.greeting_message = request.POST.get('greeting_message', '')
+            rules.out_of_hours_message = request.POST.get('out_of_hours_message', '')
+            rules.chit_chat_enabled = 'chit_chat_enabled' in request.POST
+            rules.chit_chat_style = request.POST.get('chit_chat_style') or 'moderate'
+            rules.cross_sell_enabled = 'cross_sell_enabled' in request.POST
+            rules.ask_open_ended = 'ask_open_ended' in request.POST
+            rules.save()
+            messages.success(request, 'Behavior rules saved.')
+
+        elif section == 'knowledge':
+            rules.knowledge_base = request.POST.get('knowledge_base', '').strip()
+            rules.save(update_fields=['knowledge_base'])
+            messages.success(request, 'Knowledge base saved.')
+
+        elif section == 'ai_model':
+            for intg in integrations:
+                intg.ai_model = request.POST.get(f'ai_model_{intg.pk}') or None
+                intg.save(update_fields=['ai_model'])
+            messages.success(request, 'AI model settings saved.')
+
+        return redirect(f"{request.path}?tab={request.POST.get('section', 'store')}")
+
+    timezones = [
+        'Asia/Dhaka', 'Asia/Kolkata', 'Asia/Karachi', 'Asia/Dubai',
+        'Asia/Singapore', 'Asia/Bangkok', 'Asia/Jakarta',
+        'UTC', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+        'America/New_York', 'America/Chicago', 'America/Los_Angeles',
+    ]
+
+    return render(request, 'back/settings.html', {
+        'identity': identity,
+        'store': store,
+        'rules': rules,
+        'integrations': integrations,
+        'available_models': available_models,
+        'active_tab': request.GET.get('tab', 'store'),
+        'timezones': timezones,
+    })
+
+
+# =====================================================================
+# Billing Dashboard
+# =====================================================================
+@login_required
+def billing_dashboard(request):
+    from billing.models import UserBalance, UsageSummary, CreditTransaction, Plan
+    from django.db.models import Sum
+
+    user = request.user
+    today = timezone.now().date()
+
+    try:
+        balance = UserBalance.objects.select_related('plan').get(user=user)
+    except UserBalance.DoesNotExist:
+        balance = None
+
+    today_summary = UsageSummary.objects.filter(user=user, date=today).first()
+
+    week_map = {
+        s.date: s
+        for s in UsageSummary.objects.filter(user=user, date__gte=today - timedelta(days=6))
+    }
+    chart_data = []
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        s = week_map.get(d)
+        chart_data.append({
+            'date': d.strftime('%d %b'),
+            'credits': float(s.total_credits_used) if s else 0,
+            'replies': s.total_replies if s else 0,
+        })
+
+    month_totals = UsageSummary.objects.filter(
+        user=user, date__gte=today.replace(day=1)
+    ).aggregate(
+        replies=Sum('total_replies'),
+        ai_calls=Sum('total_ai_calls'),
+        tokens_in=Sum('total_input_tokens'),
+        tokens_out=Sum('total_output_tokens'),
+        credits=Sum('total_credits_used'),
+    )
+
+    recent_txns = list(CreditTransaction.objects.filter(user=user)[:15])
+    plans = list(Plan.objects.filter(is_active=True).order_by('price_per_month'))
+
+    return render(request, 'back/billing.html', {
+        'balance': balance,
+        'today_summary': today_summary,
+        'chart_data': json.dumps(chart_data),
+        'recent_txns': recent_txns,
+        'plans': plans,
+        'month_totals': month_totals,
+    })

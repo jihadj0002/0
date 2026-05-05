@@ -1,6 +1,7 @@
 from rest_framework import routers
 from django.urls import path, include
 from . import views
+from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView
 
 router = routers.DefaultRouter()
 router.register(r'userprofiles', views.UserProfileViewSet)
@@ -69,7 +70,11 @@ urlpatterns = [
     path('<str:username>/conv/enable/<str:id>', views.EnableConvoAI.as_view(), name='bot-enable'),
     path('<str:username>/conv/AIstatus/<str:id>', views.GetConvoAIStatus.as_view(), name='get-bot-status'),
     path('<str:username>/conv/status/<str:id>', views.GetConvoStatus.as_view(), name='get-conv-status'),
-    
 
+    # Platform webhooks — per-user URLs registered with each platform
+    path('<str:username>/webhook/whatsapp/', WhatsAppWebhookView.as_view(), name='webhook-whatsapp'),
+    path('<str:username>/webhook/messenger/', MessengerWebhookView.as_view(), name='webhook-messenger'),
+    path('<str:username>/webhook/instagram/', InstagramWebhookView.as_view(), name='webhook-instagram'),
+    path('<str:username>/webhook/telegram/', TelegramWebhookView.as_view(), name='webhook-telegram'),
 
 ]

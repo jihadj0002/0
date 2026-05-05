@@ -43,6 +43,16 @@
   <div class="card"><div class="card-title">Total Conversations</div><div class="card-value">{{ total_conversations }}</div></div>
   <div class="card"><div class="card-title">Conversion Rate</div><div class="card-value">{{ conversion_rate }}</div></div>
   <div class="card"><div class="card-title">Active Products</div><div class="card-value">{{ active_products }}</div></div>
+  {% if balance %}
+  <div class="card" style="border-left:3px solid #2563eb;">
+    <div class="card-title">AI Credits</div>
+    <div class="card-value" style="color:#2563eb;">{{ balance.credits_remaining|floatformat:0 }}</div>
+    <div style="font-size:0.78rem;color:#64748b;margin-top:4px;">
+      {{ balance.usage_percent }}% used &bull;
+      <a href="{% url 'back:billing' %}" style="color:#2563eb;text-decoration:none;">View billing</a>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- Analytics Section -->

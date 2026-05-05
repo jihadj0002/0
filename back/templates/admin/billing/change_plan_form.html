@@ -1,0 +1,35 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Change Plan</h1>
+<p>Changing plan for <strong>{{ balances|length }}</strong> account(s):</p>
+<ul>
+  {% for b in balances %}
+    <li>{{ b.user.username }} — currently on <strong>{{ b.plan.get_name_display }}</strong> ({{ b.credits_remaining|floatformat:2 }} credits remaining)</li>
+  {% endfor %}
+</ul>
+
+<form method="post">
+  {% csrf_token %}
+  <input type="hidden" name="ids" value="{{ ids }}">
+  <table>
+    <tr>
+      <th><label for="plan">New Plan</label></th>
+      <td>
+        <select id="plan" name="plan_id" required>
+          {% for plan in plans %}
+            <option value="{{ plan.pk }}">{{ plan.get_name_display }} — ${{ plan.price_per_month }}/mo — {{ plan.monthly_credits|floatformat:0 }} credits</option>
+          {% endfor %}
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="reset">Reset credits to new plan amount?</label></th>
+      <td><input id="reset" type="checkbox" name="reset_credits" checked></td>
+    </tr>
+  </table>
+  <br>
+  <input type="submit" value="Change Plan" class="default">
+  &nbsp;
+  <a href="../">Cancel</a>
+</form>
+{% endblock %}

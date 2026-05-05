@@ -96,6 +96,9 @@ class Integration(models.Model):
     webhook_url = models.URLField(blank=True, null=True)
     access_token = models.TextField(blank=True, null=True)
     integration_id = models.TextField(blank=True, null=True)
+    verify_token = models.CharField(max_length=255, blank=True, null=True)
+    app_secret = models.TextField(blank=True, null=True)
+    ai_model = models.CharField(max_length=100, blank=True, null=True)
 
     is_enabled = models.BooleanField(default=False)
     is_connected = models.BooleanField(default=False)
@@ -343,8 +346,8 @@ class Message(models.Model):
 
     # 🔹 Platform message id (mid / wamid / etc.)
     mid = models.CharField(max_length=255, unique=True, blank=True, null=True, db_index=True)
-    # Send image video anything as attachments (JSON)
     attachments = models.JSONField(blank=True, null=True)
+    raw_payload = models.JSONField(blank=True, null=True)
     # Replied To Message
     replied_to = models.ForeignKey("self", null=True, blank=True, to_field="mid", on_delete=models.SET_NULL, related_name="replies")
 
@@ -518,6 +521,25 @@ class Setting(models.Model):
         return f"{self.platform} settings for {self.user.email}"
 
 
+# -----------------------
+# AI Usage Logging
+# -----------------------
+class UsageLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="usage_logs")
+    reply_id = models.CharField(max_length=64, db_index=True)
+    model = models.CharField(max_length=100)
+    input_tokens = models.IntegerField(default=0)
+    output_tokens = models.IntegerField(default=0)
+    call_type = models.CharField(max_length=50, default="llm_call")
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-timestamp"]
+        verbose_name = "Usage Log"
+        verbose_name_plural = "Usage Logs"
+
+    def __str__(self):
+        return f"{self.user.username} | {self.model} | in={self.input_tokens} out={self.output_tokens} | {self.timestamp:%Y-%m-%d %H:%M}"
 
 
 

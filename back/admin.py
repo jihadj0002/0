@@ -1,7 +1,12 @@
+import json
+
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
-from .models import PackageImages, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem,Package, PackageItem
+from django.shortcuts import render
+from django.urls import path
+
+from .models import PackageImages, UserProfile, Product, Conversation, Message, Sale, Setting, ProductImages, Integration, OrderItem, Package, PackageItem
 # -----------------------
 # Custom User Admin
 # -----------------------
@@ -94,13 +99,158 @@ class ProductAdmin(admin.ModelAdmin):
     ordering = ("-last_synced",)
 
 # -----------------------
-# Conversation Admin
+# Conversation Admin  (also hosts the pipeline-test custom view)
 # -----------------------
 class ConversationAdmin(admin.ModelAdmin):
     list_display = ("platform", "customer_id", "user", "timestamp", "is_ai_generated")
     list_filter = ("platform", "is_ai_generated")
     search_fields = ("customer_id", "user__email", "message_text")
     ordering = ("-timestamp",)
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom = [
+            path(
+                "pipeline-test/",
+                self.admin_site.admin_view(self.pipeline_test_view),
+                name="back_pipeline_test",
+            ),
+        ]
+        return custom + urls
+
+    def pipeline_test_view(self, request):
+        from api.ai.context import build_system_prompt, get_conversation_history
+        from api.ai.providers import call_llm
+        from api.ai.tools import TOOL_DEFINITIONS, execute_tool
+
+        users = User.objects.filter(is_active=True).order_by("username")
+
+        selected_user = None
+        conversations = []
+        selected_conv = None
+        result = None
+        message_text = ""
+
+        user_id = request.POST.get("user_id") or request.GET.get("user_id")
+        conv_id = request.POST.get("conv_id")
+        message_text = request.POST.get("message", "")
+        run = "run" in request.POST
+
+        if user_id:
+            try:
+                selected_user = User.objects.get(pk=user_id)
+                conversations = list(
+                    Conversation.objects.filter(user=selected_user).order_by("-updated_at")[:50]
+                )
+            except User.DoesNotExist:
+                pass
+
+        if conv_id and run and message_text.strip():
+            try:
+                selected_conv = Conversation.objects.select_related("user").get(pk=conv_id)
+            except Conversation.DoesNotExist:
+                selected_conv = None
+
+            if selected_conv:
+                user = selected_conv.user
+                integration = user.integrations.filter(platform=selected_conv.platform).first()
+                model = (integration.ai_model or None) if integration else None
+
+                system_prompt = build_system_prompt(user, selected_conv)
+                history = get_conversation_history(selected_conv, limit=20)
+                if not history or history[-1].get("content") != message_text or history[-1].get("role") != "user":
+                    history.append({"role": "user", "content": message_text})
+
+                messages_list = [{"role": "system", "content": system_prompt}] + history
+
+                tool_calls_log = []
+                final_text = None
+                pending_images = []
+                total_input = 0
+                total_output = 0
+                iterations = 0
+                error = None
+
+                try:
+                    for iteration in range(5):
+                        iterations += 1
+                        llm_msg, usage = call_llm(
+                            messages=messages_list,
+                            tools=TOOL_DEFINITIONS,
+                            model=model,
+                        )
+                        total_input += usage.get("input_tokens", 0)
+                        total_output += usage.get("output_tokens", 0)
+
+                        if not llm_msg.tool_calls:
+                            final_text = llm_msg.content or ""
+                            break
+
+                        messages_list.append(llm_msg)
+
+                        for tc in llm_msg.tool_calls:
+                            fn_name = tc.function.name
+                            try:
+                                fn_args = json.loads(tc.function.arguments or "{}")
+                            except (json.JSONDecodeError, TypeError):
+                                fn_args = {}
+
+                            tc_result = execute_tool(fn_name, fn_args, user, selected_conv)
+
+                            if fn_name == "send_images" and isinstance(tc_result, dict):
+                                pending_images.extend(tc_result.get("images", []))
+
+                            tool_calls_log.append({
+                                "name": fn_name,
+                                "args": json.dumps(fn_args, ensure_ascii=False)[:200],
+                                "result": json.dumps(tc_result, ensure_ascii=False, default=str)[:300],
+                            })
+
+                            messages_list.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "content": json.dumps(tc_result),
+                            })
+
+                            if fn_name == "transfer_chat":
+                                final_text = "I'm connecting you with a human agent now."
+                                break
+
+                        if final_text:
+                            break
+
+                except Exception as exc:
+                    error = str(exc)
+
+                seen = set()
+                unique_images = [img for img in pending_images if img not in seen and not seen.add(img)][:5]
+
+                result = {
+                    "user": user.username,
+                    "platform": selected_conv.platform,
+                    "customer": selected_conv.customer_name or selected_conv.customer_id,
+                    "model": model or "default (gpt-4o-mini)",
+                    "iterations": iterations,
+                    "input_tokens": total_input,
+                    "output_tokens": total_output,
+                    "tool_calls": tool_calls_log,
+                    "response": final_text or "",
+                    "images": unique_images,
+                    "error": error,
+                }
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "AI Pipeline Test",
+            "users": users,
+            "selected_user": selected_user,
+            "conversations": conversations,
+            "selected_conv": selected_conv,
+            "message": message_text,
+            "result": result,
+            "opts": Conversation._meta,
+        }
+        return render(request, "admin/back/pipeline_test.html", context)
 
 
 class MessageAdmin(admin.ModelAdmin):

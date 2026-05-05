@@ -1,9 +1,9 @@
 from django.apps import AppConfig
 
 
-class BillingConfig(AppConfig):
+class ContextConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
-    name = 'billing'
+    name = 'context'
 
     def ready(self):
-        import billing.signals  # noqa: F401
+        import context.signals  # noqa: F401
