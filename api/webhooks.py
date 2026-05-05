@@ -50,33 +50,26 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
     close_old_connections()
     try:
         user = User.objects.get(id=user_id)
-        print(f"Processing webhook for user_id={user_id} platform={platform} with {len(unified_messages)} messages")
         for msg_data in unified_messages:
             try:
-                print(f"Persisting message mid={msg_data.get('message_id')} for user_id={user_id} platform={platform}")
                 _persist_message(user, platform, msg_data, access_token)
             except Exception:
-                print(f"Failed to persist message mid={msg_data.get('message_id')} for user_id={user_id} platform={platform}")
                 logger.exception(
                     "Failed to persist message mid=%s user=%s platform=%s",
                     msg_data.get("message_id"), user_id, platform,
                 )
     except Exception:
         logger.exception("_process_webhook crashed user_id=%s platform=%s", user_id, platform)
-        print(f"_process_webhook crashed for user_id={user_id} platform={platform}")
     finally:
-        print(f"Finished processing webhook for user_id={user_id} platform={platform}")
         close_old_connections()
 
 
 def _persist_message(user, platform, msg_data, access_token):
-    print(f"Persisting message for user={user.username} platform={platform} data={msg_data}")
     mid = msg_data.get("message_id") or None
     customer_id = msg_data.get("customer_id", "")
 
     # Idempotency — Meta retries on non-200, so the same mid may arrive twice
     if mid and Message.objects.filter(mid=mid).exists():
-        print(f"Message with mid={mid} already exists, skipping")
         return
 
     conv, created = Conversation.objects.get_or_create(
@@ -126,20 +119,16 @@ def _persist_message(user, platform, msg_data, access_token):
 @method_decorator(csrf_exempt, name="dispatch")
 class _BaseWebhookView(View):
     platform = None
-    print(f"Initialized webhook view for platform={platform}")
 
     def _get_integration(self, username):
         try:
-            print(f"Looking up integration for user={username} platform={self.platform}")
             user = User.objects.get(username=username)
             return Integration.objects.filter(user=user, platform=self.platform).first()
         except User.DoesNotExist:
-            print(f"User {username} does not exist")
             return None
 
     def _submit(self, integration, messages):
         if messages:
-            print(f"Submitting {len(messages)} messages to executor for user_id={integration.user_id} platform={self.platform}")
             _executor.submit(
                 _process_webhook,
                 integration.user_id,
@@ -156,10 +145,10 @@ class _BaseWebhookView(View):
 class _MetaWebhookView(_BaseWebhookView):
 
     def get(self, request, username):
-        print(f"Received webhook verification request for user={username} platform={self.platform}")
         """Respond to Meta webhook verification challenge."""
         integration = self._get_integration(username)
         if not integration:
+            logger.warning("Webhook verification: no integration for user=%s platform=%s", username, self.platform)
             return HttpResponse(status=404)
 
         mode = request.GET.get("hub.mode")
@@ -168,17 +157,24 @@ class _MetaWebhookView(_BaseWebhookView):
 
         configured_token = integration.verify_token or ""
 
-        print(f"Received webhook verification: user={username} platform={self.platform} mode={mode} token={token}")
+        if not configured_token:
+            logger.error(
+                "Webhook verification failed: no verify_token configured for user=%s platform=%s",
+                username, self.platform,
+            )
+            return HttpResponse(status=403)
 
         if mode == "subscribe" and token == configured_token:
+            logger.info("Webhook verified for user=%s platform=%s", username, self.platform)
             return HttpResponse(challenge, content_type="text/plain")
-            
-        else:
-            logger.warning("Webhook verification failed for user=%s platform=%s", username, self.platform)
+
+        logger.warning(
+            "Webhook verification failed: token mismatch for user=%s platform=%s mode=%s",
+            username, self.platform, mode,
+        )
         return HttpResponse(status=403)
 
     def _handle_post(self, request, username, parse_fn):
-        print(f"Received webhook POST for user={username} platform={self.platform}")
         body = request.body
         integration = self._get_integration(username)
 
@@ -208,7 +204,6 @@ class WhatsAppWebhookView(_MetaWebhookView):
 
 
 class MessengerWebhookView(_MetaWebhookView):
-    print(f"Initialized MessengerWebhookView with platform={self.platform}")
     platform = "messenger"
 
     def post(self, request, username):
@@ -216,7 +211,6 @@ class MessengerWebhookView(_MetaWebhookView):
 
 
 class InstagramWebhookView(_MetaWebhookView):
-    print(f"Initialized InstagramWebhookView with platform={self.platform}")
     platform = "instagram"
 
     def post(self, request, username):
