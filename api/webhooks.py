@@ -157,7 +157,9 @@ class _MetaWebhookView(_BaseWebhookView):
         configured_token = integration.verify_token or ""
         if mode == "subscribe" and token == configured_token:
             return HttpResponse(challenge, content_type="text/plain")
-
+            print("Webhook verified successfully for user=%s platform=%s", username, self.platform)
+        else:
+            logger.warning("Webhook verification failed for user=%s platform=%s", username, self.platform)
         return HttpResponse(status=403)
 
     def _handle_post(self, request, username, parse_fn):
