@@ -22,7 +22,7 @@ def create_user_balance(sender, instance, created, **kwargs):
         logger.warning("No active 'free' Plan found — skipping UserBalance creation for user=%s", instance.pk)
         return
 
-    UserBalance.objects.get_or_create(
+    balance, _ = UserBalance.objects.get_or_create(
         user=instance,
         defaults={
             "plan": plan,
@@ -31,3 +31,18 @@ def create_user_balance(sender, instance, created, **kwargs):
             "renewal_date": UserBalance.next_renewal_date(),
         },
     )
+
+    # Keep UserProfile.plan in sync with the billing plan name
+    _sync_profile_plan(instance, plan.name)
+
+
+def _sync_profile_plan(user, plan_name):
+    """Mirror billing plan name into UserProfile.plan (best-effort)."""
+    try:
+        profile = user.profile
+        # UserProfile uses free/pro/enterprise; map any unknown name to 'free'
+        allowed = {"free", "pro", "enterprise"}
+        profile.plan = plan_name if plan_name in allowed else "free"
+        profile.save(update_fields=["plan"])
+    except Exception:
+        pass  # Profile might not exist yet; back/signals.py will create it

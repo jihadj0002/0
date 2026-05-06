@@ -3,6 +3,7 @@ from django.shortcuts import redirect, render
 from django.urls import path
 
 from billing.deductions import top_up
+from billing.signals import _sync_profile_plan
 from .models import CreditTransaction, ModelPricing, Plan, UsageSummary, UserBalance
 
 
@@ -19,8 +20,25 @@ class UserBalanceAdmin(admin.ModelAdmin):
     list_filter = ("plan",)
     search_fields = ("user__username", "user__email")
     ordering = ("-updated_at",)
-    readonly_fields = ("credits_total", "messages_used", "renewal_date", "created_at", "updated_at")
     actions = ["action_top_up", "action_change_plan"]
+
+    def get_readonly_fields(self, request, obj=None):
+        if obj:
+            # Editing: lock fields that are auto-managed
+            return ("credits_total", "messages_used", "renewal_date", "created_at", "updated_at")
+        # Adding: only lock audit timestamps; let admin set plan/credits freely
+        return ("messages_used", "created_at", "updated_at")
+
+    def save_model(self, request, obj, form, change):
+        if not obj.renewal_date:
+            obj.renewal_date = UserBalance.next_renewal_date()
+        if not change and obj.plan:
+            # On create: seed credits from the plan if not set manually
+            if not obj.credits_total:
+                obj.credits_total = obj.plan.monthly_credits
+            if not obj.credits_remaining:
+                obj.credits_remaining = obj.plan.monthly_credits
+        super().save_model(request, obj, form, change)
 
     def get_urls(self):
         urls = super().get_urls()
@@ -97,6 +115,7 @@ class UserBalanceAdmin(admin.ModelAdmin):
                         b.save(update_fields=["plan", "credits_remaining", "credits_total", "updated_at"])
                     else:
                         b.save(update_fields=["plan", "updated_at"])
+                    _sync_profile_plan(b.user, new_plan.name)
                 self.message_user(
                     request,
                     f"Changed {balances.count()} account(s) to {new_plan.get_name_display()} plan."

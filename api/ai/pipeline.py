@@ -32,10 +32,23 @@ def run(conversation, incoming_message):
 
     user = conversation.user
 
-    # Pre-flight: bail early if the user has no credits left
+    # Pre-flight: ensure the user has a balance and still has credits
     try:
-        from billing.models import UserBalance
+        from billing.models import Plan, UserBalance
         balance = UserBalance.objects.filter(user=user).first()
+        if balance is None:
+            # Auto-provision a free balance for users created before billing was added
+            plan = Plan.objects.filter(name="free", is_active=True).first()
+            if plan:
+                balance, _ = UserBalance.objects.get_or_create(
+                    user=user,
+                    defaults={
+                        "plan": plan,
+                        "credits_remaining": plan.monthly_credits,
+                        "credits_total": plan.monthly_credits,
+                        "renewal_date": UserBalance.next_renewal_date(),
+                    },
+                )
         if balance and balance.credits_remaining <= 0:
             logger.warning("Credits exhausted for user=%s — skipping pipeline conv=%s", user.pk, conversation.pk)
             return
