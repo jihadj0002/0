@@ -48,11 +48,15 @@ if not DEBUG:
 
 ALLOWED_HOSTS = ['*']
 
+# Trust X-Forwarded-Proto from Railway so Django knows requests are HTTPS.
+# Without this, build_absolute_uri() produces http:// URLs which Meta rejects.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
 CSRF_TRUSTED_ORIGINS = [
     "https://matrix-production-867a.up.railway.app",
     "http://matrix-production-867a.up.railway.app",
     "https://thematrixai.xyz",
-    "http://thematrixai.xyz"
+    "http://thematrixai.xyz",
 ]
 
 

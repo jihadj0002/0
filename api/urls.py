@@ -1,7 +1,15 @@
 from rest_framework import routers
 from django.urls import path, include
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from . import views
 from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView
+
+
+@csrf_exempt
+def webhook_ping(request, username):
+    """Public connectivity test. Hit this URL to confirm Railway is reachable before registering with Meta."""
+    return JsonResponse({"ok": True, "username": username, "method": request.method})
 
 router = routers.DefaultRouter()
 router.register(r'userprofiles', views.UserProfileViewSet)
@@ -70,6 +78,9 @@ urlpatterns = [
     path('<str:username>/conv/enable/<str:id>', views.EnableConvoAI.as_view(), name='bot-enable'),
     path('<str:username>/conv/AIstatus/<str:id>', views.GetConvoAIStatus.as_view(), name='get-bot-status'),
     path('<str:username>/conv/status/<str:id>', views.GetConvoStatus.as_view(), name='get-conv-status'),
+
+    # Connectivity test — no auth, no side effects
+    path('<str:username>/ping/', webhook_ping, name='webhook-ping'),
 
     # Platform webhooks — per-user URLs registered with each platform
     path('<str:username>/webhook/whatsapp/', WhatsAppWebhookView.as_view(), name='webhook-whatsapp'),
