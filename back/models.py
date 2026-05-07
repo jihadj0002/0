@@ -124,6 +124,7 @@ class Product(models.Model):
     status = models.BooleanField(default=True)
     last_synced = models.DateTimeField(auto_now=True)
     upsell_enabled = models.BooleanField(default=False)
+    featured_product = models.BooleanField(default=False, help_text="Featured products are highlighted in store and recommendations")
 
     pid = ShortUUIDField(
         length=6,

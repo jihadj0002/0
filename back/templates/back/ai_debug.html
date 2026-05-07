@@ -1,0 +1,477 @@
+{% extends 'back/base.html' %}
+{% load static %}
+{% block title %}AI Debug | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+  .debug-container {
+    display: flex;
+    gap: 24px;
+    margin-top: 24px;
+  }
+  .debug-sidebar {
+    flex: 0 0 300px;
+  }
+  .debug-main {
+    flex: 1;
+  }
+  .debug-panel {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: var(--shadow);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  .debug-panel h3 {
+    margin-top: 0;
+    margin-bottom: 16px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .form-group {
+    margin-bottom: 16px;
+  }
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: .9rem;
+  }
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 13px;
+    border: 1.5px solid #e2e8f0;
+    border-radius: 9px;
+    font-size: .9rem;
+    transition: border-color .2s;
+  }
+  .form-group input:focus,
+  .form-group select:focus,
+  .form-group textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+  }
+  .form-group textarea {
+    min-height: 80px;
+    resize: vertical;
+    font-family: monospace;
+  }
+  .btn-save {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .btn-save:hover {
+    background: #1d4ed8;
+  }
+  .btn-secondary {
+    background: #fff;
+    color: var(--accent);
+    border: 2px solid var(--accent);
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  .btn-secondary:hover {
+    background: var(--accent);
+    color: #fff;
+  }
+  .conversation-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+  .conversation-item {
+    padding: 12px;
+    border-bottom: 1px solid #f1f5f9;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .conversation-item:hover {
+    background: #f8fafc;
+  }
+  .conversation-item.active {
+    background: #eff6ff;
+    border-left: 3px solid var(--accent);
+  }
+  .conversation-item .customer-name {
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .conversation-item .preview {
+    font-size: .85rem;
+    color: var(--muted);
+  }
+  .system-prompt {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: monospace;
+    white-space: pre-wrap;
+    font-size: .85rem;
+    line-height: 1.5;
+    border: 1px solid #e2e8f0;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  .tool-call {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .tool-call-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .tool-call-name {
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .tool-call-time {
+    font-size: .8rem;
+    color: var(--muted);
+  }
+  .tool-call-args,
+  .tool-call-result {
+    margin-top: 8px;
+    padding: 8px;
+    background: #f8fafc;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: .85rem;
+  }
+  .tool-call-args {
+    border-left: 3px solid #60a5fa;
+  }
+  .tool-call-result {
+    border-left: 3px solid #34d399;
+  }
+  .chat-messages {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .chat-message {
+    margin-bottom: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-message .sender {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    font-size: .9rem;
+  }
+  .chat-message .sender.bot {
+    color: var(--accent);
+  }
+  .chat-message .sender.customer {
+    color: #10b981;
+  }
+  .chat-message .sender.agent {
+    color: #6366f1;
+  }
+  .chat-message .text {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    max-width: 80%;
+  }
+  .chat-message .text.bot {
+    align-self: flex-start;
+    background: #eff6ff;
+  }
+  .chat-message .text.customer {
+    align-self: flex-end;
+    background: #dcfce7;
+  }
+  .chat-message .text.agent {
+    align-self: flex-start;
+    background: #eef2ff;
+  }
+  .chat-message .timestamp {
+    font-size: .75rem;
+    color: var(--muted);
+    margin-top: 4px;
+    align-self: flex-end;
+  }
+  .debug-info {
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  .debug-info-item {
+    margin-bottom: 12px;
+  }
+  .debug-info-label {
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .debug-info-value {
+    font-family: monospace;
+    background: #fff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    display: inline-block;
+    margin-top: 4px;
+  }
+  .error-message {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .loading {
+    text-align: center;
+    padding: 20px;
+    color: var(--muted);
+  }
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--muted);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>AI Debug Interface</h1>
+  <p>Test and analyze AI behavior, system prompts, tool usage, and conversations.</p>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="msg-success">✓ {{ msg }}</div>
+  {% endfor %}
+{% endif %}
+
+<div class="debug-container">
+  <!-- Sidebar -->
+  <div class="debug-sidebar">
+    <!-- User and Conversation Selection -->
+    <div class="debug-panel">
+      <h3>User & Conversation</h3>
+      <form method="post" id="user-conversation-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" id="action-input" value="">
+        <div class="form-group">
+          <label for="user-select">Select User</label>
+          <select id="user-select" name="user_id" class="form-select">
+            <option value="">-- Select User --</option>
+            {% for user in users %}
+              <option value="{{ user.id }}" {% if selected_user and user.id == selected_user.id %}selected{% endif %}>
+                {{ user.username }} ({{ user.email|slice:":15" }}...)
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="conversation-select">Select Conversation</label>
+          <select id="conversation-select" name="conversation_id" class="form-select">
+            <option value="">-- Select Conversation --</option>
+            {% for conversation in conversations %}
+              <option value="{{ conversation.id }}" {% if selected_conversation and conversation.id == selected_conversation.id %}selected{% endif %}>
+                {{ conversation.customer_name|default:conversation.customer_id }} ({{ conversation.platform }}) - {{ conversation.updated_at|date:"H:i" }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <button type="submit" name="action" value="select_user" class="btn-save">Load User</button>
+          <button type="submit" name="action" value="select_conversation" class="btn-save ms-2">Load Conversation</button>
+          <button type="button" onclick="window.location.reload()" class="btn-secondary">Reset</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- System Prompt -->
+    <div class="debug-panel">
+      <h3>System Prompt</h3>
+      {% if system_prompt %}
+        <div class="system-prompt">
+          {{ system_prompt|linebreaks }}
+        </div>
+        <form method="post" style="margin-top:12px;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="regenerate_prompt">
+          <button type="submit" class="btn-save btn-sm">Regenerate Prompt</button>
+        </form>
+      {% else %}
+        <div class="empty-state">Select a conversation to view system prompt</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Main Content -->
+  <div class="debug-main">
+    <!-- Chat Interface -->
+    <div class="debug-panel">
+      <h3>Conversation Test</h3>
+      
+      {% if debug_info.error %}
+        <div class="error-message">
+          <strong>Error:</strong> {{ debug_info.error }}
+        </div>
+      {% endif %}
+
+      <div class="chat-messages">
+        {% if conversation_history %}
+          {% for msg in conversation_history %}
+            <div class="chat-message">
+              <div class="sender {% if msg.role == 'assistant' %}bot{% elif msg.role == 'user' %}customer{% else %}agent{% endif %}">
+                {% if msg.role == 'assistant' %}Bot{% elif msg.role == 'user' %}Customer{% else %}Agent{% endif %}
+                <span class="timestamp">{{ msg.timestamp|timesince }} ago</span>
+              </div>
+              <div class="text {% if msg.role == 'assistant' %}bot{% elif msg.role == 'user' %}customer{% else %}agent{% endif %}">
+                {{ msg.content|linebreaks }}
+              </div>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="empty-state">No messages yet. Send a message to start the conversation.</div>
+        {% endif %}
+      </div>
+
+      {% if selected_conversation %}
+        <form method="post" id="message-form">
+          {% csrf_token %}
+          <input type="hidden" name="conversation_id" value="{{ selected_conversation.id }}">
+          <input type="hidden" name="action" value="send_message">
+          <div class="form-group">
+            <label for="message-text">Send Message</label>
+            <textarea id="message-text" name="message_text" placeholder="Type a message to test the AI..." required></textarea>
+          </div>
+          <div class="form-group">
+            <button type="submit" class="btn-save">Send Message</button>
+            <button type="button" onclick="document.getElementById('message-text').value='';" class="btn-secondary ms-2">Clear</button>
+          </div>
+        </form>
+      {% else %}
+        <div class="empty-state">Select a conversation to start testing</div>
+      {% endif %}
+    </div>
+
+    <!-- Debug Information -->
+    <div class="debug-panel">
+      <h3>Debug Information</h3>
+      
+      <div class="debug-info">
+        <div class="debug-info-item">
+          <span class="debug-info-label">Processing Time:</span>
+          <span class="debug-info-value">{{ debug_info.processing_time|floatformat:3 }}s</span>
+        </div>
+        <div class="debug-info-item">
+          <span class="debug-info-label">AI Model:</span>
+          <span class="debug-info-value">{{ debug_info.model_used }}</span>
+        </div>
+        <div class="debug-info-item">
+          <span class="debug-info-label">Token Usage:</span>
+          <span class="debug-info-value">{{ debug_info.token_usage.input }} in / {{ debug_info.token_usage.output }} out ({{ debug_info.token_usage.input|add:debug_info.token_usage.output }} total)</span>
+        </div>
+      </div>
+
+      {% if debug_info.tool_calls %}
+        <h4 style="margin-top:20px;">Tool Calls ({{ debug_info.tool_calls|length }})</h4>
+        {% for call in debug_info.tool_calls %}
+          <div class="tool-call">
+            <div class="tool-call-header">
+              <span class="tool-call-name">{{ call.name }}</span>
+              <span class="tool-call-time">{{ call.timestamp|timesince }} ago</span>
+            </div>
+            <div class="tool-call-args">
+              <strong>Arguments:</strong><br>{{ call.args|pprint }}
+            </div>
+            <div class="tool-call-result">
+              <strong>Result:</strong><br>{{ call.result|pprint }}
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No tool calls yet. Send a message to see tool usage.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% block extra_js %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    // Auto-select first user on load if none selected
+    const userSelect = document.getElementById('user-select');
+    if (userSelect && !userSelect.value) {
+      const firstOption = userSelect.querySelector('option');
+      if (firstOption && firstOption.value !== '') {
+        userSelect.value = firstOption.value;
+        // Trigger change to load conversations
+        const event = new Event('change');
+        userSelect.dispatchEvent(event);
+      }
+    }
+
+    // Handle user selection change to load conversations
+    if (userSelect) {
+      userSelect.addEventListener('change', function() {
+        if (this.value) {
+          document.getElementById('action-input').value = 'select_user';
+          document.getElementById('user-conversation-form').submit();
+        }
+      });
+    }
+    
+    // Handle conversation selection change
+    const conversationSelect = document.getElementById('conversation-select');
+    if (conversationSelect) {
+      conversationSelect.addEventListener('change', function() {
+        if (this.value) {
+          document.getElementById('action-input').value = 'select_conversation';
+          document.getElementById('user-conversation-form').submit();
+        }
+      });
+    }
+
+    // Initialize conversation select if we have a selected conversation
+    const conversationSelect = document.getElementById('conversation-select');
+    if (conversationSelect) {
+      {% if selected_conversation %}
+      conversationSelect.value = {{ selected_conversation.id }};
+      {% endif %}
+    }
+
+    // Auto-focus message textarea when conversation is selected
+    {% if selected_conversation %}
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        document.getElementById('message-text')?.focus();
+      }, 100);
+    });
+    {% endif %}
+  });
+</script>
+{% endblock %}
+{% endblock %}

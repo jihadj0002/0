@@ -50,6 +50,13 @@ class UserProductListView(APIView):
         products = Product.objects.filter(user=user)
         serializer = ProductSerializer(products, many=True, context={'request': request})
         return Response(serializer.data)
+
+class FeaturedProductsView(APIView):
+    def get(self, request):
+        user = request.user
+        featured_products = Product.objects.filter(user=user, featured_product=True, status=True)
+        serializer = ProductSerializer(featured_products, many=True, context={'request': request})
+        return Response(serializer.data)
     
 
 # Package List View Endpoint

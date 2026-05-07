@@ -24,6 +24,7 @@ urlpatterns = [
     path('', include(router.urls)),
 
     path('<str:username>/product_list', views.UserProductListView.as_view(), name='user-product-list'),
+    path('featured_products/', views.FeaturedProductsView.as_view(), name='featured-products'),
     path('<str:username>/product/<int:pk>/', views.UserProductDataView.as_view(), name='user-product-view'),
     path('<str:username>/product/<int:pk>/update', views.UserProductUpdateView.as_view(), name='user-product-update'),
     

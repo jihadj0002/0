@@ -1,9 +1,9 @@
 from types import SimpleNamespace
 from django.shortcuts import render, redirect
 from django.core.files.storage import default_storage
+from django.contrib.auth.decorators import login_required, user_passes_test
 
 from django.db.models import Sum, Count, Q, Avg
-from django.contrib.auth.decorators import login_required
 from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem
 from django.views.decorators.http import require_GET
 # Create your views here.
@@ -1466,3 +1466,199 @@ def billing_dashboard(request):
         'plans': plans,
         'month_totals': month_totals,
     })
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+def ai_debug(request):
+    """AI Debug Interface for testing and analyzing AI behavior"""
+    from django.contrib.auth.models import User
+    from context.models import AgentIdentity, StoreConfig, BehaviorRules
+    from api.ai.context import build_system_prompt, get_conversation_history
+    from api.ai.tools import TOOL_DEFINITIONS, execute_tool
+    from api.ai.providers import call_llm
+    import json
+    import time
+    
+    # Initialize context variables
+    users = User.objects.all().order_by('username')
+    selected_user = None
+    selected_conversation = None
+    conversations = []
+    system_prompt = ""
+    conversation_history = []
+    debug_info = {
+        'tool_calls': [],
+        'token_usage': {'input': 0, 'output': 0},
+        'processing_time': 0,
+        'model_used': '',
+        'error': None
+    }
+    
+    # Handle form submissions
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'select_user':
+            user_id = request.POST.get('user_id')
+            if user_id:
+                selected_user = get_object_or_404(User, id=user_id)
+                conversations = Conversation.objects.filter(user=selected_user).order_by('-updated_at')
+                selected_conversation = None  # Reset conversation selection when user changes
+                
+        elif action == 'select_conversation':
+            conversation_id = request.POST.get('conversation_id')
+            if conversation_id:
+                selected_conversation = get_object_or_404(Conversation, id=conversation_id)
+                # Verify user owns this conversation or is staff
+                if request.user.is_staff or selected_conversation.user == request.user:
+                    pass  # Valid selection
+                else:
+                    selected_conversation = None
+                    
+        elif action == 'send_message':
+            conversation_id = request.POST.get('conversation_id')
+            message_text = request.POST.get('message_text', '').strip()
+            
+            if conversation_id and message_text:
+                try:
+                    selected_conversation = get_object_or_404(Conversation, id=conversation_id)
+                    # Verify access
+                    if not (request.user.is_staff or selected_conversation.user == request.user):
+                        selected_conversation = None
+                    else:
+                        # Process the message through AI pipeline with debug info
+                        start_time = time.time()
+                        
+                        # Reset debug info
+                        debug_info = {
+                            'tool_calls': [],
+                            'token_usage': {'input': 0, 'output': 0},
+                            'processing_time': 0,
+                            'model_used': '',
+                            'error': None
+                        }
+                        
+                        # Build system prompt
+                        system_prompt = build_system_prompt(selected_conversation.user, selected_conversation)
+                        
+                        # Get conversation history
+                        history = get_conversation_history(selected_conversation, limit=20)
+                        
+                        # Add current user message
+                        history.append({"role": "user", "content": message_text})
+                        messages_list = [{"role": "system", "content": system_prompt}] + history
+                        
+                        # Get model from integration
+                        integration = selected_conversation.user.integrations.filter(
+                            platform=selected_conversation.platform
+                        ).first()
+                        model = integration.ai_model if integration else None
+                        
+                        final_text = None
+                        pending_images = []
+                        transferred = False
+                        
+                        # Tool call iterations
+                        for iteration in range(5):  # MAX_TOOL_ITERATIONS
+                            try:
+                                llm_msg, usage = call_llm(messages=messages_list, tools=TOOL_DEFINITIONS, model=model)
+                                debug_info['token_usage']['input'] += usage.get("input_tokens", 0)
+                                debug_info['token_usage']['output'] += usage.get("output_tokens", 0)
+                                
+                                if not llm_msg.tool_calls:
+                                    final_text = llm_msg.content or ""
+                                    break
+                                
+                                messages_list.append(llm_msg)
+                                
+                                # Execute tool calls
+                                for tc in llm_msg.tool_calls:
+                                    fn_name = tc.function.name
+                                    try:
+                                        fn_args = json.loads(tc.function.arguments or "{}")
+                                    except (json.JSONDecodeError, TypeError):
+                                        fn_args = {}
+                                    
+                                    tool_start = time.time()
+                                    result = execute_tool(fn_name, fn_args, selected_conversation.user, selected_conversation)
+                                    tool_end = time.time()
+                                    
+                                    debug_info['tool_calls'].append({
+                                        'name': fn_name,
+                                        'args': fn_args,
+                                        'result': result,
+                                        'execution_time': tool_end - tool_start,
+                                        'timestamp': time.time()
+                                    })
+                                    
+                                    if fn_name == "send_images" and isinstance(result, dict):
+                                        pending_images.extend(result.get("images", []))
+                                    
+                                    if fn_name == "transfer_chat":
+                                        transferred = True
+                                    
+                                    messages_list.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc.id,
+                                        "content": json.dumps(result),
+                                    })
+                                
+                                if transferred:
+                                    final_text = "I'm connecting you with a human agent now. Please wait a moment."
+                                    break
+                                    
+                            except Exception as exc:
+                                debug_info['error'] = str(exc)
+                                break
+                        
+                        debug_info['processing_time'] = time.time() - start_time
+                        debug_info['model_used'] = model or "gpt-4o-mini"
+                        
+                        # Save bot response if successful
+                        if final_text and not debug_info['error']:
+                            # Deduplicate images
+                            seen = set()
+                            unique_images = []
+                            for img in pending_images:
+                                if img not in seen:
+                                    seen.add(img)
+                                    unique_images.append(img)
+                                    if len(unique_images) == 5:
+                                        break
+                            
+                            # Save to database
+                            Message.objects.create(
+                                conversation=selected_conversation,
+                                sender="bot",
+                                text=final_text,
+                                attachments={"images": unique_images} if unique_images else None,
+                            )
+                            
+                            # Add bot message to history for display
+                            history.append({"role": "assistant", "content": final_text})
+                            
+                except Exception as exc:
+                    debug_info['error'] = str(exc)
+    
+    # Set defaults for GET requests or after processing
+    if not selected_user and users.exists():
+        selected_user = users.first()
+        conversations = Conversation.objects.filter(user=selected_user).order_by('-updated_at')
+    
+    # Build system prompt and history for display
+    if selected_conversation:
+        system_prompt = build_system_prompt(selected_conversation.user, selected_conversation)
+        conversation_history = get_conversation_history(selected_conversation, limit=50)
+    
+    context = {
+        'users': users,
+        'selected_user': selected_user,
+        'conversations': conversations,
+        'selected_conversation': selected_conversation,
+        'system_prompt': system_prompt,
+        'conversation_history': conversation_history,
+        'debug_info': debug_info,
+    }
+    
+    return render(request, 'back/ai_debug.html', context)

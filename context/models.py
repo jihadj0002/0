@@ -98,6 +98,10 @@ class BehaviorRules(models.Model):
         blank=True,
         help_text="Facts the AI should always know. One per line. e.g. 'Return policy: 7 days, no questions asked.'"
     )
+    sample_questions_answers = models.TextField(
+        blank=True,
+        help_text="Sample Q&A pairs for AI training (format: Q: question\\nA: answer)"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -56,4 +56,5 @@ urlpatterns = [
 
     path("settings/", views.settings_view, name="settings"),
     path("billing/", views.billing_dashboard, name="billing"),
+    path("ai-debug/", views.ai_debug, name="ai_debug"),
 ]
