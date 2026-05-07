@@ -87,18 +87,21 @@ def build_system_prompt(user, conversation):
             image_url = ""
             if p.image and hasattr(p.image, 'url'):
                 image_url = p.image.url
-                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''}{f"Description: {product.description or 'No description available'}" if p.description else ''}")
+            product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''} (Description: {p.description or 'No description available'})")
         
     else:
         # fallback to newly added products
-        new_products_count = active_products.order_by('-created_at')[:10].count()
-        product_list = []
-        for p in active_products.order_by('-created_at')[:10]:  # Limit to 10 products for prompt
-            # Get image URL for new product
-            image_url = ""
-            if p.image and hasattr(p.image, 'url'):
-                image_url = p.image.url
-                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''}{f"Description: {product.description or 'No description available'}" if p.description else ''}")
+        new_products = active_products.order_by('-last_synced')[:10]
+        if new_products.exists():
+            product_list = []
+            for p in new_products:
+                # Get image URL for new product
+                image_url = ""
+                if p.image and hasattr(p.image, 'url'):
+                    image_url = p.image.url
+                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''} (Description: {p.description or 'No description available'})")
+        else:
+            product_list = ["No active products in the store"]
 
 
 
