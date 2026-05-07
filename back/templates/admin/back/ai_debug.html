@@ -1,0 +1,482 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<style>
+:root{--blue:#417690;--green:#28a745;--red:#dc3545;--yellow:#ffc107;--gray:#6c757d;--light:#f8f9fa;--border:#dee2e6}
+.debug-wrap{display:flex;gap:20px;align-items:flex-start}
+.debug-sidebar{width:260px;flex-shrink:0}
+.debug-main{flex:1;min-width:0}
+.sidebar-card{background:#fff;border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:14px}
+.sidebar-card label{display:block;font-weight:600;font-size:12px;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.sidebar-card select{width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-size:13px;background:#fff}
+.sidebar-card select:focus{outline:none;border-color:var(--blue)}
+.conv-count{font-size:11px;color:var(--gray);margin-top:4px}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:0}
+.tab-btn{padding:10px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:500;color:var(--gray);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s}
+.tab-btn:hover{color:var(--blue);background:var(--light)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue);background:#fff}
+.tab-panel{display:none;background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 6px 6px;padding:20px}
+.tab-panel.active{display:block}
+
+/* System prompt */
+.prompt-box{background:#1e1e2e;color:#cdd6f4;font-family:'Courier New',monospace;font-size:12.5px;line-height:1.7;padding:18px 20px;border-radius:6px;white-space:pre-wrap;word-break:break-word;overflow-x:auto;max-height:600px;overflow-y:auto}
+.prompt-section-header{color:#89b4fa;font-weight:bold}
+.prompt-meta{display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.prompt-meta .chip{display:inline-flex;align-items:center;gap:6px;background:var(--light);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:12px;color:#444}
+.prompt-meta .chip span{font-weight:600;color:var(--blue)}
+
+/* Pipeline */
+.test-form{margin-bottom:20px}
+.test-form textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;resize:vertical;min-height:90px;box-sizing:border-box}
+.test-form textarea:focus{outline:none;border-color:var(--blue)}
+.run-btn{background:var(--blue);color:#fff;border:none;padding:10px 24px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;margin-top:8px}
+.run-btn:hover{background:#2d5a75}
+
+.result-summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.stat-pill{background:var(--light);border:1px solid var(--border);border-radius:6px;padding:8px 14px;text-align:center;min-width:90px}
+.stat-pill .sv{font-size:18px;font-weight:700;color:var(--blue)}
+.stat-pill .sl{font-size:11px;color:var(--gray);text-transform:uppercase;letter-spacing:.5px}
+
+.iteration{border:1px solid var(--border);border-radius:6px;margin-bottom:12px;overflow:hidden}
+.iter-header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--light);border-bottom:1px solid var(--border)}
+.iter-badge{background:var(--blue);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
+.iter-final .iter-badge{background:var(--green)}
+.iter-tokens{font-size:12px;color:var(--gray);margin-left:auto}
+.iter-body{padding:14px}
+
+.tool-call{background:#fffbf0;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px;overflow:hidden}
+.tool-call-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef9c3;border-bottom:1px solid #fde68a;cursor:pointer;user-select:none}
+.tool-name{font-weight:700;font-size:13px;color:#92400e}
+.tool-call-body{padding:10px 12px}
+.tool-label{font-size:11px;font-weight:600;color:var(--gray);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.code-block{background:#1e1e2e;color:#cdd6f4;font-family:'Courier New',monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;overflow-x:auto;max-height:300px;overflow-y:auto}
+
+.final-response{background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:16px 18px;font-size:14px;line-height:1.7;white-space:pre-wrap;word-break:break-word}
+.error-box{background:#fff0f0;border:1px solid #fca5a5;border-radius:6px;padding:14px 16px;color:#b91c1c;font-size:13px}
+
+details summary{cursor:pointer;font-size:12px;color:var(--gray);padding:6px 0;user-select:none}
+details summary:hover{color:var(--blue)}
+details[open] summary{color:var(--blue)}
+
+/* History */
+.msg-row{display:flex;gap:12px;margin-bottom:14px;align-items:flex-start}
+.msg-row.customer{justify-content:flex-start}
+.msg-row.bot,.msg-row.agent{justify-content:flex-end}
+.msg-avatar{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;flex-shrink:0}
+.msg-row.customer .msg-avatar{background:#6366f1}
+.msg-row.bot .msg-avatar{background:#10b981}
+.msg-row.agent .msg-avatar{background:#f59e0b}
+.msg-bubble{max-width:70%;padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.6;word-break:break-word}
+.msg-row.customer .msg-bubble{background:#eef2ff;color:#1e1b4b;border-radius:10px 10px 10px 2px}
+.msg-row.bot .msg-bubble{background:#d1fae5;color:#065f46;border-radius:10px 10px 2px 10px}
+.msg-row.agent .msg-bubble{background:#fef3c7;color:#78350f;border-radius:10px 10px 2px 10px}
+.msg-meta{font-size:11px;color:var(--gray);margin-top:4px}
+
+/* Account */
+.account-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.account-card{background:var(--light);border:1px solid var(--border);border-radius:6px;padding:16px}
+.account-card h4{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin:0 0 10px}
+.account-card .big{font-size:28px;font-weight:700;color:var(--blue)}
+.account-card .sub{font-size:12px;color:var(--gray);margin-top:2px}
+.intg-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)}
+.intg-row:last-child{border-bottom:none}
+.intg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.intg-dot.on{background:var(--green)}
+.intg-dot.off{background:var(--gray)}
+.txn-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+.txn-table th{text-align:left;padding:5px 8px;background:var(--light);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray)}
+.txn-table td{padding:5px 8px;border-bottom:1px solid var(--border);color:#333}
+.txn-table tr:last-child td{border-bottom:none}
+.tag-plus{color:var(--green);font-weight:700}
+.tag-minus{color:var(--red);font-weight:700}
+.no-data{color:var(--gray);font-size:13px;font-style:italic;padding:12px 0}
+
+/* Topbar */
+.debug-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.debug-topbar h1{font-size:22px;font-weight:700;margin:0;color:#333}
+.topbar-links a{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;background:var(--blue);color:#fff;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none}
+.topbar-links a:hover{background:#2d5a75}
+.empty-state{text-align:center;padding:50px 20px;color:var(--gray)}
+.empty-state .big-icon{font-size:40px;margin-bottom:8px}
+</style>
+
+<div class="debug-topbar">
+  <h1>🔬 AI Audit &amp; Debug</h1>
+  <div class="topbar-links">
+    <a href="{% url 'admin:back_tools_inspector' %}">🔧 Tools Inspector</a>
+  </div>
+</div>
+
+<form method="post" id="mainForm">
+{% csrf_token %}
+<input type="hidden" name="tab" id="activeTabInput" value="{{ active_tab }}">
+
+<div class="debug-wrap">
+
+  {# ── Sidebar ────────────────────────────────────────────────────────── #}
+  <div class="debug-sidebar">
+
+    <div class="sidebar-card">
+      <label>Account</label>
+      <select name="user_id" onchange="document.getElementById('conv_id_select').value=''; document.getElementById('activeTabInput').value='prompt'; this.form.submit()">
+        <option value="">— select user —</option>
+        {% for u in users %}
+          <option value="{{ u.pk }}" {% if selected_user and selected_user.pk == u.pk %}selected{% endif %}>
+            {{ u.username }}
+          </option>
+        {% endfor %}
+      </select>
+      {% if selected_user %}
+        <div class="conv-count">{{ conversations|length }} conversation(s)</div>
+      {% endif %}
+    </div>
+
+    {% if conversations %}
+    <div class="sidebar-card">
+      <label>Conversation</label>
+      <select name="conv_id" id="conv_id_select" onchange="document.getElementById('activeTabInput').value='prompt'; this.form.submit()">
+        <option value="">— select conversation —</option>
+        {% for c in conversations %}
+          <option value="{{ c.pk }}" {% if selected_conv and selected_conv.pk == c.pk %}selected{% endif %}>
+            [{{ c.platform }}] {{ c.customer_name|default:c.customer_id|truncatechars:24 }}
+          </option>
+        {% endfor %}
+      </select>
+      {% if selected_conv %}
+        <div class="conv-count" style="margin-top:6px">
+          AI: {% if selected_conv.is_ai_enabled %}<span style="color:#28a745">ON</span>{% else %}<span style="color:#dc3545">OFF</span>{% endif %}
+          &nbsp;·&nbsp; {{ selected_conv.platform }}
+        </div>
+      {% endif %}
+    </div>
+    {% elif selected_user %}
+    <div class="sidebar-card">
+      <div class="no-data">No conversations yet for this user.</div>
+    </div>
+    {% endif %}
+
+    {% if account_info and account_info.balance %}
+    <div class="sidebar-card">
+      <label>Credits</label>
+      <div style="font-size:20px;font-weight:700;color:{% if account_info.balance.credits_remaining > 0 %}#28a745{% else %}#dc3545{% endif %}">
+        {{ account_info.balance.credits_remaining|floatformat:1 }}
+      </div>
+      <div style="font-size:11px;color:#666">of {{ account_info.balance.credits_total|floatformat:1 }} · {{ account_info.balance.plan.name|capfirst }} plan</div>
+      <div style="margin-top:6px;background:#e9ecef;border-radius:4px;height:6px;overflow:hidden">
+        <div style="height:100%;background:#28a745;width:{% widthratio account_info.balance.credits_remaining account_info.balance.credits_total 100 %}%;border-radius:4px"></div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  {# ── Main ────────────────────────────────────────────────────────────── #}
+  <div class="debug-main">
+
+    {% if not selected_user %}
+      <div class="empty-state">
+        <div class="big-icon">👈</div>
+        <div>Select a user from the sidebar to start auditing.</div>
+      </div>
+    {% else %}
+
+    {# Tabs #}
+    <div class="tabs">
+      <button type="button" class="tab-btn {% if active_tab == 'prompt' %}active{% endif %}" onclick="switchTab('prompt')">System Prompt</button>
+      <button type="button" class="tab-btn {% if active_tab == 'test' %}active{% endif %}" onclick="switchTab('test')">Pipeline Tester</button>
+      <button type="button" class="tab-btn {% if active_tab == 'history' %}active{% endif %}" onclick="switchTab('history')">Conversation History</button>
+      <button type="button" class="tab-btn {% if active_tab == 'account' %}active{% endif %}" onclick="switchTab('account')">Account Audit</button>
+    </div>
+
+    {# ── Tab: System Prompt ─────────────────────────────────────── #}
+    <div class="tab-panel {% if active_tab == 'prompt' %}active{% endif %}" id="tab-prompt">
+      {% if system_prompt_text %}
+        <div class="prompt-meta">
+          <div class="chip">User <span>{{ selected_user.username }}</span></div>
+          {% if selected_conv %}
+            <div class="chip">Conv <span>[{{ selected_conv.platform }}] {{ selected_conv.customer_name|default:selected_conv.customer_id }}</span></div>
+          {% else %}
+            <div class="chip">Context <span>First conversation (generic)</span></div>
+          {% endif %}
+          <div class="chip">~Tokens <span>{{ prompt_token_estimate }}</span></div>
+        </div>
+        <div style="margin-bottom:10px;display:flex;gap:8px">
+          <button type="button" onclick="copyPrompt()" style="padding:5px 12px;border:1px solid #ccc;border-radius:4px;font-size:12px;cursor:pointer;background:#fff">📋 Copy</button>
+          <span id="copiedMsg" style="font-size:12px;color:#28a745;display:none;align-self:center">Copied!</span>
+        </div>
+        <div class="prompt-box" id="promptBox">{{ system_prompt_text }}</div>
+        <p style="font-size:12px;color:#666;margin-top:8px">
+          ℹ️ This is the exact prompt sent as the <code>system</code> message to the LLM.
+          {% if not selected_conv %} Select a conversation to include customer state.{% endif %}
+        </p>
+      {% else %}
+        <div class="no-data">Select a conversation to render its system prompt.</div>
+      {% endif %}
+    </div>
+
+    {# ── Tab: Pipeline Tester ───────────────────────────────────── #}
+    <div class="tab-panel {% if active_tab == 'test' %}active{% endif %}" id="tab-test">
+      {% if not selected_conv %}
+        <div class="no-data">Select a conversation first — the pipeline needs a real conversation for context.</div>
+      {% else %}
+        <div class="test-form">
+          <label style="display:block;font-weight:600;margin-bottom:6px;font-size:13px">Test Message (sent as the customer)</label>
+          <textarea name="message" placeholder="Type a customer message to test, e.g. 'What products do you have?' or 'I want to order 2 shirts'…">{{ message_text|default:'' }}</textarea>
+          <br>
+          <button type="submit" name="run_pipeline" class="run-btn">▶ Run Pipeline</button>
+          <span style="font-size:12px;color:#666;margin-left:10px">Dry run — nothing sent to customer, no credits deducted</span>
+        </div>
+      {% endif %}
+
+      {% if pipeline_result %}
+        {% if pipeline_result.error %}
+          <div class="error-box">⚠️ <strong>Error:</strong> {{ pipeline_result.error }}</div>
+        {% else %}
+
+          <div class="result-summary">
+            <div class="stat-pill"><div class="sv">{{ pipeline_result.iterations_trace|length }}</div><div class="sl">Iterations</div></div>
+            <div class="stat-pill"><div class="sv">{{ pipeline_result.total_input }}</div><div class="sl">Input tok</div></div>
+            <div class="stat-pill"><div class="sv">{{ pipeline_result.total_output }}</div><div class="sl">Output tok</div></div>
+            {% if pipeline_result.credit_cost is not None %}
+            <div class="stat-pill"><div class="sv" style="font-size:15px">{{ pipeline_result.credit_cost|floatformat:4 }}</div><div class="sl">Credits est.</div></div>
+            {% endif %}
+            <div class="stat-pill"><div class="sv" style="font-size:12px;word-break:break-all">{{ pipeline_result.model|truncatechars:20 }}</div><div class="sl">Model</div></div>
+          </div>
+
+          {# Per-iteration trace #}
+          <h3 style="font-size:14px;font-weight:700;margin:0 0 10px;color:#333">Execution Trace</h3>
+          {% for iter in pipeline_result.iterations_trace %}
+          <div class="iteration {% if iter.is_final %}iter-final{% endif %}">
+            <div class="iter-header">
+              <div class="iter-badge">{{ iter.n }}</div>
+              <span style="font-size:13px;font-weight:600;color:#333">
+                {% if iter.is_final %}
+                  ✅ Final response
+                {% else %}
+                  🔄 LLM call → {{ iter.tool_calls|length }} tool call{{ iter.tool_calls|length|pluralize }}
+                {% endif %}
+              </span>
+              <div class="iter-tokens">{{ iter.input_tokens }}↑ {{ iter.output_tokens }}↓ tokens · {{ iter.model_used }}</div>
+            </div>
+            <div class="iter-body">
+              {% for tc in iter.tool_calls %}
+              <div class="tool-call">
+                <div class="tool-call-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+                  <span>🔧</span>
+                  <span class="tool-name">{{ tc.name }}</span>
+                  <span style="font-size:11px;color:#92400e;margin-left:auto">click to expand ▾</span>
+                </div>
+                <div class="tool-call-body" style="display:none">
+                  <div class="tool-label">Arguments</div>
+                  <div class="code-block">{{ tc.args_json }}</div>
+                  <div class="tool-label" style="margin-top:10px">Result</div>
+                  <div class="code-block">{{ tc.result_json }}</div>
+                </div>
+              </div>
+              {% endfor %}
+              {% if iter.is_final and iter.response %}
+                <div class="final-response">{{ iter.response }}</div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+
+          {% if pipeline_result.images %}
+          <p style="font-size:13px;font-weight:600;margin:14px 0 6px">Images collected:</p>
+          <ul style="font-size:13px">{% for img in pipeline_result.images %}<li><a href="{{ img }}" target="_blank">{{ img }}</a></li>{% endfor %}</ul>
+          {% endif %}
+
+          {# Collapsible: full messages sent #}
+          <details style="margin-top:18px">
+            <summary>Show full messages array sent to LLM ({{ pipeline_result.messages_sent_display|length }} chars)</summary>
+            <div class="code-block" style="margin-top:8px">{{ pipeline_result.messages_sent_display }}</div>
+          </details>
+
+          {# Collapsible: system prompt used in this run #}
+          <details style="margin-top:8px">
+            <summary>Show system prompt used in this run</summary>
+            <div class="code-block" style="margin-top:8px">{{ pipeline_result.system_prompt }}</div>
+          </details>
+
+        {% endif %}
+      {% endif %}
+    </div>
+
+    {# ── Tab: Conversation History ──────────────────────────────── #}
+    <div class="tab-panel {% if active_tab == 'history' %}active{% endif %}" id="tab-history">
+      {% if not selected_conv %}
+        <div class="no-data">Select a conversation to view its message history.</div>
+      {% elif not conv_history %}
+        <div class="no-data">No messages in this conversation yet.</div>
+      {% else %}
+        <div style="margin-bottom:12px;font-size:12px;color:#666">
+          {{ conv_history|length }} message(s) · Customer: <strong>{{ selected_conv.customer_name|default:selected_conv.customer_id }}</strong> · Platform: <strong>{{ selected_conv.platform }}</strong>
+        </div>
+        {% for msg in conv_history %}
+        <div class="msg-row {{ msg.sender }}">
+          {% if msg.sender == 'customer' %}
+            <div class="msg-avatar">C</div>
+          {% elif msg.sender == 'bot' %}
+            <div class="msg-avatar" style="order:2">AI</div>
+          {% else %}
+            <div class="msg-avatar" style="order:2;background:#f59e0b">AG</div>
+          {% endif %}
+          <div style="max-width:70%">
+            <div class="msg-bubble">
+              {% if msg.text %}{{ msg.text }}{% elif msg.attachments %}[Attachment: {{ msg.attachments.type|default:"file" }}]{% else %}[empty]{% endif %}
+            </div>
+            <div class="msg-meta">{{ msg.timestamp|date:"M d, H:i" }}</div>
+            {% if msg.raw_payload %}
+            <details style="margin-top:2px">
+              <summary>raw payload</summary>
+              <div class="code-block" style="margin-top:4px;font-size:11px">{{ msg.raw_payload|default_if_none:"null" }}</div>
+            </details>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    {# ── Tab: Account Audit ────────────────────────────────────── #}
+    <div class="tab-panel {% if active_tab == 'account' %}active{% endif %}" id="tab-account">
+      {% if account_info %}
+
+        <div class="account-grid" style="margin-bottom:18px">
+          {# Credits card #}
+          {% if account_info.balance %}
+          <div class="account-card">
+            <h4>Credits</h4>
+            <div class="big">{{ account_info.balance.credits_remaining|floatformat:2 }}</div>
+            <div class="sub">of {{ account_info.balance.credits_total|floatformat:2 }} · {{ account_info.balance.plan.name|upper }} plan</div>
+            <div class="sub" style="margin-top:4px">Renews {{ account_info.balance.renewal_date }}</div>
+          </div>
+          {% else %}
+          <div class="account-card">
+            <h4>Credits</h4>
+            <div style="color:#dc3545;font-size:13px">No UserBalance found. Run <code>backfill_user_balances</code>.</div>
+          </div>
+          {% endif %}
+
+          {# Integrations card #}
+          <div class="account-card">
+            <h4>Integrations</h4>
+            {% for intg in account_info.integrations %}
+            <div class="intg-row">
+              <div class="intg-dot {% if intg.is_enabled %}on{% else %}off{% endif %}"></div>
+              <span style="font-size:13px;font-weight:600;width:90px">{{ intg.platform|capfirst }}</span>
+              {% if intg.ai_model %}<span style="font-size:11px;color:#666">{{ intg.ai_model|truncatechars:25 }}</span>{% endif %}
+              {% if not intg.access_token %}<span style="font-size:11px;color:#dc3545">no token</span>{% endif %}
+            </div>
+            {% empty %}
+            <div class="no-data">No integrations set up.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        {# 7-day usage table #}
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 8px">7-Day Usage</h3>
+        {% if account_info.usage_days %}
+        <table class="txn-table" style="margin-bottom:18px">
+          <thead>
+            <tr><th>Date</th><th>Replies</th><th>AI Calls</th><th>Input tok</th><th>Output tok</th><th>Credits used</th></tr>
+          </thead>
+          <tbody>
+            {% for day in account_info.usage_days %}
+            <tr>
+              <td>{{ day.date }}</td>
+              <td>{{ day.total_replies }}</td>
+              <td>{{ day.total_ai_calls }}</td>
+              <td>{{ day.total_input_tokens }}</td>
+              <td>{{ day.total_output_tokens }}</td>
+              <td style="font-weight:600">{{ day.total_credits_used|floatformat:4 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="no-data" style="margin-bottom:18px">No usage recorded yet.</div>
+        {% endif %}
+
+        {# Recent transactions #}
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 8px">Recent Credit Transactions</h3>
+        {% if account_info.recent_txns %}
+        <table class="txn-table" style="margin-bottom:18px">
+          <thead>
+            <tr><th>Time</th><th>Type</th><th>Amount</th><th>Balance After</th><th>Note</th></tr>
+          </thead>
+          <tbody>
+            {% for txn in account_info.recent_txns %}
+            <tr>
+              <td>{{ txn.timestamp|date:"M d H:i" }}</td>
+              <td>{{ txn.transaction_type }}</td>
+              <td>
+                {% if txn.amount >= 0 %}
+                  <span class="tag-plus">+{{ txn.amount|floatformat:4 }}</span>
+                {% else %}
+                  <span class="tag-minus">{{ txn.amount|floatformat:4 }}</span>
+                {% endif %}
+              </td>
+              <td>{{ txn.balance_after|floatformat:4 }}</td>
+              <td style="color:#666;font-size:11px">{{ txn.note|truncatechars:40 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="no-data" style="margin-bottom:18px">No transactions yet.</div>
+        {% endif %}
+
+        {# Recent LLM usage logs #}
+        <h3 style="font-size:14px;font-weight:700;margin:0 0 8px">Recent LLM Calls</h3>
+        {% if account_info.recent_logs %}
+        <table class="txn-table">
+          <thead>
+            <tr><th>Time</th><th>Model</th><th>Input tok</th><th>Output tok</th><th>Type</th><th>Reply ID</th></tr>
+          </thead>
+          <tbody>
+            {% for log in account_info.recent_logs %}
+            <tr>
+              <td>{{ log.timestamp|date:"M d H:i" }}</td>
+              <td style="font-size:11px">{{ log.model|truncatechars:30 }}</td>
+              <td>{{ log.input_tokens }}</td>
+              <td>{{ log.output_tokens }}</td>
+              <td>{{ log.call_type }}</td>
+              <td style="font-family:monospace;font-size:10px;color:#666">{{ log.reply_id|truncatechars:16 }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="no-data">No LLM calls logged yet.</div>
+        {% endif %}
+
+      {% else %}
+        <div class="no-data">Account info not available.</div>
+      {% endif %}
+    </div>
+
+    {% endif %}{# end if selected_user #}
+  </div>{# end debug-main #}
+</div>{# end debug-wrap #}
+</form>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector('.tab-btn[onclick*="' + name + '"]').classList.add('active');
+  document.getElementById('activeTabInput').value = name;
+}
+function copyPrompt() {
+  const txt = document.getElementById('promptBox').innerText;
+  navigator.clipboard.writeText(txt).then(() => {
+    const m = document.getElementById('copiedMsg');
+    m.style.display = 'inline';
+    setTimeout(() => m.style.display = 'none', 2000);
+  });
+}
+</script>
+{% endblock %}

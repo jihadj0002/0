@@ -1,0 +1,111 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<style>
+:root{--blue:#417690;--green:#28a745;--yellow:#f59e0b;--gray:#6c757d;--light:#f8f9fa;--border:#dee2e6}
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--blue);text-decoration:none;font-size:13px;margin-bottom:18px}
+.back-link:hover{text-decoration:underline}
+.tools-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.tools-header h1{font-size:22px;font-weight:700;margin:0}
+.tools-count{background:var(--blue);color:#fff;border-radius:20px;padding:3px 12px;font-size:13px;font-weight:600}
+.tool-card{border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden}
+.tool-card-header{display:flex;align-items:center;gap:12px;padding:14px 18px;background:var(--light);border-bottom:1px solid var(--border)}
+.tool-icon{width:36px;height:36px;border-radius:8px;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.tool-title{font-size:16px;font-weight:700;color:#333}
+.tool-desc{font-size:13px;color:var(--gray);margin-top:2px}
+.tool-body{padding:16px 18px}
+.params-section h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--gray);margin:0 0 10px;font-weight:600}
+.param-row{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.param-row:last-child{border-bottom:none}
+.param-name{font-family:'Courier New',monospace;font-size:13px;font-weight:700;color:#c026d3;min-width:160px}
+.param-type{background:#e0f2fe;color:#0369a1;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-top:1px;flex-shrink:0}
+.param-req{background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600;margin-top:1px;flex-shrink:0}
+.param-opt{background:#f3f4f6;color:#6b7280;border-radius:4px;padding:1px 7px;font-size:11px;flex-shrink:0}
+.param-desc{font-size:13px;color:#444;line-height:1.5}
+.param-meta{font-size:11px;color:var(--gray);margin-top:2px}
+.code-block{background:#1e1e2e;color:#cdd6f4;font-family:'Courier New',monospace;font-size:12px;line-height:1.7;padding:14px 16px;border-radius:6px;white-space:pre;overflow-x:auto;margin-top:8px}
+.copy-all-btn{padding:7px 16px;background:var(--blue);color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}
+.copy-all-btn:hover{background:#2d5a75}
+.copy-msg{font-size:12px;color:var(--green);display:none;margin-left:8px}
+details summary{cursor:pointer;font-size:12px;color:var(--gray);padding:4px 0;user-select:none}
+details summary:hover{color:var(--blue)}
+</style>
+
+<a href="{% url 'admin:back_ai_debug' %}" class="back-link">← Back to AI Debug</a>
+
+<div class="tools-header">
+  <h1>🔧 Tools Inspector</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="tools-count">{{ tools_display|length }} tools</span>
+    <button class="copy-all-btn" onclick="copyAll()">📋 Copy All JSON</button>
+    <span class="copy-msg" id="copyMsg">Copied!</span>
+  </div>
+</div>
+
+<p style="font-size:13px;color:#666;margin-bottom:24px">
+  These are the tool schemas passed alongside every LLM call. The AI uses these to decide which function to call and with what arguments.
+  Edit <code>api/ai/tools.py</code> to add, remove, or modify tools — this page always reflects the live state.
+</p>
+
+{% for tool in tools_display %}
+<div class="tool-card">
+  <div class="tool-card-header">
+    <div class="tool-icon">{{ tool.icon }}</div>
+    <div>
+      <div class="tool-title">{{ tool.name }}</div>
+      <div class="tool-desc">{{ tool.description }}</div>
+    </div>
+  </div>
+  <div class="tool-body">
+    {% if tool.params %}
+    <div class="params-section">
+      <h4>Parameters ({{ tool.params|length }})</h4>
+      {% for p in tool.params %}
+      <div class="param-row">
+        <div style="min-width:180px">
+          <div class="param-name">{{ p.name }}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">
+            <span class="param-type">{{ p.type }}</span>
+            {% if p.required %}
+              <span class="param-req">required</span>
+            {% else %}
+              <span class="param-opt">optional</span>
+            {% endif %}
+          </div>
+        </div>
+        <div>
+          <div class="param-desc">{{ p.description|default:"—" }}</div>
+          {% if p.default is not None %}
+            <div class="param-meta">default: <code>{{ p.default }}</code></div>
+          {% endif %}
+          {% if p.enum %}
+            <div class="param-meta">allowed: {% for v in p.enum %}<code>{{ v }}</code>{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+      <div style="font-size:13px;color:#666;font-style:italic">No parameters.</div>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<details style="margin-top:24px">
+  <summary style="cursor:pointer;font-size:13px;color:var(--blue);font-weight:600;user-select:none">
+    Show complete TOOL_DEFINITIONS JSON (copy-pasteable into any LLM playground)
+  </summary>
+  <div class="code-block" id="fullJson" style="margin-top:8px">{{ tool_json }}</div>
+</details>
+
+<script>
+function copyAll() {
+  const json = document.getElementById('fullJson').innerText;
+  navigator.clipboard.writeText(json).then(() => {
+    const m = document.getElementById('copyMsg');
+    m.style.display = 'inline';
+    setTimeout(() => m.style.display = 'none', 2000);
+  });
+}
+</script>
+{% endblock %}

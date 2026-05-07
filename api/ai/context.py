@@ -62,7 +62,7 @@ def build_system_prompt(user, conversation):
     if conversation.detected_intent:
         cust.append(f"Intent: {conversation.detected_intent}")
     if conversation.current_product:
-        cust.append(f"Viewing: {conversation.current_product[:300]}")
+        cust.append(f"Viewing: {conversation.current_product[:1000]}")  # Truncate long product descriptions
     if cust:
         parts.append("## Current Customer\n" + "\n".join(cust))
 
