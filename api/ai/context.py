@@ -54,57 +54,19 @@ def build_system_prompt(user, conversation):
             parts.append(f"## Sample Training Q&A\n{rules.sample_questions_answers.strip()}")
 
     # --- Live customer state ---
-
     cust = []
-
     if conversation.customer_name:
         cust.append(f"Name: {conversation.customer_name}")
-
     if conversation.customer_phone:
         cust.append(f"Phone: {conversation.customer_phone}")
-
     if conversation.customer_city:
         cust.append(f"City: {conversation.customer_city}")
-
     if conversation.greeted:
         cust.append("Already greeted: yes")
-
     if conversation.detected_intent:
         cust.append(f"Intent: {conversation.detected_intent}")
 
-
-    # Active products
-    active_products = user.products.filter(status=True)
-
-    # Featured products
-    featured_products = active_products.filter(featured_product=True)
-
-    if featured_products.exists():
-        product_count = featured_products.count()
-        product_list = []
-        for p in featured_products[:10]:  # Limit to 10 products for prompt
-            # Get image URL for featured product
-            image_url = ""
-            if p.image and hasattr(p.image, 'url'):
-                image_url = p.image.url
-            product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''} (Description: {p.description or 'No description available'})")
-        
-    else:
-        # fallback to newly added products
-        new_products = active_products.order_by('-last_synced')[:10]
-        if new_products.exists():
-            product_list = []
-            for p in new_products:
-                # Get image URL for new product
-                image_url = ""
-                if p.image and hasattr(p.image, 'url'):
-                    image_url = p.image.url
-                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''} (Description: {p.description or 'No description available'})")
-        else:
-            product_list = ["No active products in the store"]
-
-
-
+    # Handle current product or show alternatives
     if conversation.current_product and conversation.current_product.strip():
         # Try to get the full product details for better context
         try:
@@ -113,13 +75,13 @@ def build_system_prompt(user, conversation):
             image_urls = []
             if product.image and hasattr(product.image, 'url'):
                 image_urls.append(product.image.url)
-            
+
             # Get additional images
             additional_images = ProductImages.objects.filter(product=product)
             for img in additional_images:
                 if img.images and hasattr(img.images, 'url'):
                     image_urls.append(img.images.url)
-            
+
             # Build product info with image URLs
             product_info = f"Viewing: {product.name} (PK: {product.pid})\n"
             product_info += f"Description: {product.description or 'No description available'}\n"
@@ -131,45 +93,32 @@ def build_system_prompt(user, conversation):
                 product_info += f"Image URLs: {', '.join(image_urls)}\n"
             else:
                 product_info += "Image URLs: No images available\n"
-            
+
             cust.append(product_info)
         except Product.DoesNotExist:
             # If product not found, show the raw current_product value
             cust.append(f"Viewing: {conversation.current_product[:1000]} (Product not found in database)")  # Truncate long product descriptions
     else:
-        # If no current product, show featured products
-        featured_products = Product.objects.filter(user=user, featured_product=True, status=True)[:5]
-        if featured_products:
+        # If no current product, show top 5 available products
+        available_products = Product.objects.filter(user=user, status=True)[:5]
+        if available_products:
             product_list = []
-            for p in featured_products:
-                # Get image URL for featured product
+            for p in available_products:
+                # Get image URL
                 image_url = ""
                 if p.image and hasattr(p.image, 'url'):
                     image_url = p.image.url
-                product_list.append(f"- {p.name} (PK: {p.pid}){f' [Image: {image_url}]' if image_url else ''}")
-            
+                # Truncate description to avoid overly long prompts
+                description = (p.description or "No description available")[:100]
+                product_list.append(f"- {p.name} (PK: {p.pid})\n  Description: {description}\n  Image URL: {image_url if image_url else 'No image available'}")
+
             if product_list:
-                cust.append(f"Featured Products:\n{chr(10).join(product_list)}")
+                cust.append(f"Available Products:\n{chr(10).join(product_list)}")
             else:
-                # If no featured products, show newly added products
-                new_products = Product.objects.filter(user=user, status=True).order_by('-last_synced')[:5]
-                if new_products:
-                    product_list = []
-                    for p in new_products:
-                        # Get image URL for new product
-                        image_url = ""
-                        if p.image and hasattr(p.image, 'url'):
-                            image_url = p.image.url
-                        product_list.append(f"- {p.name} (PK: {p.pid}){f' [Image: {image_url}]' if image_url else ''}")
-                    
-                    if product_list:
-                        cust.append(f"Newly Added Products:\n{chr(10).join(product_list)}")
-                    else:
-                        # If no products at all, show a message
-                        cust.append("No products available in the store")
-                else:
-                    cust.append("No products available in the store")
-    
+                cust.append("No products available in the store")
+        else:
+            cust.append("No products available in the store")
+
     if cust:
         parts.append("## Current Customer\n" + "\n".join(cust))
 
@@ -195,7 +144,7 @@ def build_system_prompt(user, conversation):
         "- When suggesting products, always offer to send images with send_images."
     )
 
-     # Join all parts and truncate if too long
+    # Join all parts and truncate if too long
     system_prompt = "\n\n".join(parts)
     if len(system_prompt) > MAX_PROMPT_LENGTH:
         # Truncate and add indicator
