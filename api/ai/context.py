@@ -1,4 +1,4 @@
-from back.models import Message, Product
+from back.models import Message, Product, ProductImages
 
 MAX_PROMPT_LENGTH = 4000
 
@@ -54,19 +54,54 @@ def build_system_prompt(user, conversation):
             parts.append(f"## Sample Training Q&A\n{rules.sample_questions_answers.strip()}")
 
     # --- Live customer state ---
+
     cust = []
+
     if conversation.customer_name:
         cust.append(f"Name: {conversation.customer_name}")
+
     if conversation.customer_phone:
         cust.append(f"Phone: {conversation.customer_phone}")
+
     if conversation.customer_city:
         cust.append(f"City: {conversation.customer_city}")
+
     if conversation.greeted:
         cust.append("Already greeted: yes")
+
     if conversation.detected_intent:
         cust.append(f"Intent: {conversation.detected_intent}")
-    
-    # Handle current product or show alternatives
+
+
+    # Active products
+    active_products = user.products.filter(status=True)
+
+    # Featured products
+    featured_products = active_products.filter(featured_product=True)
+
+    if featured_products.exists():
+        product_count = featured_products.count()
+        product_list = []
+        for p in featured_products[:10]:  # Limit to 10 products for prompt
+            # Get image URL for featured product
+            image_url = ""
+            if p.image and hasattr(p.image, 'url'):
+                image_url = p.image.url
+                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''}{f"Description: {product.description or 'No description available'}" if p.description else ''}")
+        
+    else:
+        # fallback to newly added products
+        new_products_count = active_products.order_by('-created_at')[:10].count()
+        product_list = []
+        for p in active_products.order_by('-created_at')[:10]:  # Limit to 10 products for prompt
+            # Get image URL for new product
+            image_url = ""
+            if p.image and hasattr(p.image, 'url'):
+                image_url = p.image.url
+                product_list.append(f"- {p.name} (PK: {p.pid}) {f' [Image: {image_url}]' if image_url else ''}{f"Description: {product.description or 'No description available'}" if p.description else ''}")
+
+
+
     if conversation.current_product and conversation.current_product.strip():
         # Try to get the full product details for better context
         try:
