@@ -11,7 +11,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from back.models import Conversation, Integration, Message
+from back.models import Conversation, Integration, Message, MessageBatch
 
 from .utils.parsers import parse_instagram, parse_messenger, parse_telegram, parse_whatsapp
 from .utils.whatsapp import download_whatsapp_media
@@ -41,6 +41,85 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 # Background processing
 # ---------------------------------------------------------------------------
 
+def _check_and_process_batches(user_id, platform):
+    """
+    Check if we should process a batch of messages for a user/platform combination.
+    Processes when we have 3+ messages or when oldest message is >2 seconds old.
+    """
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    # Get unprocessed batches for this user/platform
+    cutoff_time = timezone.now() - timedelta(seconds=5)  # Use 5 seconds to account for processing delays and ensure we don't process too early. Adjust as needed.
+    
+    # Find conversations with unprocessed batches
+    unprocessed_batches = MessageBatch.objects.filter(
+        conversation__user_id=user_id,
+        platform=platform,
+        processed=False
+    ).order_by('timestamp')
+    
+    if not unprocessed_batches.exists():
+        return
+    
+    # Group by conversation
+    conversations_to_process = set()
+    for batch in unprocessed_batches:
+        conversations_to_process.add(batch.conversation_id)
+    
+    # Process each conversation that meets criteria
+    for conversation_id in conversations_to_process:
+        batches = MessageBatch.objects.filter(
+            conversation_id=conversation_id,
+            platform=platform,
+            processed=False
+        ).order_by('timestamp')
+        
+        # Process if we have 3+ messages OR oldest is >2 seconds old
+        if batches.count() >= 3 or (batches.first().timestamp < cutoff_time and batches.exists()):
+            _process_message_batch(conversation_id, platform)
+            # Mark as processed
+            batches.update(processed=True)
+
+
+def _process_message_batch(conversation_id, platform):
+    """
+    Process a batch of messages for a conversation as a single unit.
+    """
+    from back.models import Conversation, MessageBatch
+    from back.models import Message  # For creating bot messages later if needed
+    from api.ai.pipeline import run  # Import the pipeline
+    from back.models import Message  # For getting customer messages
+    
+    try:
+        conversation = Conversation.objects.get(id=conversation_id)
+        # Get all unprocessed messages for this conversation/platform
+        message_batches = MessageBatch.objects.filter(
+            conversation=conversation,
+            platform=platform,
+            processed=False
+        ).order_by('timestamp')
+        
+        if not message_batches.exists():
+            return
+            
+        # Combine messages into a single context
+        combined_text = " ".join([mb.message_text for mb in message_batches])
+        
+        # Create a temporary unified message for the pipeline
+        from types import SimpleNamespace
+        unified_message = SimpleNamespace()
+        unified_message.text = combined_text
+        
+        # Run the pipeline with the combined message
+        run(conversation, unified_message)
+        
+    except Conversation.DoesNotExist:
+        pass  # Conversation was deleted
+    except Exception as e:
+        logger.exception("_process_message_batch failed for conversation=%s: %s", conversation_id, e)
+
+
 def _process_webhook(user_id, platform, unified_messages, access_token):
     """
     Runs in a thread pool worker. Persists each message in unified_messages.
@@ -58,6 +137,8 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
                     "Failed to persist message mid=%s user=%s platform=%s",
                     msg_data.get("message_id"), user_id, platform,
                 )
+        # Check if we should process a batch for any conversations
+        _check_and_process_batches(user_id, platform)
     except Exception:
         logger.exception("_process_webhook crashed user_id=%s platform=%s", user_id, platform)
     finally:
@@ -69,7 +150,7 @@ def _persist_message(user, platform, msg_data, access_token):
     customer_id = msg_data.get("customer_id", "")
 
     # Idempotency — Meta retries on non-200, so the same mid may arrive twice
-    if mid and Message.objects.filter(mid=mid).exists():
+    if mid and MessageBatch.objects.filter(message_text=msg_data.get("text", ""), processed=False).exists():
         return
 
     conv, created = Conversation.objects.get_or_create(
@@ -77,6 +158,19 @@ def _persist_message(user, platform, msg_data, access_token):
         platform=platform,
         customer_id=customer_id,
         defaults={"customer_name": msg_data.get("customer_name") or ""},
+    )
+
+    # Backfill name if we learned it and conversation was created without it
+    if not created and msg_data.get("customer_name") and not conv.customer_name:
+        Conversation.objects.filter(pk=conv.pk).update(
+            customer_name=msg_data.get("customer_name")
+        )
+
+    # Store message in batch for later processing
+    MessageBatch.objects.create(
+        conversation=conv,
+        message_text=msg_data.get("text", ""),
+        platform=platform
     )
 
     # Backfill name if we learned it and conversation was created without it

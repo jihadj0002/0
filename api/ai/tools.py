@@ -285,7 +285,7 @@ def tool_get_product_details(user, pid):
     }
 
 
-def tool_send_images(user, pid):
+def tool_send_images(user, pid, conversation=None):
     try:
         p = Product.objects.get(user=user, pid=pid)
     except Product.DoesNotExist:
@@ -300,7 +300,29 @@ def tool_send_images(user, pid):
         if url and url not in images:
             images.append(url)
 
-    return {"pid": pid, "name": p.name, "images": images}
+    # Send images if conversation is provided
+    if conversation and images:
+        from .sender import send_reply
+        # Send images (without text, just images) via existing platform sender
+        send_reply(conversation, "", image_urls=images)
+        
+        # Create confirmation message in conversation history
+        from back.models import Message
+        Message.objects.create(
+            conversation=conversation,
+            sender="bot",
+            text=f"Sent {len(images)} image(s) for {p.name}",
+        )
+        
+        return {
+            "pid": pid, 
+            "name": p.name, 
+            "images": images,
+            "sent": True,
+            "message": f"Sent {len(images)} image(s) for {p.name}"
+        }
+
+    return {"pid": pid, "name": p.name, "images": images, "sent": False}
 
 
 def tool_create_order(user, conversation, customer_name, customer_phone, customer_address, items,
@@ -429,7 +451,7 @@ def execute_tool(name, arguments, user, conversation):
             return tool_get_product_details(user, args.get("pid", ""))
 
         if name == "send_images":
-            return tool_send_images(user, args.get("pid", ""))
+            return tool_send_images(user, args.get("pid", ""), conversation)
 
         if name == "create_order":
             return tool_create_order(

@@ -539,7 +539,24 @@ class UsageLog(models.Model):
         verbose_name = "Usage Log"
         verbose_name_plural = "Usage Logs"
 
+
+class MessageBatch(models.Model):
+    """Temporary storage for incoming messages to enable batching."""
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE)
+    message_text = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    processed = models.BooleanField(default=False)
+    platform = models.CharField(max_length=20)  # Store platform for routing
+
+    class Meta:
+        ordering = ['timestamp']
+        indexes = [
+            models.Index(fields=['conversation', 'processed', 'timestamp']),
+            models.Index(fields=['processed', 'timestamp']),
+        ]
+
     def __str__(self):
+        return f"Batch message for {self.conversation_id} at {self.timestamp}"
         return f"{self.user.username} | {self.model} | in={self.input_tokens} out={self.output_tokens} | {self.timestamp:%Y-%m-%d %H:%M}"
 
 

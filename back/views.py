@@ -1379,6 +1379,7 @@ def settings_view(request):
             rules.chit_chat_style = request.POST.get('chit_chat_style') or 'moderate'
             rules.cross_sell_enabled = 'cross_sell_enabled' in request.POST
             rules.ask_open_ended = 'ask_open_ended' in request.POST
+            rules.sample_questions_answers = request.POST.get('sample_questions_answers', '').strip()
             rules.save()
             messages.success(request, 'Behavior rules saved.')
 

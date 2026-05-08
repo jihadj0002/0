@@ -316,7 +316,27 @@ input:checked + .slider::before { transform: translateX(20px); }
         </select>
       </div>
     </div>
-    <div class="save-row"><button type="submit" class="btn-save">Save Behavior Rules</button></div>
+     <div class="form-group full">
+         <label for="sample_questions_answers">Sample Q&A for AI Training</label>
+         <textarea id="sample_questions_answers" 
+                   name="sample_questions_answers" 
+                   rows="6" 
+                   class="form-control"
+                   placeholder="Format:
+Q: What is your return policy?
+A: We accept returns within 30 days with original receipt.
+
+Q: Do you offer shipping?
+A: Yes, we ship nationwide for flat rate of $5.
+
+Each Q&A pair on separate lines with Q: and A: prefixes."
+         >{{ rules.sample_questions_answers|default:'' }}</textarea>
+         <small class="form-text text-muted">
+             Used to train the AI on common customer questions and appropriate responses.
+             Format: Q: question followed by A: answer on the next line.
+         </small>
+     </div>
+     <div class="save-row"><button type="submit" class="btn-save">Save Behavior Rules</button></div>
   </form>
 </div>
 
