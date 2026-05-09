@@ -1,4 +1,4 @@
-from back.models import Message, Product, ProductImages
+from back.models import Message, Product
 
 MAX_PROMPT_LENGTH = 4000
 
@@ -66,56 +66,32 @@ def build_system_prompt(user, conversation):
     if conversation.detected_intent:
         cust.append(f"Intent: {conversation.detected_intent}")
 
-    # Handle current product or show alternatives
-    if conversation.current_product and conversation.current_product.strip():
-        # Try to get the full product details for better context
+    # Current selected product or top-5 catalogue snapshot
+    pid = (conversation.current_product or "").strip()
+    if pid:
         try:
-            product = Product.objects.get(user=user, pid=conversation.current_product, status=True)
-            # Get image URLs
-            image_urls = []
-            if product.image and hasattr(product.image, 'url'):
-                image_urls.append(product.image.url)
-
-            # Get additional images
-            additional_images = ProductImages.objects.filter(product=product)
-            for img in additional_images:
-                if img.images and hasattr(img.images, 'url'):
-                    image_urls.append(img.images.url)
-
-            # Build product info with image URLs
-            product_info = f"Viewing: {product.name} (PK: {product.pid})\n"
-            product_info += f"Description: {product.description or 'No description available'}\n"
-            product_info += f"Price: {product.price} {store.currency if store else 'BDT'}\n"
-            if product.discounted_price:
-                product_info += f"Discounted Price: {product.discounted_price} {store.currency if store else 'BDT'}\n"
-            product_info += f"Stock: {product.stock_quantity} units\n"
-            if image_urls:
-                product_info += f"Image URLs: {', '.join(image_urls)}\n"
-            else:
-                product_info += "Image URLs: No images available\n"
-
-            cust.append(product_info)
+            product = Product.objects.get(user=user, pid=pid, status=True)
+            currency = store.currency if store else "BDT"
+            lines = [
+                f"Selected product: {product.name} (PID: {product.pid})",
+                f"Price: {product.price} {currency}" + (
+                    f"  Discounted: {product.discounted_price} {currency}" if product.discounted_price else ""
+                ),
+                f"Stock: {product.stock_quantity} units",
+                f"Description: {(product.description or 'N/A')[:200]}",
+            ]
+            cust.append("\n".join(lines))
         except Product.DoesNotExist:
-            # If product not found, show the raw current_product value
-            cust.append(f"Viewing: {conversation.current_product[:1000]} (Product not found in database)")  # Truncate long product descriptions
+            pass  # stale PID — context builder simply omits it
     else:
-        # If no current product, show top 5 available products
-        available_products = Product.objects.filter(user=user, status=True)[:5]
+        available_products = list(Product.objects.filter(user=user, status=True)[:5])
         if available_products:
-            product_list = []
+            lines = ["Available products (sample):"]
             for p in available_products:
-                # Get image URL
-                image_url = ""
-                if p.image and hasattr(p.image, 'url'):
-                    image_url = p.image.url
-                # Truncate description to avoid overly long prompts
-                description = (p.description or "No description available")[:100]
-                product_list.append(f"- {p.name} (PK: {p.pid})\n  Description: {description}\n  Image URL: {image_url if image_url else 'No image available'}")
-
-            if product_list:
-                cust.append(f"Available Products:\n{chr(10).join(product_list)}")
-            else:
-                cust.append("No products available in the store")
+                desc = (p.description or "")[:80]
+                lines.append(f"- {p.name} (PID: {p.pid}) — {p.price} {store.currency if store else 'BDT'}" +
+                              (f" — {desc}" if desc else ""))
+            cust.append("\n".join(lines))
         else:
             cust.append("No products available in the store")
 

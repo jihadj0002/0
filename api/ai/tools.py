@@ -150,113 +150,54 @@ def _image_url(path):
 
 
 def tool_search_products(user, query, limit=5, conversation=None):
-    # If we have a conversation and a current_product is set, prioritize that
+    # If a product is already selected for this conversation, return it directly
     if conversation and conversation.current_product:
+        pid = conversation.current_product.strip()
         try:
-            # Try to get the specific product by pid
-            product = Product.objects.get(user=user, pid=conversation.current_product, status=True)
-            # Get image URLs
-            image_urls = []
-            if product.image and hasattr(product.image, 'url'):
-                image_urls.append(product.image.url)
-            
-            # Get additional images
-            additional_images = ProductImages.objects.filter(product=product)
-            for img in additional_images:
-                if img.images and hasattr(img.images, 'url'):
-                    image_urls.append(img.images.url)
-            
-            # Build product info with image URLs as string
-            product_info = f"Viewing: {product.name} (PK: {product.pid})\n"
-            product_info += f"Description: {product.description or 'No description available'}\n"
-            product_info += f"Price: {product.price}\n"
-            if product.discounted_price:
-                product_info += f"Discounted Price: {product.discounted_price}\n"
-            product_info += f"Stock: {product.stock_quantity} units\n"
-            if image_urls:
-                product_info += f"Image URLs: {', '.join(image_urls)}\n"
-            else:
-                product_info += "Image URLs: No images available\n"
-            
-            # Save the product info with image URLs to current_product
-            conversation.current_product = product_info
-            conversation.save(update_fields=['current_product'])
-            
-            results = [{
-                "pid": product.pid,
-                "name": product.name,
-                "price": str(product.price),
-                "discounted_price": str(product.discounted_price) if product.discounted_price else None,
-                "in_stock": product.stock_quantity > 0,
-                "stock": product.stock_quantity,
-                "description": (product.description or "")[:200],
-                "featured": product.featured_product,
-            }]
-            return {"products": results, "total": len(results), "selected_product": True}
+            product = Product.objects.get(user=user, pid=pid, status=True)
+            return {
+                "products": [_product_row(product)],
+                "total": 1,
+                "selected_product": True,
+            }
         except Product.DoesNotExist:
-            # If the current_product doesn't exist, clear it and continue with normal search
+            Conversation.objects.filter(pk=conversation.pk).update(current_product="")
             conversation.current_product = ""
-            conversation.save(update_fields=['current_product'])
-            pass
-    
-    # If query is empty or very generic, prioritize featured products
-    if not query or query.strip() in ['', 'product', 'products', 'show', 'list']:
-        # First get featured products
-        featured_products = Product.objects.filter(
-            user=user, 
-            status=True, 
-            featured_product=True
-        ).order_by('?')[:limit//2] if limit > 1 else Product.objects.filter(
-            user=user, 
-            status=True, 
-            featured_product=True
-        ).first()
-        
-        # Then get regular products matching the query
-        regular_products = Product.objects.filter(
-            user=user, 
-            status=True
-        ).filter(
-            Q(name__icontains=query) | Q(description__icontains=query)
-        ).exclude(
-            featured_product=True  # Exclude featured to avoid duplicates
-        ).order_by("name")[:limit - len(featured_products) if isinstance(featured_products, list) else limit - 1]
-        
-        # Combine results
-        products_list = []
-        if isinstance(featured_products, list):
-            products_list.extend(featured_products)
-        else:
-            if featured_products:
-                products_list.append(featured_products)
-        products_list.extend(regular_products)
+
+    # Generic / empty query → show featured first, then fill with anything
+    generic = not query or query.strip().lower() in ("", "product", "products", "show", "list", "all")
+    if generic:
+        qs = Product.objects.filter(user=user, status=True).order_by("-featured_product", "name")
     else:
-        # Normal search with featured product boost
-        products = Product.objects.filter(
-            user=user, 
-            status=True
+        qs = Product.objects.filter(
+            user=user, status=True
         ).filter(
             Q(name__icontains=query) | Q(description__icontains=query)
-        ).order_by(
-            "-featured_product",  # Featured products first
-            "name"
-        )[:limit]
-        products_list = list(products)
-    
-    results = []
-    for p in products_list:
-        results.append({
-            "pid": p.pid,
-            "name": p.name,
-            "price": str(p.price),
-            "discounted_price": str(p.discounted_price) if p.discounted_price else None,
-            "in_stock": p.stock_quantity > 0,
-            "stock": p.stock_quantity,
-            "description": (p.description or "")[:200],
-            "featured": p.featured_product,
-        })
-    
+        ).order_by("-featured_product", "name")
+
+    products_list = list(qs[:limit])
+
+    # Auto-select the top result so the next context includes full product details
+    if products_list and conversation:
+        top_pid = products_list[0].pid
+        Conversation.objects.filter(pk=conversation.pk).update(current_product=top_pid)
+        conversation.current_product = top_pid
+
+    results = [_product_row(p) for p in products_list]
     return {"products": results, "total": len(results)}
+
+
+def _product_row(p):
+    return {
+        "pid": p.pid,
+        "name": p.name,
+        "price": str(p.price),
+        "discounted_price": str(p.discounted_price) if p.discounted_price else None,
+        "in_stock": p.stock_quantity > 0,
+        "stock": p.stock_quantity,
+        "description": (p.description or "")[:200],
+        "featured": p.featured_product,
+    }
 
 
 def tool_get_product_details(user, pid):
@@ -300,29 +241,9 @@ def tool_send_images(user, pid, conversation=None):
         if url and url not in images:
             images.append(url)
 
-    # Send images if conversation is provided
-    if conversation and images:
-        from .sender import send_reply
-        # Send images (without text, just images) via existing platform sender
-        send_reply(conversation, "", image_urls=images)
-        
-        # Create confirmation message in conversation history
-        from back.models import Message
-        Message.objects.create(
-            conversation=conversation,
-            sender="bot",
-            text=f"Sent {len(images)} image(s) for {p.name}",
-        )
-        
-        return {
-            "pid": pid, 
-            "name": p.name, 
-            "images": images,
-            "sent": True,
-            "message": f"Sent {len(images)} image(s) for {p.name}"
-        }
-
-    return {"pid": pid, "name": p.name, "images": images, "sent": False}
+    # Return image URLs only — the pipeline collects them via pending_images
+    # and sends everything in one send_reply call at the end.
+    return {"pid": pid, "name": p.name, "images": images}
 
 
 def tool_create_order(user, conversation, customer_name, customer_phone, customer_address, items,
@@ -436,6 +357,8 @@ def tool_transfer_chat(conversation, reason):
     }
 
 
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -445,7 +368,7 @@ def execute_tool(name, arguments, user, conversation):
         args = arguments if isinstance(arguments, dict) else {}
 
         if name == "search_products":
-            return tool_search_products(user, args.get("query", ""), int(args.get("limit", 5)))
+            return tool_search_products(user, args.get("query", ""), int(args.get("limit", 5)), conversation=conversation)
 
         if name == "get_product_details":
             return tool_get_product_details(user, args.get("pid", ""))

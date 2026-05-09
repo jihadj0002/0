@@ -1143,43 +1143,22 @@ def enable_all_bots(request):
 @login_required
 def add_product(request):
     if request.method == "POST":
-        name = request.POST.get("name")
-        description = request.POST.get("description")
-        price = request.POST.get("price")
-        discounted_price = request.POST.get("discounted_price")
-        stock_quantity = request.POST.get("stock_quantity")
-        upsell_enabled = request.POST.get("upsell_enabled") == "on"
-        image = request.FILES.get("image")
-
-
-        # Create and save product for the logged-in user
-        Product.objects.create(
+        from .models import ProductImages
+        product = Product.objects.create(
             user=request.user,
-            name=name,
-            description=description,
-            price=price,
-            discounted_price=discounted_price if discounted_price else None,
-            stock_quantity=stock_quantity,
-            upsell_enabled=upsell_enabled,
-            image=image if image else "product.jpg",
+            name=request.POST.get("name"),
+            description=request.POST.get("description"),
+            price=request.POST.get("price"),
+            discounted_price=request.POST.get("discounted_price") or None,
+            stock_quantity=request.POST.get("stock_quantity"),
+            upsell_enabled=request.POST.get("upsell_enabled") == "true",
+            featured_product=request.POST.get("featured_product") == "true",
+            image=request.FILES.get("image") or "product.jpg",
         )
+        for f in request.FILES.getlist("gallery_images"):
+            ProductImages.objects.create(product=product, images=f)
 
-        if request.headers.get("x-requested-with") == "XMLHttpRequest":
-            return JsonResponse({
-                "success": True,
-                "product": {
-                    "id": Product.id,
-                    "name": Product.name,
-                    "price": str(Product.price),
-                    "image": Product.image.url if Product.image and hasattr(Product.image, "url") else "",
-                
-                },
-            })
-
-        # Otherwise, handle normal form submit
-        return redirect("back:products")
-
-        
+        return JsonResponse({"success": True, "redirect": True})
 
     return render(request, "back/add_product.html", {"user": request.user})
 
@@ -1191,34 +1170,52 @@ def edit_product(request, pk):
     
 
     if request.method == "GET":
-        # print("GET request for product data")
-        # Return product data as JSON for prefill
+        from .models import ProductImages as ProdImgs
+        gallery = [
+            {"id": img.id, "url": img.images.url}
+            for img in ProdImgs.objects.filter(product=product)
+            if img.images and hasattr(img.images, "url")
+        ]
         return JsonResponse({
             "id": product.id,
+            "pid": product.pid,
             "name": product.name,
             "price": float(product.price),
             "discounted_price": float(product.discounted_price) if product.discounted_price else "",
             "stock_quantity": product.stock_quantity,
-            "description": product.description,
+            "description": product.description or "",
             "status": product.status,
-            "image": product.image.url if product.image and hasattr(product.image, "url") else ""
+            "featured_product": product.featured_product,
+            "upsell_enabled": product.upsell_enabled,
+            "image": product.image.url if product.image and hasattr(product.image, "url") else "",
+            "gallery": gallery,
         })
 
     elif request.method == "POST":
-        # Update product with submitted form data
         product.name = request.POST.get("name")
         product.price = request.POST.get("price")
         product.discounted_price = request.POST.get("discounted_price") or None
         product.stock_quantity = request.POST.get("stock_quantity")
         product.description = request.POST.get("description")
         product.status = request.POST.get("status") == "True"
+        product.featured_product = request.POST.get("featured_product") == "true"
+        product.upsell_enabled = request.POST.get("upsell_enabled") == "true"
 
         if "image" in request.FILES:
             product.image = request.FILES["image"]
 
         product.save()
 
-        return JsonResponse({"success": True, "message": "Product updated successfully!"})
+        # Add new gallery images if provided
+        from .models import ProductImages as ProdImgs
+        for f in request.FILES.getlist("gallery_images"):
+            ProdImgs.objects.create(product=product, images=f)
+
+        return JsonResponse({
+            "success": True,
+            "message": "Product updated successfully!",
+            "image": product.image.url if product.image and hasattr(product.image, "url") else "",
+        })
 
     return JsonResponse({"error": "Invalid request"}, status=400)
 
@@ -1233,6 +1230,15 @@ def delete_product(request, pk):
         except Product.DoesNotExist:
             return JsonResponse({"success": False, "message": "Product not found."}, status=404)
     return JsonResponse({"success": False, "message": "Invalid request method."}, status=400)
+
+
+@login_required
+@require_POST
+def delete_gallery_image(request, pk, img_pk):
+    from .models import ProductImages
+    img = get_object_or_404(ProductImages, pk=img_pk, product__pk=pk, product__user=request.user)
+    img.delete()
+    return JsonResponse({"success": True})
 
 
 # Export Products as CSV

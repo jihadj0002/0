@@ -1,960 +1,712 @@
 {% extends 'back/base.html' %}
 {% load static %}
 
-
-{% block title %}Dashboard | Matrix AI{% endblock %}
+{% block title %}Products | Matrix AI{% endblock %}
 
 {% block extra_css %}
 <style>
-/* =====================
-   BASE STYLING
-===================== */
-:root {
-  --primary: #2563eb;
-  --accent: #3b82f6;
-  --bg-light: #f8fafc;
-  --border: #e2e8f0;
-  --muted: #64748b;
+/* ── Page ── */
+.content { padding: 24px; min-height: 100vh; }
+.page-header { margin-bottom: 22px; }
+.page-header h1 { font-size: 26px; font-weight: 700; color: #111827; margin: 0 0 4px; }
+.page-header .sub { color: #64748b; font-size: 14px; margin: 0; }
+
+/* ── Panel ── */
+.panel { background: #fff; border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 22px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+.panel-header h3 { font-size: 18px; font-weight: 700; color: #111827; margin: 0; }
+.panel-actions { display: flex; gap: 8px; }
+
+/* ── Table ── */
+.products-table { width: 100%; border-collapse: collapse; }
+.products-table th, .products-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; vertical-align: middle; }
+.products-table th { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; background: #f8fafc; }
+.products-table tr:last-child td { border-bottom: none; }
+.products-table tbody tr:hover { background: #f8fafc; }
+.prod-thumb { width: 44px; height: 44px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; display: block; }
+
+/* ── Badges ── */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 20px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.badge-active   { background: #dcfce7; color: #16a34a; }
+.badge-inactive { background: #f1f5f9; color: #64748b; }
+.badge-featured { background: #fef9c3; color: #92400e; }
+
+/* ── Modal overlay — z-index must beat sidebar (1001) ── */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1200; justify-content: center; align-items: flex-start; padding: 28px 12px 40px; overflow-y: auto; }
+.modal-overlay.open { display: flex; }
+
+.modal-box { background: #fff; border-radius: 18px; width: 100%; max-width: 860px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp .22s ease; flex-shrink: 0; }
+@keyframes slideUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.modal-header h2 { font-size: 20px; font-weight: 700; color: #111827; margin: 0; }
+.modal-close { font-size: 24px; color: #9ca3af; cursor: pointer; line-height: 1; border: none; background: none; padding: 0; }
+.modal-close:hover { color: #374151; }
+
+/* ── Form grid ── */
+.fg { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media(max-width: 600px) { .fg { grid-template-columns: 1fr; } }
+.fg .full { grid-column: 1 / -1; }
+
+.fld { display: flex; flex-direction: column; gap: 5px; }
+.fld label { font-size: 12.5px; font-weight: 600; color: #374151; }
+.fld input, .fld textarea, .fld select {
+  padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 9px;
+  font-size: 14px; background: #f9fafb; color: #111827;
+  transition: border-color .15s, background .15s;
+}
+.fld input:focus, .fld textarea:focus, .fld select:focus {
+  outline: none; border-color: #6366f1; background: #fff;
+}
+.fld textarea { resize: vertical; min-height: 80px; }
+.fld input[readonly] { color: #64748b; cursor: default; }
+
+/* ── Toggle switches ── */
+.toggles-row { display: flex; gap: 28px; flex-wrap: wrap; align-items: center; padding: 4px 0; }
+.sw { display: flex; align-items: center; gap: 9px; cursor: pointer; user-select: none; }
+.sw input { display: none; }
+.sw-track {
+  width: 40px; height: 22px; background: #d1d5db; border-radius: 99px;
+  position: relative; transition: background .2s;
+}
+.sw-track::after {
+  content: ''; position: absolute; top: 3px; left: 3px;
+  width: 16px; height: 16px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2); transition: left .2s;
+}
+.sw input:checked ~ .sw-track { background: #6366f1; }
+.sw input:checked ~ .sw-track::after { left: 21px; }
+.sw-label { font-size: 13.5px; font-weight: 500; color: #374151; }
+
+/* ── Image zones ── */
+.img-zone {
+  border: 2px dashed #cbd5e1; border-radius: 12px; padding: 18px 14px;
+  text-align: center; background: #f8fafc; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.img-zone:hover { border-color: #6366f1; background: #eef2ff; }
+.img-zone input[type=file] { display: none; }
+.img-zone .iz-hint { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+.img-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: flex-start; }
+.img-grid img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; }
+.img-item { position: relative; }
+.img-item .img-del {
+  position: absolute; top: -6px; right: -6px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: #ef4444; color: #fff; font-size: 13px; font-weight: 700;
+  border: none; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 4px rgba(0,0,0,.25);
 }
 
-.content {
-  padding: 20px;
-  background: var(--bg-light);
-  min-height: 100vh;
-  font-family: 'Inter', sans-serif;
-}
-
-.page-header {
-  margin-bottom: 25px;
-}
-
-.page-header h1 {
-  font-size: 28px;
-  font-weight: 700;
-  color: #111827;
-  margin-bottom: 5px;
-}
-
-.page-header .sub {
-  color: var(--muted);
-  font-size: 15px;
-}
-
-/* =====================
-   PANEL & BUTTON
-===================== */
-.panel {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-  padding: 20px;
-}
-
-.panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.panel-header h3 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-.btn-primary:hover {
-  background: var(--accent);
-}
-
-/* =====================
-   TABLE STYLING
-===================== */
-.products-table {
-  width: 100%;
-  border-collapse: collapse;
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.products-table th,
-.products-table td {
-  padding: 12px 14px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  font-size: 15px;
-  color: #1f2937;
-}
-
-.products-table th {
-  background-color: #f1f5f9;
-  font-weight: 700;
-  color: #334155;
-}
-
-.products-table tr:hover {
-  background-color: #f9fafb;
-}
-
-/* =====================
-   STATUS SELECT
-===================== */
-.status-select {
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: white;
-  font-weight: 600;
-  cursor: pointer;
-}
-.status-select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-/* =====================
-   RESPONSIVE DESIGN
-===================== */
-@media (max-width: 768px) {
-  .panel-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-
-  .products-table,
-  .products-table thead,
-  .products-table tbody,
-  .products-table th,
-  .products-table td,
-  .products-table tr {
-    display: block;
-  }
-
-  .products-table thead {
-    display: none;
-  }
-
-  .products-table tr {
-    background: #fff;
-    margin-bottom: 15px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 12px 14px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.03);
-  }
-
-  .products-table td {
-    border: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 15px;
-    padding: 8px 0;
-  }
-
-  .products-table td::before {
-    content: attr(data-label);
-    font-weight: 600;
-    color: var(--muted);
-  }
-
-  .products-table td:last-child {
-    border-bottom: none;
-  }
-
-  .products-table td select {
-    width: 100%;
-    margin-top: 5px;
-  }
-  
-  /* Add labels for mobile using data-labels dynamically */
-  .products-table td:nth-child(1)::before { content: "Product"; }
-  .products-table td:nth-child(2)::before { content: "Stock"; }
-  .products-table td:nth-child(3)::before { content: "Price"; }
-  .products-table td:nth-child(4)::before { content: "Last Updated"; }
-  {% comment %} .products-table td:nth-child(5)::before { content: "Edit"; } {% endcomment %}
-  {% comment %} .products-table td:nth-child(6)::before { content: "Created At"; } {% endcomment %}
-}
-
-
-/* =====================
-   Popup STYLING
-===================== */
-body {
-  font-family: 'Inter', sans-serif;
-  margin: 0;
-  padding: 20px;
-  background: #f9fafb;
-}
-
-h1 {
-  text-align: center;
-  color: #111827;
-  margin-bottom: 20px;
-}
-
-button {
-  display: block;
-  margin: 10px auto 20px;
-  padding: 10px 20px;
-  background-color: #2563eb;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: background 0.3s ease;
-}
-button:hover {
-  background-color: #1d4ed8;
-}
-
-/* ===== Modal ===== */
-.modal {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  width: 90%;
-  max-width: 850px;
-  max-height: 90vh;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 20px;
-  animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
-}
-
-/* ===== Header ===== */
-.modal-header {
-  grid-column: span 2;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #e5e7eb;
-  margin-bottom: 10px;
-}
-
-.close {
-  font-size: 24px;
-  cursor: pointer;
-  color: #555;
-}
-
-/* ===== Form ===== */
-.form-section label {
-  display: block;
-  font-weight: 600;
-  margin-top: 10px;
-  color: #1f2937;
-}
-
-.form-section input,
-.form-section textarea,
-.form-section select {
-  width: 100%;
-  padding: 8px 10px;
-  margin-top: 5px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-.form-section textarea {
-  resize: vertical;
-}
-
-.form-row {
-  display: flex;
-  gap: 12px;
-}
-.form-row > div {
-  flex: 1;
-}
-
-.publish-btn {
-  background-color: #16a34a;
-  color: white;
-  border: none;
-  padding: 10px 15px;
-  border-radius: 6px;
-  cursor: pointer;
-  margin-top: 15px;
-  font-weight: 600;
-}
-.publish-btn:hover {
-  background-color: #15803d;
-}
-
-/* ===== Image Upload ===== */
-.image-upload {
-  border: 2px dashed #cbd5e1;
-  border-radius: 10px;
-  padding: 20px;
-  text-align: center;
-  background-color: #f8fafc;
-  margin-top: 15px;
-}
-.image-upload input {
-  display: none;
-}
-.image-upload label {
-  cursor: pointer;
-  color: #2563eb;
-  font-weight: 600;
-}
-.preview {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-.preview img {
-  width: 90px;
-  height: 90px;
-  object-fit: cover;
-  border-radius: 6px;
-  border: 1px solid #e5e7eb;
-}
-
-/* ===== Responsive ===== */
-@media (max-width: 768px) {
-  .modal-content {
-    grid-template-columns: 1fr;
-    width: 95%;
-  }
-  .modal-header {
-    grid-column: span 1;
-  }
-  .form-row {
-    flex-direction: column;
-  }
-}
-    /* POPUp END */
-
-</style>
-
-
-
-<style>
-/* =====================
-   Edit Popup STYLING
-===================== */
-/* static/back/css/edit_popup.css */
-
-.edit-popup-wrapper {
-  font-family: "Poppins", sans-serif;
-}
-
-.edit-modal {
-  display: none;
-  position: fixed;
-  z-index: 999;
-  top: 0;
-  left: 0;
-  height: 100vh;
-  width: 100%;
-  background-color: rgba(0, 0, 0, 0.4);
-  justify-content: center;
-  align-items: center;
-}
-
-.edit-modal-body {
-  background: #fff;
-  border-radius: 18px;
-  width: 90%;
-  max-width: 640px;
-  padding: 2rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  animation: popupFade 0.3s ease-in-out;
-}
-
-@keyframes popupFade {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.edit-modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.2rem;
-}
-
-.edit-modal-header h2 {
-  color: #333;
-  font-size: 1.4rem;
-  margin: 0;
-}
-
-.edit-close-btn {
-  cursor: pointer;
-  font-size: 1.8rem;
-  color: #555;
-}
-
-.edit-form-row {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1.2rem;
-  flex-wrap: wrap;
-}
-
-.edit-form-row div {
-  flex: 1;
-  min-width: 48%;
-}
-
-.edit-form-section label {
-  font-weight: 500;
-  display: block;
-  margin-bottom: 0.4rem;
-  color: #555;
-}
-
-.edit-form-section input,
-.edit-form-section textarea,
-.edit-form-section select {
-  width: 100%;
-  padding: 0.7rem;
-  border-radius: 8px;
-  border: 1px solid #ccc;
-  font-size: 0.95rem;
-  background-color: #f9faff;
-}
-
-.edit-form-section input:focus,
-.edit-form-section textarea:focus,
-.edit-form-section select:focus {
-  border-color: #4f46e5;
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
-}
-
-.edit-upload-container {
-  border: 2px dashed #cbd5e1;
-  padding: 1rem;
-  border-radius: 12px;
-  text-align: center;
-  background-color: #f8fafc;
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-
-.edit-upload-container label {
-  color: #6366f1;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.edit-upload-container input {
-  display: none;
-}
-
-.edit-image-preview img {
-  width: 100px;
-  height: auto;
-  border-radius: 8px;
-  margin: 5px;
-  transition: transform 0.2s ease;
-}
-
-.edit-image-preview img:hover {
-  transform: scale(1.05);
-}
-
-.edit-submit-btn {
+/* ── Buttons ── */
+.btn-save {
   background: linear-gradient(90deg, #6366f1, #4f46e5);
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  padding: 0.9rem 1.2rem;
-  width: 100%;
-  font-size: 1rem;
-  font-weight: 600;
-  transition: all 0.3s ease;
+  color: #fff; border: none; border-radius: 10px;
+  padding: 12px 20px; width: 100%; font-size: 15px; font-weight: 600;
+  cursor: pointer; margin-top: 18px; transition: all .2s;
 }
-
-.edit-submit-btn:hover {
-  background: linear-gradient(90deg, #4f46e5, #4338ca);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+.btn-save:hover { background: linear-gradient(90deg, #4f46e5, #4338ca); transform: translateY(-1px); }
+.btn-danger {
+  background: linear-gradient(90deg, #f87171, #ef4444);
+  color: #fff; border: none; border-radius: 10px;
+  padding: 11px 20px; width: 100%; font-size: 14px; font-weight: 600;
+  cursor: pointer; margin-top: 8px; transition: all .2s;
 }
+.btn-danger:hover { background: linear-gradient(90deg, #ef4444, #dc2626); }
 
-
-.delete-prod-btn {
-  background: linear-gradient(90deg, #f06593ff, #e5467bff);
-  color: #fff;
-  border: none;
-  border-radius: 12px;
-  padding: 0.9rem 1.2rem;
-  width: 100%;
-  font-size: 1rem;
-  font-weight: 600;
-  transition: all 0.3s ease;
+/* ── PID strip ── */
+.pid-strip {
+  background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 9px;
+  padding: 8px 14px; display: flex; align-items: center; justify-content: space-between;
+  grid-column: 1 / -1;
 }
+.pid-strip .pid-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: .05em; }
+.pid-strip .pid-val { font-family: monospace; font-size: 14px; font-weight: 700; color: #4f46e5; }
+.pid-copy { background: none; border: none; cursor: pointer; color: #94a3b8; font-size: 14px; padding: 2px 4px; border-radius: 4px; }
+.pid-copy:hover { color: #4f46e5; background: #eef2ff; }
 
-.delete-prod-btn:hover {
-  background: linear-gradient(90deg, #e5467bff, #9e3055ff);
-  transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(79, 70, 229, 0.3);
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  background: #111827; color: #fff; padding: 12px 20px; border-radius: 10px;
+  font-size: 14px; font-weight: 500; opacity: 0;
+  transform: translateY(12px); transition: opacity .25s, transform .25s;
+  pointer-events: none;
 }
-
-@media (max-width: 576px) {
-  .edit-form-row {
-    flex-direction: column;
-  }
-
-  .edit-modal-body {
-    padding: 1.5rem;
-  }
-}
-/* =====================
-   Edit Popup STYLING
-===================== */
-
-
+#toast.show { opacity: 1; transform: translateY(0); }
 </style>
 {% endblock %}
 
-
 {% block content %}
+<div id="toast"></div>
 
+<div class="content">
+  <div class="page-header">
+    <h1>Products</h1>
+    <p class="sub">Manage your product catalogue — images and details appear in AI conversations</p>
+  </div>
 
-      <!-- Content -->
-      <div class="content">
-        <div class="page-header">
-          <h1>Product List</h1>
-          <p class="sub">Sync products from Shopify / WooCommerce or add manually</p>
-        </div>
-
-        <!-- Table -->
-        <div class="panel" style="margin-top:20px;">
-          <div class="panel-header">
-            <h3>All Products</h3>
-            <div style="display:flex; gap:10px;">
-              {% comment %} <button class="btn-primary" >Sync Shopify</button> {% endcomment %}
-              <button id="openModal">Add New Product</button>
-              <button class="btn-primary" onclick="window.location.href='{% url 'back:import_products' %}';">Export/Import</button>
-            </div>
-          </div>
-
-
-
-          <!-- PopUp start -->
-<div class="product-page">
-  <!-- Modal -->
-  <div id="productModal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Add Product</h2>
-        <span class="close">&times;</span>
-      </div>
-
-      <div class="form-section">
-        <form id="productForm" enctype="multipart/form-data" method="POST" action="{% url 'back:add_product' %}">
-          {% csrf_token %}
-          <div class="form-row">
-            <div>
-              <label for="name">Product Name</label>
-              <input type="text" id="name" name="name" required>
-            </div>
-            <div>
-              <label for="price">Price (bdt)</label>
-              <input type="number" step="0.01" id="price" name="price" required>
-            </div>
-          </div>
-
-          <div class="form-row">
-            <div>
-              <label for="discounted_price">Discounted Price (bdt)</label>
-              <input type="number" step="0.01" id="discounted_price" name="discounted_price">
-            </div>
-            <div>
-              <label for="stock_quantity">Stock Quantity</label>
-              <input type="number" id="stock_quantity" name="stock_quantity" required>
-            </div>
-          </div>
-
-          <label for="description">Description</label>
-          <textarea id="description" name="description" rows="3" placeholder="Enter product description..."></textarea>
-
-          <label>Status</label>
-          <select id="status" name="status">
-            <option value="True" selected>Active</option>
-            <option value="False">Inactive</option>
-          </select>
-
-          <div class="image-upload">
-            <input type="file" id="imageUpload" name="image" accept="image/*" multiple>
-            <label for="imageUpload">📁 Click to upload product images</label>
-            <div class="preview" id="preview"></div>
-          </div>
-
-          <button type="submit" class="publish-btn">Publish Product</button>
-        </form>
+  <div class="panel">
+    <div class="panel-header">
+      <h3>All Products <span style="color:#94a3b8;font-size:14px;font-weight:400">({{ all_products|length }})</span></h3>
+      <div class="panel-actions">
+        <button class="btn-primary" id="btnAddProduct">+ Add Product</button>
+        <button class="btn-primary" onclick="window.location.href='{% url 'back:import_products' %}'">Export / Import</button>
       </div>
     </div>
+
+    <table class="products-table" id="productsTable">
+      <thead>
+        <tr>
+          <th style="width:54px"></th>
+          <th>Product</th>
+          <th>PID</th>
+          <th style="width:90px">Status</th>
+          <th style="width:130px">Price</th>
+          <th style="width:70px">Stock</th>
+          <th style="width:70px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in all_products %}
+        <tr data-id="{{ p.id }}" data-pid="{{ p.pid }}">
+          <td><img class="prod-thumb" src="{{ p.image.url }}" alt="{{ p.name }}"></td>
+          <td>
+            <span style="font-weight:600;color:#111827">{{ p.name }}</span>
+            {% if p.featured_product %}
+              <span class="badge badge-featured" style="margin-left:6px">★ Featured</span>
+            {% endif %}
+            {% if p.upsell_enabled %}
+              <span class="badge" style="background:#ede9fe;color:#6d28d9;margin-left:4px">Upsell</span>
+            {% endif %}
+          </td>
+          <td><code style="font-size:12px;color:#6366f1;background:#eef2ff;padding:2px 6px;border-radius:5px">{{ p.pid }}</code></td>
+          <td>
+            {% if p.status %}
+              <span class="badge badge-active">● Active</span>
+            {% else %}
+              <span class="badge badge-inactive">○ Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <span style="font-weight:600">{{ p.price }}</span>
+            {% if p.discounted_price %}
+              <span style="color:#16a34a;font-size:12px;margin-left:4px">↓{{ p.discounted_price }}</span>
+            {% endif %}
+          </td>
+          <td>{{ p.stock_quantity }}</td>
+          <td>
+            <button class="btn-primary btn-edit" data-id="{{ p.id }}"
+              style="padding:5px 11px;font-size:12px;border-radius:7px">Edit</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7" style="text-align:center;color:#94a3b8;padding:40px 0;font-size:15px">
+            No products yet — click <strong>+ Add Product</strong> above to get started.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
   </div>
 </div>
 
-  <!-- PopUp end -->
 
+<!-- ══════════════════════════════════════════
+     ADD PRODUCT MODAL
+══════════════════════════════════════════ -->
+<div id="addModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Add New Product</h2>
+      <button class="modal-close" data-close="addModal">&times;</button>
+    </div>
 
- <!-- Edit Product Html popup -->
-<div class="edit-popup-wrapper">
-  <div id="editPopupModal" class="edit-modal">
-    <div class="edit-modal-body">
-      <div class="edit-modal-header">
-        <h2>Edit Product</h2>
-        <span class="edit-close-btn">&times;</span>
-      </div>
+    <form id="addForm" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="fg">
 
-      <div class="edit-form-section">
-        <form id="editProductForm" enctype="multipart/form-data" method="POST" action="{% url 'back:add_product' %}">
-          {% csrf_token %}
-          <div class="edit-form-row">
-            <div>
-              <label for="edit_name">Product Name</label>
-              <input type="text" id="edit_name" name="name" required>
-            </div>
-            <div>
-              <label for="edit_price">Price (BDT)</label>
-              <input type="number" step="0.01" id="edit_price" name="price" required>
-            </div>
-          </div>
+        <div class="fld">
+          <label>Product Name *</label>
+          <input type="text" name="name" id="a_name" required placeholder="e.g. Cotton T-Shirt">
+        </div>
 
-          <div class="edit-form-row">
-            <div>
-              <label for="edit_discount_price">Discounted Price (BDT)</label>
-              <input type="number" step="0.01" id="edit_discount_price" name="discounted_price">
-            </div>
-            <div>
-              <label for="edit_stock">Stock Quantity</label>
-              <input type="number" id="edit_stock" name="stock_quantity" required>
-            </div>
-          </div>
-
-          <label for="edit_description">Description</label>
-          <textarea id="edit_description" name="description" rows="3" placeholder="Enter product description..."></textarea>
-
+        <div class="fld">
           <label>Status</label>
-          <select id="edit_status" name="status">
-            <option value="True" selected>Active</option>
+          <select name="status" id="a_status">
+            <option value="True">Active</option>
             <option value="False">Inactive</option>
           </select>
+        </div>
 
-          <div class="edit-upload-container">
-            <input type="file" id="edit_image_upload" name="image" accept="image/*" multiple>
-            <label for="edit_image_upload">📁 Upload product images</label>
-            <div class="edit-image-preview" id="edit_image_preview"></div>
+        <div class="fld">
+          <label>Price (BDT) *</label>
+          <input type="number" step="0.01" min="0" name="price" id="a_price" required placeholder="0.00">
+        </div>
+
+        <div class="fld">
+          <label>Discounted Price (BDT)</label>
+          <input type="number" step="0.01" min="0" name="discounted_price" id="a_disc" placeholder="Leave blank if no discount">
+        </div>
+
+        <div class="fld">
+          <label>Stock Quantity *</label>
+          <input type="number" min="0" name="stock_quantity" id="a_stock" required placeholder="0">
+        </div>
+
+        <div class="fld" style="justify-content:flex-end;padding-bottom:4px">
+          <label>Options</label>
+          <div class="toggles-row">
+            <label class="sw">
+              <input type="checkbox" id="a_featured">
+              <span class="sw-track"></span>
+              <span class="sw-label">Featured</span>
+            </label>
+            <label class="sw">
+              <input type="checkbox" id="a_upsell">
+              <span class="sw-track"></span>
+              <span class="sw-label">Enable Upsell</span>
+            </label>
           </div>
+        </div>
 
-          <button type="submit" class="edit-submit-btn">Update Product</button>
-          <button type="button" class="delete-prod-btn">Delete Product</button>
-          
-          
-        </form>
+        <div class="fld full">
+          <label>Description</label>
+          <textarea name="description" id="a_desc" rows="3" placeholder="Describe the product — this text is read by the AI when answering customer questions"></textarea>
+        </div>
+
+        <!-- Main image -->
+        <div class="fld full">
+          <label>Main Product Image</label>
+          <div class="img-zone" id="a_main_zone" onclick="document.getElementById('a_main_file').click()">
+            <input type="file" id="a_main_file" name="image" accept="image/*">
+            <div style="font-size:15px">📷 Click to upload main image</div>
+            <div class="iz-hint">JPG · PNG · WEBP — this is the primary thumbnail</div>
+            <div class="img-grid" id="a_main_preview"></div>
+          </div>
+        </div>
+
+        <!-- Gallery -->
+        <div class="fld full">
+          <label>Gallery Images <span style="font-weight:400;color:#64748b">(select multiple)</span></label>
+          <div class="img-zone" id="a_gal_zone" onclick="document.getElementById('a_gal_file').click()">
+            <input type="file" id="a_gal_file" name="gallery_images" accept="image/*" multiple>
+            <div style="font-size:15px">🖼️ Click to add gallery images</div>
+            <div class="iz-hint">Hold Ctrl / Cmd to select multiple · sent by AI when customer asks for images</div>
+            <div class="img-grid" id="a_gal_preview"></div>
+          </div>
+        </div>
+
       </div>
-    </div>
+      <button type="submit" class="btn-save" id="a_submit">Publish Product</button>
+    </form>
   </div>
 </div>
 
-<!-- Edit Product Html popup -->
 
+<!-- ══════════════════════════════════════════
+     EDIT PRODUCT MODAL
+══════════════════════════════════════════ -->
+<div id="editModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2>Edit Product</h2>
+      <button class="modal-close" data-close="editModal">&times;</button>
+    </div>
 
+    <form id="editForm" enctype="multipart/form-data">
+      {% csrf_token %}
+      <div class="fg">
 
-  
-
-          <table class="products-table" style="margin-top:12px;">
-            <thead>
-              <tr>
-                <th>Product</th>
-                <th>Stock</th>
-                <th>Price</th>
-                <th>Last Updated</th>
-                <th>Edit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for p in all_products %}
-              <tr>
-                <td>{{p.name}}</td>
-                <td>{{p.stock_quantity}}</td>
-                <td>{{p.price}}</td>
-                <td>{{p.last_synced}}</td>
-                <td>
-                  <button class="edit-product-btn" data-id="{{ p.id }}">Edit</button>
-                </td>
-                
-                
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+        <!-- PID strip (read-only) -->
+        <div class="pid-strip">
+          <div>
+            <div class="pid-label">Product ID</div>
+            <div class="pid-val" id="e_pid_val">—</div>
+          </div>
+          <button type="button" class="pid-copy" id="e_pid_copy" title="Copy PID">⧉</button>
         </div>
+
+        <div class="fld">
+          <label>Product Name *</label>
+          <input type="text" id="e_name" name="name" required>
+        </div>
+
+        <div class="fld">
+          <label>Status</label>
+          <select id="e_status" name="status">
+            <option value="True">Active</option>
+            <option value="False">Inactive</option>
+          </select>
+        </div>
+
+        <div class="fld">
+          <label>Price (BDT) *</label>
+          <input type="number" step="0.01" min="0" id="e_price" name="price" required>
+        </div>
+
+        <div class="fld">
+          <label>Discounted Price (BDT)</label>
+          <input type="number" step="0.01" min="0" id="e_disc" name="discounted_price">
+        </div>
+
+        <div class="fld">
+          <label>Stock Quantity *</label>
+          <input type="number" min="0" id="e_stock" name="stock_quantity" required>
+        </div>
+
+        <div class="fld" style="justify-content:flex-end;padding-bottom:4px">
+          <label>Options</label>
+          <div class="toggles-row">
+            <label class="sw">
+              <input type="checkbox" id="e_featured">
+              <span class="sw-track"></span>
+              <span class="sw-label">Featured</span>
+            </label>
+            <label class="sw">
+              <input type="checkbox" id="e_upsell">
+              <span class="sw-track"></span>
+              <span class="sw-label">Enable Upsell</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="fld full">
+          <label>Description</label>
+          <textarea id="e_desc" name="description" rows="3"></textarea>
+        </div>
+
+        <!-- Main image -->
+        <div class="fld full">
+          <label>Main Image <span style="font-weight:400;color:#64748b">(upload to replace)</span></label>
+          <div class="img-zone" onclick="document.getElementById('e_main_file').click()">
+            <input type="file" id="e_main_file" name="image" accept="image/*">
+            <div style="font-size:14px;color:#64748b">📷 Current image shown below · click to replace</div>
+            <div class="img-grid" id="e_main_preview"></div>
+          </div>
+        </div>
+
+        <!-- Existing gallery -->
+        <div class="fld full" id="e_gal_section" style="display:none">
+          <label>Gallery Images</label>
+          <div class="img-grid" id="e_gal_existing"></div>
+        </div>
+
+        <!-- Add more gallery -->
+        <div class="fld full">
+          <label>Add More Gallery Images</label>
+          <div class="img-zone" onclick="document.getElementById('e_gal_file').click()">
+            <input type="file" id="e_gal_file" name="gallery_images" accept="image/*" multiple>
+            <div style="font-size:14px;color:#64748b">🖼️ Click to add more gallery images</div>
+            <div class="img-grid" id="e_gal_preview"></div>
+          </div>
+        </div>
+
       </div>
 
-
-      <!-- PopUp JS-->
-
-      <script>
-    document.addEventListener("DOMContentLoaded", function () {
-  const modal = document.getElementById("productModal");
-  const openModalBtn = document.getElementById("openModal");
-  const closeModalBtn = document.querySelector(".close");
-  const imageInput = document.getElementById("imageUpload");
-  const preview = document.getElementById("preview");
+      <button type="submit" class="btn-save" id="e_submit">Save Changes</button>
+      <button type="button" class="btn-danger" id="btnDelete">Delete Product</button>
+    </form>
+  </div>
+</div>
 
 
-
-  // Open modal
-  openModalBtn.addEventListener("click", () => {
-    modal.style.display = "flex";
-    document.body.style.overflow = "hidden";
-  });
-
-  // Close modal
-  closeModalBtn.addEventListener("click", () => {
-    modal.style.display = "none";
-    document.body.style.overflow = "auto";
-  });
-
-  // Close on outside click
-  window.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      modal.style.display = "none";
-      document.body.style.overflow = "auto";
-    }
-  });
-
-  // Image preview
-  imageInput.addEventListener("change", function () {
-    preview.innerHTML = "";
-    const files = Array.from(this.files);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = document.createElement("img");
-        img.src = e.target.result;
-        preview.appendChild(img);
-      };
-      reader.readAsDataURL(file);
-    });
-  });
-});
-  // Optional: Handle form submit via AJAX End
-
-
-  </script>
-
-
-      <!-- Product Update JS-->
 <script>
+(function () {
+  "use strict";
 
-// static/back/js/edit_popup.js
+  /* ── CSRF ── */
+  const CSRF = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
 
-document.addEventListener("DOMContentLoaded", function () {
-  const modal = document.getElementById("editPopupModal");
-  const closeModal = document.querySelector(".edit-close-btn");
-  const form = document.getElementById("editProductForm");
-  const imageInput = document.getElementById("edit_image_upload");
-  const preview = document.getElementById("edit_image_preview");
-  const modalTitle = document.querySelector(".edit-modal-header h2");
-  const submitBtn = document.querySelector(".edit-submit-btn");
-
-  let currentEditId = null;
-
-  // --- DELETE PRODUCT LOGIC ---
-const deleteBtn = document.querySelector(".delete-prod-btn");
-
-
-deleteBtn.addEventListener("click", function () {
-  if (!currentEditId) {
-    alert("⚠️ Please select a product to delete.");
-    return;
+  /* ── Toast ── */
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+  function toast(msg, err) {
+    toastEl.textContent = msg;
+    toastEl.style.background = err ? "#dc2626" : "#111827";
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3000);
   }
 
-  const confirmDelete = confirm("Are you sure you want to delete this product?");
-  if (!confirmDelete) return;
-
-  fetch(`dbproducts/${currentEditId}/delete/`, {
-    method: "DELETE",
-    headers: {
-      "X-CSRFToken": csrftoken,
-    },
-  })
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.success) {
-        alert("🗑️ " + data.message);
-        modal.style.display = "none";
-        document.body.style.overflow = "auto";
-        form.reset();
-        preview.innerHTML = "";
-        currentEditId = null;
-      } else {
-        alert("❌ " + data.message);
-      }
-    })
-    .catch((err) => {
-      console.error(err);
-      alert("⚠️ Something went wrong while deleting.");
-    });
-});
-  // --- DELETE PRODUCT LOGIC END ---
-
-  // Helper: Get CSRF token
-  function getCookie(name) {
-    let cookieValue = null;
-    if (document.cookie && document.cookie !== "") {
-      const cookies = document.cookie.split(";");
-      for (let cookie of cookies) {
-        cookie = cookie.trim();
-        if (cookie.startsWith(name + "=")) {
-          cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-          break;
-        }
-      }
-    }
-    return cookieValue;
+  /* ── Modal open/close ── */
+  function openModal(id) {
+    document.getElementById(id).classList.add("open");
+    document.body.style.overflow = "hidden";
   }
-  const csrftoken = getCookie("csrftoken");
+  function closeModal(id) {
+    document.getElementById(id).classList.remove("open");
+    document.body.style.overflow = "";
+  }
+  document.querySelectorAll("[data-close]").forEach(btn =>
+    btn.addEventListener("click", () => closeModal(btn.dataset.close))
+  );
+  document.querySelectorAll(".modal-overlay").forEach(el =>
+    el.addEventListener("click", e => { if (e.target === el) closeModal(el.id); })
+  );
 
-  // Open edit modal
-  document.querySelectorAll(".edit-product-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      currentEditId = btn.dataset.id;
-      modal.style.display = "flex";
-      document.body.style.overflow = "hidden";
-
-      modalTitle.textContent = "Edit Product";
-      submitBtn.textContent = "Update Product";
-
-      // Fetch data to prefill
-      fetch("{% url 'back:edit_product' 0 %}".replace("0", currentEditId))
-        .then((res) => res.json())
-        .then((data) => {
-          document.getElementById("edit_name").value = data.name;
-          document.getElementById("edit_price").value = data.price;
-          document.getElementById("edit_discount_price").value = data.discounted_price;
-          document.getElementById("edit_stock").value = data.stock_quantity;
-          document.getElementById("edit_description").value = data.description;
-          document.getElementById("edit_status").value = data.status ? "True" : "False";
-
-          preview.innerHTML = "";
-          if (data.image) {
-            const img = document.createElement("img");
-            img.src = data.image;
-            preview.appendChild(img);
-          }
-        });
+  /* ── Image preview helper ── */
+  function bindPreview(inputId, previewId) {
+    document.getElementById(inputId).addEventListener("change", function () {
+      const el = document.getElementById(previewId);
+      el.innerHTML = "";
+      Array.from(this.files).forEach(f => {
+        const reader = new FileReader();
+        reader.onload = ev => {
+          const img = document.createElement("img");
+          img.src = ev.target.result;
+          el.appendChild(img);
+        };
+        reader.readAsDataURL(f);
+      });
     });
+  }
+  bindPreview("a_main_file", "a_main_preview");
+  bindPreview("a_gal_file",  "a_gal_preview");
+  bindPreview("e_main_file", "e_main_preview");
+  bindPreview("e_gal_file",  "e_gal_preview");
+
+  /* ══════════════════════════════
+     ADD PRODUCT
+  ══════════════════════════════ */
+  document.getElementById("btnAddProduct").addEventListener("click", () => {
+    document.getElementById("addForm").reset();
+    document.getElementById("a_main_preview").innerHTML = "";
+    document.getElementById("a_gal_preview").innerHTML = "";
+    document.getElementById("a_featured").checked = false;
+    document.getElementById("a_upsell").checked = false;
+    openModal("addModal");
   });
 
-  // Close modal
-  closeModal.addEventListener("click", () => {
-    modal.style.display = "none";
-    document.body.style.overflow = "auto";
-  });
-
-  window.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      modal.style.display = "none";
-      document.body.style.overflow = "auto";
-    }
-  });
-
-  // Image preview
-  imageInput.addEventListener("change", function () {
-    preview.innerHTML = "";
-    const files = Array.from(this.files);
-    files.forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = document.createElement("img");
-        img.src = e.target.result;
-        preview.appendChild(img);
-      };
-      reader.readAsDataURL(file);
-    });
-  });
-
-  // Form submit
-  form.addEventListener("submit", function (e) {
+  document.getElementById("addForm").addEventListener("submit", function (e) {
     e.preventDefault();
-    const formData = new FormData(form);
+    const btn = document.getElementById("a_submit");
+    btn.disabled = true;
+    btn.textContent = "Publishing…";
 
-    const url = currentEditId
-      ? `dbproducts/${currentEditId}/edit/`
-      : form.action;
+    const fd = new FormData(this);
+    fd.set("featured_product", document.getElementById("a_featured").checked ? "true" : "false");
+    fd.set("upsell_enabled",   document.getElementById("a_upsell").checked   ? "true" : "false");
 
-    fetch(url, {
+    fetch("{% url 'back:add_product' %}", {
       method: "POST",
-      headers: { "X-CSRFToken": csrftoken },
-      body: formData,
+      headers: { "X-CSRFToken": CSRF },
+      body: fd,
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success) {
-          alert("✅ Product updated successfully!");
-          modal.style.display = "none";
-          document.body.style.overflow = "auto";
-          form.reset();
-          preview.innerHTML = "";
-          currentEditId = null;
-          modalTitle.textContent = "Edit Product";
-          submitBtn.textContent = "Update Product";
+    .then(r => r.json())
+    .then(data => {
+      if (data.success) {
+        closeModal("addModal");
+        toast("Product published!");
+        location.reload();          // reload to show the new row
+      } else {
+        toast("Failed to publish product", true);
+      }
+    })
+    .catch(() => toast("Something went wrong", true))
+    .finally(() => { btn.disabled = false; btn.textContent = "Publish Product"; });
+  });
+
+  /* ══════════════════════════════
+     EDIT PRODUCT
+  ══════════════════════════════ */
+  let editId = null;
+
+  document.querySelectorAll(".btn-edit").forEach(btn =>
+    btn.addEventListener("click", () => openEditModal(btn.dataset.id))
+  );
+
+  function openEditModal(id) {
+    editId = id;
+    // Clear state
+    document.getElementById("e_main_preview").innerHTML = "";
+    document.getElementById("e_gal_preview").innerHTML = "";
+    document.getElementById("e_gal_existing").innerHTML = "";
+    document.getElementById("e_gal_section").style.display = "none";
+    document.getElementById("e_main_file").value = "";
+    document.getElementById("e_gal_file").value = "";
+
+    const url = "{% url 'back:edit_product' 0 %}".replace("/0/", "/" + id + "/");
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        // PID
+        document.getElementById("e_pid_val").textContent = data.pid || "";
+
+        // Fields
+        document.getElementById("e_name").value   = data.name || "";
+        document.getElementById("e_price").value  = data.price || "";
+        document.getElementById("e_disc").value   = data.discounted_price || "";
+        document.getElementById("e_stock").value  = data.stock_quantity ?? "";
+        document.getElementById("e_desc").value   = data.description || "";
+        document.getElementById("e_status").value = data.status ? "True" : "False";
+
+        // Toggles
+        document.getElementById("e_featured").checked = !!data.featured_product;
+        document.getElementById("e_upsell").checked   = !!data.upsell_enabled;
+
+        // Main image preview
+        const mainPrev = document.getElementById("e_main_preview");
+        mainPrev.innerHTML = "";
+        if (data.image) {
+          const img = document.createElement("img");
+          img.src = data.image;
+          mainPrev.appendChild(img);
+        }
+
+        // Existing gallery
+        const galEl = document.getElementById("e_gal_existing");
+        const galSection = document.getElementById("e_gal_section");
+        (data.gallery || []).forEach(g => {
+          const wrap = document.createElement("div");
+          wrap.className = "img-item";
+          const img = document.createElement("img");
+          img.src = g.url;
+          const del = document.createElement("button");
+          del.type = "button";
+          del.className = "img-del";
+          del.textContent = "×";
+          del.addEventListener("click", () => deleteGalleryImg(id, g.id, wrap));
+          wrap.appendChild(img);
+          wrap.appendChild(del);
+          galEl.appendChild(wrap);
+        });
+        if ((data.gallery || []).length > 0) galSection.style.display = "";
+
+        openModal("editModal");
+      })
+      .catch(() => toast("Could not load product", true));
+  }
+
+  /* Copy PID */
+  document.getElementById("e_pid_copy").addEventListener("click", function () {
+    const pid = document.getElementById("e_pid_val").textContent;
+    navigator.clipboard.writeText(pid).then(() => toast("PID copied: " + pid));
+  });
+
+  /* Delete a gallery image immediately */
+  function deleteGalleryImg(productId, imgId, wrapEl) {
+    if (!confirm("Remove this image?")) return;
+    const url = "/db/products/" + productId + "/gallery/" + imgId + "/delete/";
+    fetch(url, { method: "POST", headers: { "X-CSRFToken": CSRF } })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          wrapEl.remove();
+          toast("Image removed");
+          // Hide section if no images left
+          if (!document.getElementById("e_gal_existing").children.length)
+            document.getElementById("e_gal_section").style.display = "none";
         } else {
-          alert("❌ Update failed.");
+          toast("Could not remove image", true);
         }
       })
-      .catch((err) => {
-        console.error(err);
-        alert("⚠️ Something went wrong.");
-      });
+      .catch(() => toast("Error removing image", true));
+  }
+
+  /* Submit edit form */
+  document.getElementById("editForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!editId) return;
+
+    const btn = document.getElementById("e_submit");
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    const fd = new FormData(this);
+    fd.set("featured_product", document.getElementById("e_featured").checked ? "true" : "false");
+    fd.set("upsell_enabled",   document.getElementById("e_upsell").checked   ? "true" : "false");
+
+    const url = "{% url 'back:edit_product' 0 %}".replace("/0/", "/" + editId + "/");
+    fetch(url, { method: "POST", headers: { "X-CSRFToken": CSRF }, body: fd })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          closeModal("editModal");
+          toast("Changes saved!");
+          updateRow(editId, data);
+          editId = null;
+        } else {
+          toast("Save failed", true);
+        }
+      })
+      .catch(() => toast("Something went wrong", true))
+      .finally(() => { btn.disabled = false; btn.textContent = "Save Changes"; });
   });
-});
 
+  /* Update table row in-place after edit */
+  function updateRow(id, serverData) {
+    const row = document.querySelector("tr[data-id='" + id + "']");
+    if (!row) { location.reload(); return; }
 
+    const name     = document.getElementById("e_name").value;
+    const price    = document.getElementById("e_price").value;
+    const disc     = document.getElementById("e_disc").value;
+    const stock    = document.getElementById("e_stock").value;
+    const isActive = document.getElementById("e_status").value === "True";
+    const featured = document.getElementById("e_featured").checked;
+    const upsell   = document.getElementById("e_upsell").checked;
 
+    // col 0: thumbnail
+    if (serverData.image) {
+      const thumb = row.querySelector(".prod-thumb");
+      if (thumb) thumb.src = serverData.image + "?t=" + Date.now();
+    }
 
+    // col 1: name + badges
+    const cells = row.querySelectorAll("td");
+    let nameCellHtml = '<span style="font-weight:600;color:#111827">' + escHtml(name) + '</span>';
+    if (featured) nameCellHtml += ' <span class="badge badge-featured">★ Featured</span>';
+    if (upsell)   nameCellHtml += ' <span class="badge" style="background:#ede9fe;color:#6d28d9;margin-left:4px">Upsell</span>';
+    cells[1].innerHTML = nameCellHtml;
 
-    </script>
+    // col 2: PID — leave unchanged
 
-      
+    // col 3: status
+    cells[3].innerHTML = isActive
+      ? '<span class="badge badge-active">● Active</span>'
+      : '<span class="badge badge-inactive">○ Inactive</span>';
 
+    // col 4: price
+    cells[4].innerHTML = '<span style="font-weight:600">' + escHtml(price) + '</span>'
+      + (disc ? ' <span style="color:#16a34a;font-size:12px;margin-left:4px">↓' + escHtml(disc) + '</span>' : '');
 
-    {% endblock %}
+    // col 5: stock
+    cells[5].textContent = stock;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  /* ══════════════════════════════
+     DELETE PRODUCT
+  ══════════════════════════════ */
+  document.getElementById("btnDelete").addEventListener("click", function () {
+    if (!editId) return;
+    if (!confirm("Delete this product permanently? This cannot be undone.")) return;
+
+    const url = "/db/products/" + editId + "/delete/";
+    fetch(url, { method: "DELETE", headers: { "X-CSRFToken": CSRF } })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          closeModal("editModal");
+          const row = document.querySelector("tr[data-id='" + editId + "']");
+          if (row) row.remove();
+          toast("Product deleted");
+          editId = null;
+        } else {
+          toast(data.message || "Delete failed", true);
+        }
+      })
+      .catch(() => toast("Error deleting product", true));
+  });
+
+})();
+</script>
+{% endblock %}

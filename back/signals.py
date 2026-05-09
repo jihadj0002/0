@@ -135,22 +135,6 @@ def update_message_counters(sender, instance, created, **kwargs):
     conv.save()
 
 
-@receiver(post_save, sender=Message, dispatch_uid="trigger_ai_pipeline")
-def trigger_ai_pipeline(sender, instance, created, **kwargs):
-    """Fire the AI pipeline after a new customer message is saved."""
-    if not created or instance.sender != "customer":
-        return
-
-    conv = instance.conversation
-    if not conv.is_ai_enabled:
-        return
-
-    # Lazy import avoids circular dependency (api → back, not back → api at module level)
-    try:
-        from api.ai.pipeline import run
-        run(conv, instance)
-    except Exception:
-        import logging
-        logging.getLogger(__name__).exception(
-            "AI pipeline failed conv=%s msg=%s", conv.pk, instance.pk
-        )
+# Pipeline is now triggered by the 5-second batch timer in api/webhooks.py,
+# not by this signal, so that rapid multi-message sequences are combined into
+# one AI turn before the pipeline runs.

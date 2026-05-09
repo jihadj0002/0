@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from django.contrib.auth.models import User
@@ -19,9 +20,14 @@ from .utils.whatsapp import download_whatsapp_media
 logger = logging.getLogger(__name__)
 
 # Bounded thread pool — handles burst traffic without spawning unlimited threads.
-# Each slot may block on DB writes + media downloads (I/O bound), so 20 workers
-# is appropriate. Requests always return 200 immediately; processing queues here.
 _executor = ThreadPoolExecutor(max_workers=20)
+
+# Per-conversation timers: {conversation_id: threading.Timer}
+# When a new message arrives for a conversation, any existing timer is cancelled
+# and a fresh 5-second timer is started. This ensures rapid bursts are combined
+# into one AI turn rather than triggering a pipeline call per message.
+_batch_timers: dict[int, threading.Timer] = {}
+_batch_timers_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -41,104 +47,87 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 # Background processing
 # ---------------------------------------------------------------------------
 
-def _check_and_process_batches(user_id, platform):
+def _schedule_batch_pipeline(conversation_id):
     """
-    Check if we should process a batch of messages for a user/platform combination.
-    Processes when we have 3+ messages or when oldest message is >2 seconds old.
+    (Re)start the 5-second batch timer for a conversation.
+    Cancels any existing timer so rapid message bursts are collapsed into one
+    pipeline run that fires 5 seconds after the LAST message in the burst.
+    Must be called from inside a `_batch_timers_lock` context is NOT required —
+    the lock is acquired internally.
     """
-    from django.utils import timezone
-    from datetime import timedelta
-    
-    # Get unprocessed batches for this user/platform
-    cutoff_time = timezone.now() - timedelta(seconds=5)  # Use 5 seconds to account for processing delays and ensure we don't process too early. Adjust as needed.
-    
-    # Find conversations with unprocessed batches
-    unprocessed_batches = MessageBatch.objects.filter(
-        conversation__user_id=user_id,
-        platform=platform,
-        processed=False
-    ).order_by('timestamp')
-    
-    if not unprocessed_batches.exists():
-        return
-    
-    # Group by conversation
-    conversations_to_process = set()
-    for batch in unprocessed_batches:
-        conversations_to_process.add(batch.conversation_id)
-    
-    # Process each conversation that meets criteria
-    for conversation_id in conversations_to_process:
-        batches = MessageBatch.objects.filter(
-            conversation_id=conversation_id,
-            platform=platform,
-            processed=False
-        ).order_by('timestamp')
-        
-        # Process if we have 3+ messages OR oldest is >2 seconds old
-        if batches.count() >= 3 or (batches.first().timestamp < cutoff_time and batches.exists()):
-            _process_message_batch(conversation_id, platform)
-            # Mark as processed
-            batches.update(processed=True)
+    with _batch_timers_lock:
+        existing = _batch_timers.get(conversation_id)
+        if existing is not None:
+            existing.cancel()
+        t = threading.Timer(5.0, _fire_batch_pipeline, args=(conversation_id,))
+        t.daemon = True
+        _batch_timers[conversation_id] = t
+        t.start()
 
 
-def _process_message_batch(conversation_id, platform):
+def _fire_batch_pipeline(conversation_id):
     """
-    Process a batch of messages for a conversation as a single unit.
+    Called by the timer after 5 seconds of silence for a conversation.
+    Combines all unprocessed MessageBatch rows into a single AI turn.
     """
-    from back.models import Conversation, MessageBatch
-    from back.models import Message  # For creating bot messages later if needed
-    from api.ai.pipeline import run  # Import the pipeline
-    from back.models import Message  # For getting customer messages
-    
+    with _batch_timers_lock:
+        _batch_timers.pop(conversation_id, None)
+
+    close_old_connections()
     try:
-        conversation = Conversation.objects.get(id=conversation_id)
-        # Get all unprocessed messages for this conversation/platform
-        message_batches = MessageBatch.objects.filter(
-            conversation=conversation,
-            platform=platform,
-            processed=False
-        ).order_by('timestamp')
-        
-        if not message_batches.exists():
-            return
-            
-        # Combine messages into a single context
-        combined_text = " ".join([mb.message_text for mb in message_batches])
-        
-        # Create a temporary unified message for the pipeline
         from types import SimpleNamespace
-        unified_message = SimpleNamespace()
-        unified_message.text = combined_text
-        
-        # Run the pipeline with the combined message
-        run(conversation, unified_message)
-        
+        from api.ai.pipeline import run
+
+        conversation = Conversation.objects.get(id=conversation_id)
+
+        batches = MessageBatch.objects.filter(
+            conversation=conversation,
+            processed=False,
+        ).order_by("timestamp")
+
+        if not batches.exists():
+            return
+
+        combined_text = "\n".join(b.message_text for b in batches if b.message_text.strip())
+        batches.update(processed=True)
+
+        if not combined_text.strip():
+            return
+
+        unified = SimpleNamespace(text=combined_text)
+        run(conversation, unified)
+
     except Conversation.DoesNotExist:
-        pass  # Conversation was deleted
-    except Exception as e:
-        logger.exception("_process_message_batch failed for conversation=%s: %s", conversation_id, e)
+        pass
+    except Exception:
+        logger.exception("_fire_batch_pipeline failed for conversation=%s", conversation_id)
+    finally:
+        close_old_connections()
 
 
 def _process_webhook(user_id, platform, unified_messages, access_token):
     """
-    Runs in a thread pool worker. Persists each message in unified_messages.
-    Django DB connections are per-thread — must call close_old_connections()
-    at start to ensure a clean connection is checked out from the pool.
+    Runs in a thread pool worker. Persists each message and (re)starts the
+    per-conversation 5-second batch timer so rapid bursts are collapsed into
+    one AI pipeline call.
     """
     close_old_connections()
     try:
         user = User.objects.get(id=user_id)
+        conversation_ids = set()
         for msg_data in unified_messages:
             try:
-                _persist_message(user, platform, msg_data, access_token)
+                conv_id = _persist_message(user, platform, msg_data, access_token)
+                if conv_id:
+                    conversation_ids.add(conv_id)
             except Exception:
                 logger.exception(
                     "Failed to persist message mid=%s user=%s platform=%s",
                     msg_data.get("message_id"), user_id, platform,
                 )
-        # Check if we should process a batch for any conversations
-        _check_and_process_batches(user_id, platform)
+        # (Re)start the 5-second timer for each affected conversation
+        for cid in conversation_ids:
+            _schedule_batch_pipeline(cid)
     except Exception:
         logger.exception("_process_webhook crashed user_id=%s platform=%s", user_id, platform)
     finally:
@@ -146,12 +135,13 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
 
 
 def _persist_message(user, platform, msg_data, access_token):
+    """Persist a single incoming message. Returns the conversation id, or None if dropped."""
     mid = msg_data.get("message_id") or None
     customer_id = msg_data.get("customer_id", "")
 
     # Idempotency — Meta retries on non-200, so the same mid may arrive twice
-    if mid and MessageBatch.objects.filter(message_text=msg_data.get("text", ""), processed=False).exists():
-        return
+    if mid and Message.objects.filter(mid=mid).exists():
+        return None
 
     conv, created = Conversation.objects.get_or_create(
         user=user,
@@ -166,20 +156,9 @@ def _persist_message(user, platform, msg_data, access_token):
             customer_name=msg_data.get("customer_name")
         )
 
-    # Store message in batch for later processing
-    MessageBatch.objects.create(
-        conversation=conv,
-        message_text=msg_data.get("text", ""),
-        platform=platform
-    )
-
-    # Backfill name if we learned it and conversation was created without it
-    if not created and msg_data.get("customer_name") and not conv.customer_name:
-        Conversation.objects.filter(pk=conv.pk).update(
-            customer_name=msg_data["customer_name"]
-        )
-
     attachments = msg_data.get("attachments")
+    msg_text = msg_data.get("text") or ""
+    att_type = (attachments or {}).get("type", "")
 
     # Download WhatsApp media while we're already in the background thread.
     # Other platforms serve public URLs directly — no extra step needed.
@@ -196,14 +175,53 @@ def _persist_message(user, platform, msg_data, access_token):
             logger.warning("WA media download failed mid=%s: %s", mid, exc)
             attachments["download_error"] = str(exc)
 
+    # --- Media understanding ---
+    # For images: run vision analysis and fold the description into the message text.
+    # For audio/voice: transcribe and use as the message text.
+    # This runs synchronously here (already in a background thread) so the result
+    # is available before the 5-second batch timer fires.
+    media_url = (attachments or {}).get("url") or (attachments or {}).get("payload", {}).get("url", "")
+    if att_type == "image" and media_url:
+        try:
+            from api.ai.media import analyze_image
+            analysis = analyze_image(media_url)
+            if analysis:
+                attachments["analysis"] = analysis
+                # Combine caption + analysis so the AI has full context
+                caption = msg_text or ""
+                msg_text = f"{caption}\n[Image: {analysis}]".strip()
+        except Exception as exc:
+            logger.warning("Image analysis failed mid=%s: %s", mid, exc)
+
+    elif att_type in ("audio", "voice") and media_url:
+        try:
+            from api.ai.media import transcribe_audio
+            mime = (attachments or {}).get("mime_type", "")
+            transcription = transcribe_audio(media_url, mime)
+            if transcription:
+                attachments["transcription"] = transcription
+                msg_text = transcription
+        except Exception as exc:
+            logger.warning("Audio transcription failed mid=%s: %s", mid, exc)
+            msg_text = msg_text or "[Voice message received]"
+
     Message.objects.create(
         conversation=conv,
         mid=mid,
         sender="customer",
-        text=msg_data.get("text"),
+        text=msg_text or None,
         attachments=attachments if attachments else None,
         raw_payload=msg_data.get("raw"),
     )
+
+    # Store enriched text in batch so _fire_batch_pipeline combines it correctly
+    MessageBatch.objects.create(
+        conversation=conv,
+        message_text=msg_text,
+        platform=platform,
+    )
+
+    return conv.id
 
 
 # ---------------------------------------------------------------------------

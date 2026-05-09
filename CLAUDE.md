@@ -14,12 +14,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 pip install -r requirements.txt
 python manage.py migrate
-python manage.py runserver          # SQLite by default in dev
-python manage.py setup_billing      # seed Plans + ModelPricing (run once)
+python manage.py runserver                              # SQLite by default in dev
+python manage.py setup_billing                         # seed Plans + ModelPricing (run once)
 python manage.py createsuperuser
-python manage.py test
-gunicorn theMatrixAi.wsgi:application   # production (Procfile)
+gunicorn theMatrixAi.wsgi:application                  # production (Procfile)
+
+# Tests
+python manage.py test                                  # all tests
+python manage.py test back                             # single app
+python manage.py test back.tests.TestClassName         # single class
+python manage.py test back.tests.TestClassName.test_method  # single method
 ```
+
+Most `tests.py` files are currently empty — test coverage is minimal.
 
 ## Environment Variables
 
@@ -55,7 +62,7 @@ Storage: Cloudflare R2 (boto3 S3-compatible) in production; local `MEDIA_ROOT` i
 ```
 /        → front/   (home, pricing, login, signup)
 /db/     → back/    (dashboard, products, orders, chats, settings, billing)
-/api/    → api/     (webhooks, REST)
+/api/    → api/     (webhooks, REST — per-user routes prefixed with /<username>/)
 /admin/  → Django admin
 ```
 
@@ -78,14 +85,25 @@ All signals are wired in each app's `apps.py → ready()`.
 pipeline.py   — entry point: run(conversation, message) → build prompt → LLM loop → send reply → deduct credits
 context.py    — assembles system prompt from AgentIdentity + StoreConfig + BehaviorRules + last 20 messages
 providers.py  — thin OpenRouter wrapper (openai SDK pointed at https://openrouter.ai/api/v1); returns (msg, token_usage)
-tools.py      — TOOL_DEFINITIONS (7 schemas) + execute_tool() dispatcher; tools: search_products, get_product_details,
-                 send_images, create_order, get_order_status, update_customer, transfer_chat
+tools.py      — TOOL_DEFINITIONS (7 schemas) + execute_tool() dispatcher
 sender.py     — send_reply(conversation, text, image_urls) → dispatches by platform via Graph API / Telegram Bot API
 ```
 
+**The 7 tools:**
+
+| Tool | Purpose |
+|---|---|
+| `search_products` | Search catalog by name/description; prioritises featured products |
+| `get_product_details` | Full product info + image URLs by PID |
+| `send_images` | Retrieve and send up to 5 product images |
+| `create_order` | Create a pending order after collecting customer details |
+| `get_order_status` | Look up an existing order by OID |
+| `update_customer` | Save/update customer contact fields on the Conversation |
+| `transfer_chat` | Disable AI and transfer session to a human agent |
+
 Key invariants:
 - Max **5 tool iterations** per reply (`MAX_TOOL_ITERATIONS = 5`)
-- Every LLM call is logged to `UsageLog` with a shared `reply_id` (UUID hex)
+- Every LLM call is logged to `UsageLog` (in `billing/`) with a shared `reply_id` (UUID hex)
 - `deduct_for_reply(user, reply_id)` is called after `send_reply` completes — never before
 
 ### Webhook Intake (`api/webhooks.py`)
@@ -103,16 +121,24 @@ Key invariants:
 - `UsageSummary` increments use `F()` expressions to avoid double-counting across concurrent requests
 - Auto-renewal is checked inline during deduction: if `today >= balance.renewal_date` → renew first, then deduct
 - When `credits_remaining` hits 0 → all user `Integration.is_enabled` are set `False`
-- Seed command: `python manage.py setup_billing` (creates 4 Plans + 10 ModelPricing rows)
+- Seed command: `python manage.py setup_billing` (creates 4 Plans + 10 ModelPricing rows, idempotent via `update_or_create`)
+
+**Billing models** (`billing/models.py`):
+- **Plan** — name (free/basic/pro/enterprise), `monthly_credits`, `max_messages`, `allowed_models`, `price`
+- **UserBalance** — OneToOne to User; `credits_remaining`, `renewal_date`, `messages_used`
+- **ModelPricing** — per-model token costs
+- **UsageLog** — one row per LLM call; grouped by `reply_id` for cost aggregation
+- **UsageSummary** — daily aggregates per user
+- **CreditTransaction** — audit trail (deductions, renewals, top-ups)
 
 ### Core Models (`back/models.py`)
 
 - **Integration** — one per platform per user; holds `access_token`, `verify_token`, `app_secret`, `ai_model`, `is_enabled`
 - **Conversation** — unique on `(user, platform, customer_id)`; tracks `is_ai_enabled`, sentiment, intent, message counters
 - **Message** — `sender` choices: `customer` / `bot` / `agent`; stores `raw_payload` (JSONField) for debugging
+- **MessageBatch** — temporary holding table for incoming messages used by the batching/deduplication logic
 - **Product / Package / PackageItem** — catalog; package pricing = base ± item `price_delta`
 - **Sale / OrderItem** — `completed`/`refunded` orders are immutable (enforced in `save()`); `oid` prefixed with `ord_`
-- **UsageLog** — one row per LLM call; grouped by `reply_id` for billing aggregation
 
 ### ID Conventions
 
@@ -124,3 +150,7 @@ All public IDs use `shortuuid` with prefixes:
 ### Settings Pages (`/db/settings/`)
 
 Single tabbed page (`back/templates/back/settings.html`) with four POST sections controlled by a hidden `section` field: `store`, `agent`, `behavior`, `ai_model`. The view (`back/views.py → settings_view`) dispatches on `request.POST['section']` and redirects back with `?tab=<section>` to preserve the active tab.
+
+### Dead Code
+
+`back/ftp_storage.py` and `back/mongo_models.py` are unused leftovers — do not reference or extend them.
