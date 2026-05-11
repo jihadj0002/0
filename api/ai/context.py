@@ -83,17 +83,29 @@ def build_system_prompt(user, conversation):
             cust.append("\n".join(lines))
         except Product.DoesNotExist:
             pass  # stale PID — context builder simply omits it
+    
+    available_products = list(
+    Product.objects.filter(user=user, status=True)[:10]     # Get top 10 products for quick reference in the prompt
+    )
+
+    if available_products:
+        lines = ["## Available Products"]
+
+        for p in available_products:
+            desc = (p.description or "")[:80]
+
+            lines.append(
+                f"- {p.name} (PID: {p.pid}) "
+                f"— {p.price} {currency}"
+                + (f" — {desc}" if desc else "")
+            )
+
+        cust.append("\n".join(lines))
+
     else:
-        available_products = list(Product.objects.filter(user=user, status=True)[:5])
-        if available_products:
-            lines = ["Available products (sample):"]
-            for p in available_products:
-                desc = (p.description or "")[:80]
-                lines.append(f"- {p.name} (PID: {p.pid}) — {p.price} {store.currency if store else 'BDT'}" +
-                              (f" — {desc}" if desc else ""))
-            cust.append("\n".join(lines))
-        else:
-            cust.append("No products available in the store")
+        cust.append("## Available Products\nNo products available in the store")
+
+    
 
     if cust:
         parts.append("## Current Customer\n" + "\n".join(cust))

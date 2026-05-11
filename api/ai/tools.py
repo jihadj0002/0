@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from back.models import Conversation, OrderItem, Product, ProductImages, Sale
+from context.models import AgentIdentity, StoreConfig, BehaviorRules
 
 logger = logging.getLogger(__name__)
 
@@ -296,7 +297,14 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
             total += unit_price * qty
             line_items.append({"name": product.name, "qty": qty, "unit_price": str(unit_price)})
 
-        sale.amount = total
+         # Add delivery charge
+        store_config = StoreConfig.objects.filter(user=user).first()
+        if delivery_zone == "inside_dhaka":
+            delivery_charge = store_config.delivery_charge_inside if store_config else 0
+        else:
+            delivery_charge = store_config.delivery_charge_outside if store_config else 0
+        
+        sale.amount = total + delivery_charge
         sale.save(update_fields=["amount"])
 
     # Backfill conversation customer fields

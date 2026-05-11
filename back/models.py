@@ -485,6 +485,7 @@ class OrderItem(models.Model):
     raw_product_data = models.JSONField(blank=True, null=True)
 
 
+
     def save(self, *args, **kwargs):
         if self.pk and self.order.status in ["completed", "refunded"]:
             raise ValidationError(
