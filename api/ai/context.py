@@ -90,6 +90,7 @@ def build_system_prompt(user, conversation):
 
     if available_products:
         lines = ["## Available Products"]
+        currency = store.currency if store else "BDT"
 
         for p in available_products:
             desc = (p.description or "")[:80]
