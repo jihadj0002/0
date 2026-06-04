@@ -8,7 +8,8 @@ from django.urls import path
 
 from .models import (
     Conversation, Integration, Message, OrderItem, Package, PackageImages,
-    PackageItem, Product, ProductImages, Sale, Setting, UserProfile, UsageLog,
+    PackageItem, Product, ProductImages, ProductSource, Sale, Setting,
+    UserProfile, UsageLog,
 )
 
 
@@ -424,6 +425,14 @@ class SettingAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 
 
+class ProductSourceAdmin(admin.ModelAdmin):
+    list_display = ("provider", "user", "status", "mode", "is_active", "last_synced")
+    list_filter = ("provider", "status", "mode", "is_active")
+    search_fields = ("user__email", "name", "store_url")
+    ordering = ("-created_at",)
+    exclude = ("_consumer_key", "_consumer_secret", "_api_key", "_access_token")
+
+
 # ---------------------------------------------------------------------------
 # Register
 # ---------------------------------------------------------------------------
@@ -437,5 +446,6 @@ admin.site.register(Setting, SettingAdmin)
 admin.site.register(Integration, IntegrationAdmin)
 admin.site.register(Message, MessageAdmin)
 admin.site.register(Package, PackageAdmin)
+admin.site.register(ProductSource, ProductSourceAdmin)
 admin.site.register(PackageItem, PackageItemAdmin)
 

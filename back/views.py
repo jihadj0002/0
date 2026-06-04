@@ -4,7 +4,7 @@ from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required, user_passes_test
 
 from django.db.models import Sum, Count, Q, Avg
-from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem
+from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem, ProductSource
 from django.views.decorators.http import require_GET
 # Create your views here.
 from django.db.models.functions import TruncDay
@@ -810,7 +810,8 @@ def products(request):
 
     context = {
         "user": request.user,
-        "all_products": all_products
+        "all_products": all_products,
+        "active_source": ProductSource.get_active_for(request.user),
     }
     return render(request, "back/products.html", context)
 
@@ -1239,6 +1240,164 @@ def delete_gallery_image(request, pk, img_pk):
     img = get_object_or_404(ProductImages, pk=img_pk, product__pk=pk, product__user=request.user)
     img.delete()
     return JsonResponse({"success": True})
+
+
+# ══════════════════════════════════════════
+#  PRODUCT SOURCES (Multi-Source Architecture)
+# ══════════════════════════════════════════
+
+def _is_ajax(request):
+    return request.headers.get("x-requested-with") == "XMLHttpRequest"
+
+
+def _apply_source_credentials(src, request):
+    """
+    Set decrypted credential PROPERTIES from POST data, scoped to the provider.
+    Only re-sets a property when a non-empty value was submitted, so editing
+    with a blank field keeps the previously stored secret.
+    """
+    provider = src.provider
+    get = request.POST.get
+
+    def set_if_present(attr, key):
+        val = get(key)
+        if val:  # non-empty only
+            setattr(src, attr, val)
+
+    if provider == "woocommerce":
+        set_if_present("consumer_key", "consumer_key")
+        set_if_present("consumer_secret", "consumer_secret")
+    elif provider == "shopify":
+        set_if_present("access_token", "access_token")
+        set_if_present("api_key", "api_key")
+    elif provider == "external":
+        set_if_present("access_token", "access_token")
+
+
+@login_required
+def product_sources(request):
+    sources = ProductSource.objects.filter(user=request.user).order_by("-is_active", "-created_at")
+    context = {
+        "user": request.user,
+        "sources": sources,
+        "provider_choices": ProductSource.PROVIDER_CHOICES,
+        "mode_choices": ProductSource.MODE_CHOICES,
+    }
+    return render(request, "back/product_sources.html", context)
+
+
+@login_required
+@require_POST
+def add_product_source(request):
+    provider = request.POST.get("provider") or "internal"
+    src = ProductSource(
+        user=request.user,
+        provider=provider,
+        name=request.POST.get("name") or "",
+        store_url=request.POST.get("store_url") or None,
+        mode=request.POST.get("mode") or "sync",
+    )
+    if provider == "external":
+        src.order_endpoint_url = request.POST.get("order_endpoint_url") or None
+
+    _apply_source_credentials(src, request)
+    src.save()
+
+    if _is_ajax(request):
+        return JsonResponse({"success": True, "sid": src.sid})
+    messages.success(request, "Product source connected.")
+    return redirect("back:product_sources")
+
+
+@login_required
+@require_POST
+def edit_product_source(request, sid):
+    src = get_object_or_404(ProductSource, sid=sid, user=request.user)
+
+    if request.POST.get("provider"):
+        src.provider = request.POST.get("provider")
+    if "name" in request.POST:
+        src.name = request.POST.get("name") or ""
+    if "store_url" in request.POST:
+        src.store_url = request.POST.get("store_url") or None
+    if request.POST.get("mode"):
+        src.mode = request.POST.get("mode")
+    if src.provider == "external" and "order_endpoint_url" in request.POST:
+        src.order_endpoint_url = request.POST.get("order_endpoint_url") or None
+
+    _apply_source_credentials(src, request)
+    src.save()
+
+    if _is_ajax(request):
+        return JsonResponse({"success": True, "sid": src.sid})
+    messages.success(request, "Product source updated.")
+    return redirect("back:product_sources")
+
+
+@login_required
+@require_POST
+def delete_product_source(request, sid):
+    src = get_object_or_404(ProductSource, sid=sid, user=request.user)
+    src.delete()
+    if _is_ajax(request):
+        return JsonResponse({"success": True})
+    messages.success(request, "Product source removed.")
+    return redirect("back:product_sources")
+
+
+@login_required
+@require_POST
+def activate_product_source(request, sid):
+    src = get_object_or_404(ProductSource, sid=sid, user=request.user)
+    src.is_active = True
+    src.save()  # model auto-demotes other sources
+    if _is_ajax(request):
+        return JsonResponse({"success": True, "sid": src.sid})
+    messages.success(request, "Active product source updated.")
+    return redirect("back:product_sources")
+
+
+@login_required
+@require_POST
+def test_product_source(request, sid):
+    src = get_object_or_404(ProductSource, sid=sid, user=request.user)
+    from api.products.factory import get_provider_for_source
+
+    try:
+        provider = get_provider_for_source(src, request.user)
+        result = provider.test_connection()
+    except Exception as e:
+        result = {"ok": False, "message": str(e)}
+
+    ok = bool(result.get("ok"))
+    src.status = "connected" if ok else "error"
+    src.last_error = "" if ok else (result.get("message") or "Connection failed")
+    src.save(update_fields=["status", "last_error", "updated_at"])
+
+    return JsonResponse({
+        "ok": ok,
+        "message": result.get("message", ""),
+        "status": src.status,
+    })
+
+
+@login_required
+@require_POST
+def sync_product_source(request, sid):
+    src = get_object_or_404(ProductSource, sid=sid, user=request.user)
+    from api.products.sync import sync_products
+
+    try:
+        result = sync_products(src)
+    except Exception as e:
+        return JsonResponse({"success": False, "message": str(e)}, status=400)
+
+    return JsonResponse({
+        "success": True,
+        "created": result.get("created", 0),
+        "updated": result.get("updated", 0),
+        "errors": result.get("errors", 0),
+    })
 
 
 # Export Products as CSV

@@ -135,6 +135,10 @@
   pointer-events: none;
 }
 #toast.show { opacity: 1; transform: translateY(0); }
+
+/* ── Active source notice ── */
+.source-notice { display: flex; align-items: center; gap: 8px; background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 13.5px; color: #4338ca; }
+.source-notice-dot { width: 8px; height: 8px; border-radius: 50%; background: #6366f1; flex-shrink: 0; }
 </style>
 {% endblock %}
 
@@ -152,9 +156,23 @@
       <h3>All Products <span style="color:#94a3b8;font-size:14px;font-weight:400">({{ all_products|length }})</span></h3>
       <div class="panel-actions">
         <button class="btn-primary" id="btnAddProduct">+ Add Product</button>
+        <button class="btn-primary" onclick="window.location.href='{% url 'back:product_sources' %}'">Product Sources</button>
         <button class="btn-primary" onclick="window.location.href='{% url 'back:import_products' %}'">Export / Import</button>
       </div>
     </div>
+
+    {% if active_source %}
+    <div class="source-notice">
+      <span class="source-notice-dot"></span>
+      <span>
+        Catalog source:
+        <strong>{{ active_source.name|default:active_source.get_provider_display }}</strong>
+        <span class="badge {% if active_source.status == 'connected' %}badge-active{% else %}badge-inactive{% endif %}" style="margin-left:6px">{{ active_source.get_status_display }}</span>
+        <span style="color:#94a3b8;font-size:12px;margin-left:6px">{{ active_source.get_mode_display }}</span>
+      </span>
+      <a href="{% url 'back:product_sources' %}" style="margin-left:auto;color:#4f46e5;font-weight:600;text-decoration:none;font-size:13px">Manage sources →</a>
+    </div>
+    {% endif %}
 
     <table class="products-table" id="productsTable">
       <thead>

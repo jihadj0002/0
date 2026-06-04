@@ -1,0 +1,491 @@
+{% extends 'back/base.html' %}
+{% load static %}
+
+{% block title %}Product Sources | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Page ── */
+.content { padding: 24px; min-height: 100vh; }
+.page-header { margin-bottom: 22px; }
+.page-header h1 { font-size: 26px; font-weight: 700; color: #111827; margin: 0 0 4px; }
+.page-header .sub { color: #64748b; font-size: 14px; margin: 0; }
+
+/* ── Panel ── */
+.panel { background: #fff; border-radius: 14px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); padding: 22px; }
+.panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+.panel-header h3 { font-size: 18px; font-weight: 700; color: #111827; margin: 0; }
+.panel-actions { display: flex; gap: 8px; }
+
+/* ── Table ── */
+.products-table { width: 100%; border-collapse: collapse; }
+.products-table th, .products-table td { padding: 11px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 13.5px; vertical-align: middle; }
+.products-table th { font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: .04em; background: #f8fafc; }
+.products-table tr:last-child td { border-bottom: none; }
+.products-table tbody tr:hover { background: #fafbff; }
+
+.prov-name { font-weight: 600; color: #111827; }
+.prov-url { font-size: 12px; color: #64748b; display: block; margin-top: 2px; word-break: break-all; }
+
+/* ── Badges ── */
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 20px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.badge-active   { background: #dcfce7; color: #16a34a; }
+.badge-inactive { background: #f1f5f9; color: #64748b; }
+.badge-error    { background: #fee2e2; color: #dc2626; }
+.badge-warn     { background: #fef3c7; color: #b45309; }
+.badge-mode     { background: #eef2ff; color: #4f46e5; }
+
+/* ── Row action buttons ── */
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.rbtn { padding: 5px 11px; font-size: 12px; font-weight: 600; border-radius: 7px; border: 1.5px solid #e2e8f0; background: #fff; color: #374151; cursor: pointer; transition: all .15s; }
+.rbtn:hover { border-color: #6366f1; color: #4f46e5; background: #eef2ff; }
+.rbtn:disabled { opacity: .55; cursor: default; }
+.rbtn-primary { border-color: #6366f1; background: #6366f1; color: #fff; }
+.rbtn-primary:hover { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.rbtn-danger { border-color: #fecaca; color: #dc2626; }
+.rbtn-danger:hover { border-color: #ef4444; background: #fef2f2; color: #dc2626; }
+
+.row-result { font-size: 12px; margin-top: 6px; font-weight: 500; }
+.row-result.ok { color: #16a34a; }
+.row-result.err { color: #dc2626; }
+
+/* ── Modal overlay ── */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 1200; justify-content: center; align-items: flex-start; padding: 28px 12px 40px; overflow-y: auto; }
+.modal-overlay.open { display: flex; }
+.modal-box { background: #fff; border-radius: 18px; width: 100%; max-width: 640px; padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); animation: slideUp .22s ease; flex-shrink: 0; }
+@keyframes slideUp { from { opacity:0; transform:translateY(18px); } to { opacity:1; transform:translateY(0); } }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.modal-header h2 { font-size: 20px; font-weight: 700; color: #111827; margin: 0; }
+.modal-close { font-size: 24px; color: #9ca3af; cursor: pointer; line-height: 1; border: none; background: none; padding: 0; }
+.modal-close:hover { color: #374151; }
+
+/* ── Form grid ── */
+.fg { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media(max-width: 600px) { .fg { grid-template-columns: 1fr; } }
+.fg .full { grid-column: 1 / -1; }
+.fld { display: flex; flex-direction: column; gap: 5px; }
+.fld label { font-size: 12.5px; font-weight: 600; color: #374151; }
+.fld input, .fld select {
+  padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 9px;
+  font-size: 14px; background: #f9fafb; color: #111827;
+  transition: border-color .15s, background .15s;
+}
+.fld input:focus, .fld select:focus { outline: none; border-color: #6366f1; background: #fff; }
+.fld .hint { font-size: 11.5px; color: #94a3b8; }
+
+.btn-save {
+  background: linear-gradient(90deg, #6366f1, #4f46e5);
+  color: #fff; border: none; border-radius: 10px;
+  padding: 12px 20px; width: 100%; font-size: 15px; font-weight: 600;
+  cursor: pointer; margin-top: 18px; transition: all .2s;
+}
+.btn-save:hover { background: linear-gradient(90deg, #4f46e5, #4338ca); transform: translateY(-1px); }
+.btn-save:disabled { opacity: .6; cursor: default; transform: none; }
+
+/* ── Provider field groups ── */
+.cred-group { display: none; }
+.cred-group.show { display: contents; }
+
+/* ── Empty state ── */
+.empty-state { text-align: center; color: #94a3b8; padding: 44px 0; font-size: 15px; }
+
+/* ── Toast ── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+  background: #111827; color: #fff; padding: 12px 20px; border-radius: 10px;
+  font-size: 14px; font-weight: 500; opacity: 0;
+  transform: translateY(12px); transition: opacity .25s, transform .25s;
+  pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="toast"></div>
+
+<div class="content">
+  <div class="page-header">
+    <h1>Product Sources</h1>
+    <p class="sub">Choose where your catalog comes from — the built-in store or a connected WooCommerce, Shopify, or external store.</p>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}
+      <div class="source-msg">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Connected Sources <span style="color:#94a3b8;font-size:14px;font-weight:400">({{ sources|length }})</span></h3>
+      <div class="panel-actions">
+        <button class="btn-primary" id="btnConnect">+ Connect Source</button>
+      </div>
+    </div>
+
+    <table class="products-table" id="sourcesTable">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Name / Store URL</th>
+          <th style="width:120px">Status</th>
+          <th style="width:120px">Mode</th>
+          <th style="width:90px">Active</th>
+          <th style="width:150px">Last synced</th>
+          <th style="width:260px">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sources %}
+        <tr data-sid="{{ s.sid }}">
+          <td><span class="prov-name">{{ s.get_provider_display }}</span></td>
+          <td>
+            <span class="prov-name">{{ s.name|default:"—" }}</span>
+            {% if s.store_url %}<span class="prov-url">{{ s.store_url }}</span>{% endif %}
+          </td>
+          <td>
+            {% if s.status == "connected" %}
+              <span class="badge badge-active">● Connected</span>
+            {% elif s.status == "error" %}
+              <span class="badge badge-error" title="{{ s.last_error }}">✕ Error</span>
+            {% else %}
+              <span class="badge badge-warn">○ Disconnected</span>
+            {% endif %}
+          </td>
+          <td><span class="badge badge-mode">{{ s.get_mode_display }}</span></td>
+          <td>
+            {% if s.is_active %}
+              <span class="badge badge-active">★ Active</span>
+            {% else %}
+              <span class="badge badge-inactive">—</span>
+            {% endif %}
+          </td>
+          <td style="font-size:12.5px;color:#64748b">
+            {% if s.last_synced %}{{ s.last_synced|date:"M d, Y H:i" }}{% else %}Never{% endif %}
+          </td>
+          <td>
+            <div class="row-actions">
+              {% if not s.is_active %}
+                <button class="rbtn rbtn-primary act-activate" data-sid="{{ s.sid }}">Activate</button>
+              {% endif %}
+              <button class="rbtn act-test" data-sid="{{ s.sid }}">Test</button>
+              {% if s.mode == "sync" %}
+                <button class="rbtn act-sync" data-sid="{{ s.sid }}">Sync now</button>
+              {% endif %}
+              <button class="rbtn act-edit"
+                data-sid="{{ s.sid }}"
+                data-provider="{{ s.provider }}"
+                data-name="{{ s.name }}"
+                data-store_url="{{ s.store_url|default:'' }}"
+                data-order_endpoint_url="{{ s.order_endpoint_url|default:'' }}"
+                data-mode="{{ s.mode }}">Edit</button>
+              <button class="rbtn rbtn-danger act-delete" data-sid="{{ s.sid }}">Delete</button>
+            </div>
+            <div class="row-result" id="result-{{ s.sid }}"></div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="7">
+            <div class="empty-state">
+              No external sources connected — your AI uses the built-in catalog.<br>
+              Click <strong>+ Connect Source</strong> to link WooCommerce, Shopify, or a custom store.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════
+     CONNECT / EDIT SOURCE MODAL
+══════════════════════════════════════════ -->
+<div id="srcModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="srcModalTitle">Connect a Source</h2>
+      <button class="modal-close" data-close="srcModal">&times;</button>
+    </div>
+
+    <form id="srcForm">
+      {% csrf_token %}
+      <div class="fg">
+
+        <div class="fld">
+          <label>Provider *</label>
+          <select name="provider" id="f_provider" required>
+            {% for value, label in provider_choices %}
+              {% if value != "internal" %}
+                <option value="{{ value }}">{{ label }}</option>
+              {% endif %}
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="fld">
+          <label>Display Name</label>
+          <input type="text" name="name" id="f_name" placeholder="e.g. My Woo Store">
+        </div>
+
+        <div class="fld">
+          <label>Mode</label>
+          <select name="mode" id="f_mode">
+            {% for value, label in mode_choices %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+          <span class="hint">Synced cache mirrors products locally · Live fetch queries the store in real time.</span>
+        </div>
+
+        <!-- store_url is shared; controlled per-provider -->
+        <div class="fld" id="grp_store_url">
+          <label id="lbl_store_url">Store URL *</label>
+          <input type="url" name="store_url" id="f_store_url" placeholder="https://shop.example.com">
+        </div>
+
+        <!-- WooCommerce -->
+        <div class="cred-group" data-provider="woocommerce">
+          <div class="fld">
+            <label>Consumer Key</label>
+            <input type="text" name="consumer_key" id="f_consumer_key" placeholder="ck_...">
+            <span class="hint edit-only" style="display:none">Leave blank to keep unchanged.</span>
+          </div>
+          <div class="fld">
+            <label>Consumer Secret</label>
+            <input type="password" name="consumer_secret" id="f_consumer_secret" placeholder="cs_...">
+            <span class="hint edit-only" style="display:none">Leave blank to keep unchanged.</span>
+          </div>
+        </div>
+
+        <!-- Shopify -->
+        <div class="cred-group" data-provider="shopify">
+          <div class="fld">
+            <label>Admin API access token</label>
+            <input type="password" name="access_token" id="f_shopify_token" placeholder="shpat_...">
+            <span class="hint edit-only" style="display:none">Leave blank to keep unchanged.</span>
+          </div>
+          <div class="fld">
+            <label>API Key <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
+            <input type="text" name="api_key" id="f_api_key" placeholder="Optional">
+            <span class="hint edit-only" style="display:none">Leave blank to keep unchanged.</span>
+          </div>
+        </div>
+
+        <!-- External / Custom -->
+        <div class="cred-group" data-provider="external">
+          <div class="fld full">
+            <label>Order Endpoint URL</label>
+            <input type="url" name="order_endpoint_url" id="f_order_endpoint_url" placeholder="https://api.example.com/orders">
+          </div>
+          <div class="fld full">
+            <label>Bearer Token <span style="font-weight:400;color:#94a3b8">(optional)</span></label>
+            <input type="password" name="access_token_external" id="f_external_token" placeholder="Optional bearer token">
+            <span class="hint edit-only" style="display:none">Leave blank to keep unchanged.</span>
+          </div>
+        </div>
+
+      </div>
+      <button type="submit" class="btn-save" id="f_submit">Connect Source</button>
+    </form>
+  </div>
+</div>
+
+
+<script>
+(function () {
+  "use strict";
+
+  const CSRF = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || "";
+  const ADD_URL = "{% url 'back:add_product_source' %}";
+
+  /* templated URL helpers (placeholder sid = __SID__) */
+  const EDIT_URL     = "{% url 'back:edit_product_source' '__SID__' %}";
+  const DELETE_URL   = "{% url 'back:delete_product_source' '__SID__' %}";
+  const ACTIVATE_URL = "{% url 'back:activate_product_source' '__SID__' %}";
+  const TEST_URL     = "{% url 'back:test_product_source' '__SID__' %}";
+  const SYNC_URL     = "{% url 'back:sync_product_source' '__SID__' %}";
+  const u = (tpl, sid) => tpl.replace("__SID__", sid);
+
+  /* ── Toast ── */
+  const toastEl = document.getElementById("toast");
+  let toastTimer = null;
+  function toast(msg, err) {
+    toastEl.textContent = msg;
+    toastEl.style.background = err ? "#dc2626" : "#111827";
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove("show"), 3200);
+  }
+
+  /* ── Modal ── */
+  function openModal() { document.getElementById("srcModal").classList.add("open"); document.body.style.overflow = "hidden"; }
+  function closeModal() { document.getElementById("srcModal").classList.remove("open"); document.body.style.overflow = ""; }
+  document.querySelectorAll("[data-close]").forEach(b => b.addEventListener("click", closeModal));
+  document.getElementById("srcModal").addEventListener("click", e => { if (e.target.id === "srcModal") closeModal(); });
+
+  /* ── Provider field toggling ── */
+  const providerSel = document.getElementById("f_provider");
+  function applyProviderVisibility() {
+    const p = providerSel.value;
+    document.querySelectorAll(".cred-group").forEach(g => {
+      g.classList.toggle("show", g.dataset.provider === p);
+    });
+    // store_url is optional only for external
+    const lbl = document.getElementById("lbl_store_url");
+    lbl.textContent = (p === "external") ? "Store URL (optional)" : "Store URL *";
+  }
+  providerSel.addEventListener("change", applyProviderVisibility);
+
+  /* ══════════════════════════════
+     CONNECT (add)
+  ══════════════════════════════ */
+  let editSid = null;
+
+  function resetForm() {
+    document.getElementById("srcForm").reset();
+    document.querySelectorAll(".edit-only").forEach(e => e.style.display = "none");
+  }
+
+  document.getElementById("btnConnect").addEventListener("click", () => {
+    editSid = null;
+    resetForm();
+    document.getElementById("srcModalTitle").textContent = "Connect a Source";
+    document.getElementById("f_submit").textContent = "Connect Source";
+    applyProviderVisibility();
+    openModal();
+  });
+
+  /* ── Edit ── */
+  document.querySelectorAll(".act-edit").forEach(btn => btn.addEventListener("click", () => {
+    editSid = btn.dataset.sid;
+    resetForm();
+    document.getElementById("srcModalTitle").textContent = "Edit Source";
+    document.getElementById("f_submit").textContent = "Save Changes";
+
+    providerSel.value = btn.dataset.provider;
+    document.getElementById("f_name").value = btn.dataset.name || "";
+    document.getElementById("f_store_url").value = btn.dataset.store_url || "";
+    document.getElementById("f_order_endpoint_url").value = btn.dataset.order_endpoint_url || "";
+    document.getElementById("f_mode").value = btn.dataset.mode || "sync";
+
+    applyProviderVisibility();
+    // show "leave blank" hints; secrets never pre-filled
+    document.querySelectorAll(".cred-group.show .edit-only").forEach(e => e.style.display = "");
+    openModal();
+  }));
+
+  /* ── Submit add/edit ── */
+  document.getElementById("srcForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const btn = document.getElementById("f_submit");
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = editSid ? "Saving…" : "Connecting…";
+
+    const fd = new FormData(this);
+    // map external bearer field onto access_token expected by the view
+    if (providerSel.value === "external") {
+      const ext = document.getElementById("f_external_token").value;
+      fd.delete("access_token_external");
+      if (ext) fd.set("access_token", ext);
+    } else {
+      fd.delete("access_token_external");
+    }
+
+    const url = editSid ? u(EDIT_URL, editSid) : ADD_URL;
+    fetch(url, {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF, "X-Requested-With": "XMLHttpRequest" },
+      body: fd,
+    })
+    .then(r => r.json())
+    .then(d => {
+      if (d.success) {
+        closeModal();
+        toast(editSid ? "Source updated" : "Source connected");
+        setTimeout(() => location.reload(), 500);
+      } else {
+        toast(d.message || "Could not save source", true);
+      }
+    })
+    .catch(() => toast("Something went wrong", true))
+    .finally(() => { btn.disabled = false; btn.textContent = original; });
+  });
+
+  function post(url) {
+    return fetch(url, {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF, "X-Requested-With": "XMLHttpRequest" },
+    });
+  }
+
+  function showResult(sid, msg, isErr) {
+    const el = document.getElementById("result-" + sid);
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "row-result " + (isErr ? "err" : "ok");
+  }
+
+  /* ── Activate ── */
+  document.querySelectorAll(".act-activate").forEach(btn => btn.addEventListener("click", () => {
+    const sid = btn.dataset.sid;
+    btn.disabled = true;
+    post(u(ACTIVATE_URL, sid)).then(r => r.json()).then(d => {
+      if (d.success) { toast("Active source updated"); setTimeout(() => location.reload(), 400); }
+      else { toast("Could not activate", true); btn.disabled = false; }
+    }).catch(() => { toast("Error", true); btn.disabled = false; });
+  }));
+
+  /* ── Test ── */
+  document.querySelectorAll(".act-test").forEach(btn => btn.addEventListener("click", () => {
+    const sid = btn.dataset.sid;
+    btn.disabled = true;
+    showResult(sid, "Testing connection…", false);
+    post(u(TEST_URL, sid)).then(r => r.json()).then(d => {
+      showResult(sid, d.message || (d.ok ? "Connection OK" : "Connection failed"), !d.ok);
+      toast(d.ok ? "Connection OK" : "Connection failed", !d.ok);
+    }).catch(() => { showResult(sid, "Test failed", true); toast("Test failed", true); })
+      .finally(() => { btn.disabled = false; });
+  }));
+
+  /* ── Sync ── */
+  document.querySelectorAll(".act-sync").forEach(btn => btn.addEventListener("click", () => {
+    const sid = btn.dataset.sid;
+    btn.disabled = true;
+    const orig = btn.textContent;
+    btn.textContent = "Syncing…";
+    showResult(sid, "Syncing products…", false);
+    post(u(SYNC_URL, sid)).then(r => r.json()).then(d => {
+      if (d.success) {
+        const msg = "Synced — " + d.created + " created, " + d.updated + " updated, " + d.errors + " errors";
+        showResult(sid, msg, d.errors > 0);
+        toast(msg, false);
+      } else {
+        showResult(sid, d.message || "Sync failed", true);
+        toast("Sync failed", true);
+      }
+    }).catch(() => { showResult(sid, "Sync failed", true); toast("Sync failed", true); })
+      .finally(() => { btn.disabled = false; btn.textContent = orig; });
+  }));
+
+  /* ── Delete ── */
+  document.querySelectorAll(".act-delete").forEach(btn => btn.addEventListener("click", () => {
+    const sid = btn.dataset.sid;
+    if (!confirm("Remove this product source? This cannot be undone.")) return;
+    btn.disabled = true;
+    post(u(DELETE_URL, sid)).then(r => r.json()).then(d => {
+      if (d.success) {
+        const row = document.querySelector("tr[data-sid='" + sid + "']");
+        if (row) row.remove();
+        toast("Source removed");
+      } else { toast("Could not remove source", true); btn.disabled = false; }
+    }).catch(() => { toast("Error removing source", true); btn.disabled = false; });
+  }));
+
+})();
+</script>
+{% endblock %}

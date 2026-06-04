@@ -14,6 +14,8 @@ from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
 
+from back.crypto import encrypt_value, decrypt_value
+
 # -----------------------
 # Custom User Model
 # -----------------------
@@ -110,6 +112,98 @@ class Integration(models.Model):
 # -----------------------
 # Products
 # -----------------------
+class ProductSource(models.Model):
+    PROVIDER_CHOICES = [
+        ("internal", "Internal (default)"),
+        ("woocommerce", "WooCommerce"),
+        ("shopify", "Shopify"),
+        ("external", "External / Custom"),
+    ]
+    MODE_CHOICES = [
+        ("sync", "Synced cache"),   # products mirrored into local Product rows
+        ("live", "Live fetch"),     # query the external store in real time
+    ]
+    STATUS_CHOICES = [
+        ("connected", "Connected"),
+        ("error", "Error"),
+        ("disconnected", "Disconnected"),
+    ]
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="product_sources")
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, default="internal")
+    name = models.CharField(max_length=120, blank=True)            # display label
+    store_url = models.URLField(blank=True, null=True)             # e.g. https://shop.example.com
+
+    # Encrypted credentials — store ciphertext; use the property accessors below.
+    _consumer_key = models.TextField(blank=True, null=True, db_column="consumer_key")        # Woo
+    _consumer_secret = models.TextField(blank=True, null=True, db_column="consumer_secret")  # Woo
+    _api_key = models.TextField(blank=True, null=True, db_column="api_key")                  # Shopify api key / custom
+    _access_token = models.TextField(blank=True, null=True, db_column="access_token")        # Shopify admin token / custom bearer
+
+    # Order push endpoint (so AI orders can be sent to the user's website)
+    order_endpoint_url = models.URLField(blank=True, null=True)
+    order_endpoint_auth = models.JSONField(blank=True, null=True, help_text="Optional extra headers/auth for custom order endpoint")
+
+    mode = models.CharField(max_length=10, choices=MODE_CHOICES, default="sync")
+    is_active = models.BooleanField(default=False, help_text="The single active source the AI reads from")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="disconnected")
+    last_error = models.TextField(blank=True, null=True)
+    last_synced = models.DateTimeField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    sid = ShortUUIDField(length=6, max_length=15, prefix="src_", alphabet="abcdefg1234")
+
+    class Meta:
+        verbose_name_plural = "Product Sources"
+
+    def __str__(self):
+        return f"{self.get_provider_display()} — {self.user.email}"
+
+    @property
+    def consumer_key(self):
+        return decrypt_value(self._consumer_key)
+
+    @consumer_key.setter
+    def consumer_key(self, value):
+        self._consumer_key = encrypt_value(value or "")
+
+    @property
+    def consumer_secret(self):
+        return decrypt_value(self._consumer_secret)
+
+    @consumer_secret.setter
+    def consumer_secret(self, value):
+        self._consumer_secret = encrypt_value(value or "")
+
+    @property
+    def api_key(self):
+        return decrypt_value(self._api_key)
+
+    @api_key.setter
+    def api_key(self, value):
+        self._api_key = encrypt_value(value or "")
+
+    @property
+    def access_token(self):
+        return decrypt_value(self._access_token)
+
+    @access_token.setter
+    def access_token(self, value):
+        self._access_token = encrypt_value(value or "")
+
+    @classmethod
+    def get_active_for(cls, user):
+        return cls.objects.filter(user=user, is_active=True).first()
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if self.is_active:
+            ProductSource.objects.filter(
+                user=self.user, is_active=True
+            ).exclude(pk=self.pk).update(is_active=False)
+
+
 class Product(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="products")
     
@@ -125,6 +219,9 @@ class Product(models.Model):
     last_synced = models.DateTimeField(auto_now=True)
     upsell_enabled = models.BooleanField(default=False)
     featured_product = models.BooleanField(default=False, help_text="Featured products are highlighted in store and recommendations")
+
+    source = models.ForeignKey("ProductSource", on_delete=models.SET_NULL, null=True, blank=True, related_name="products", help_text="Null = internal/default product")
+    external_id = models.CharField(max_length=255, blank=True, null=True, db_index=True, help_text="Product ID in the external store")
 
     pid = ShortUUIDField(
         length=6,

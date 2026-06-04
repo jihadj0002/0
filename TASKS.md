@@ -115,17 +115,78 @@
 
 ---
 
+## EPIC 7 — Multi-Source Product Architecture `P1`
+> Today every product lives in the internal `Product` model. Users must be able to keep that default **or** connect an external source (WooCommerce, Shopify, …). A central resolver abstracts all product/order reads so the AI pipeline never cares where a product comes from. Existing groundwork: `Sale.source` (`internal`/`external`) and `Sale.external_order_id` already exist.
+
+| Status | Priority | Agent | Task |
+|--------|----------|-------|------|
+| [x] | P1 | @backend | `ProductSource` model: `user` FK, `provider` (`internal`/`woocommerce`/`shopify`/`external`), display name, `store_url`, encrypted creds (`consumer_key`/`consumer_secret` for Woo, `api_key`/`access_token` for Shopify), `order_endpoint_url`/`order_endpoint_auth`, `is_active` (single active, enforced in `save()`), `mode` (`live`/`sync`), `status`, `last_synced`, `sid` (`src_`) — migration `0018` |
+| [x] | P1 | @backend | Add `source` FK (→ `ProductSource`, null=internal) + `external_id` to `Product` so synced items map back to their origin store |
+| [x] | P1 | @api | Provider abstraction: base `ProductProvider` (`test_connection`, `list_products`, `get_product`, `search`, `create_order`, `get_order_status`) under `api/products/providers/`; normalized product dict shape |
+| [x] | P1 | @api | `WooCommerceProvider` — REST API v3, basic auth with consumer key/secret + store URL; list/get/search products, create + read orders |
+| [x] | P1 | @api | `ShopifyProvider` — Admin API 2024-01, store URL + access token; variant-aware products + orders |
+| [x] | P1 | @api | `InternalProvider` — wraps the existing `Product` ORM behind the same interface (internal order creation stays in `api/ai/tools.py`); `ExternalProvider` for generic order-endpoint stores |
+| [x] | P1 | @api | **Central resolver** `api/products/factory.py` — `get_active_source(user)` / `get_provider(user)` / `is_external(user)`; tools dispatch through it instead of querying `Product` directly |
+| [x] | P1 | @ai-pipeline | Route `search_products`, `get_product_details`, `send_images` through the resolver (live fetch when `mode=live`; synced cache / internal path unchanged otherwise) |
+| [x] | P2 | @api | Sync engine `api/products/sync.py` — pull external catalog → upsert local `Product` rows on `(source, external_id)`; management command `sync_products --user` + on-demand "Sync now" button |
+| [x] | P2 | @api | Order routing — `api/products/orders.py:push_order_to_source(sale)` builds payload from `Sale`+items, pushes to Woo/Shopify/external endpoint, records `Sale.source`/`external_order_id`/`updated_to_web`; called from `create_order` after the local Sale commits |
+| [~] | P2 | @api | `get_order_status` — provider method exists; AI tool still reads the local `Sale` (system of record, stores `external_order_id`). Enrich with live external status if needed later. |
+| [x] | P2 | @frontend | Product Sources UI (`/db/sources`) — connect source, provider-aware cred fields, "Test connection", "Sync now", activate/edit/delete, status + last-synced; "Product Sources" button + active-source notice on Products page |
+| [x] | P1 | @security | Credentials encrypted via `back/crypto.py` (Fernet derived from `ENCRYPT_KEY`); all source/product queries scoped per user; secrets never rendered back into forms or admin |
+| [ ] | P3 | @api | Inbound store webhooks (optional) — Woo/Shopify product & order update webhooks → keep local cache fresh |
+
+---
+
+## EPIC 8 — One-Click OAuth Connect (Meta) `P1`
+> Replace the manual flow (copy webhook URL, paste verify token + app secret + page token) with a single **Connect with Facebook** button: OAuth → pick page → auto-provision the `Integration`, subscribe the page to the app webhook, and the AI starts running immediately.
+
+| Status | Priority | Agent | Task |
+|--------|----------|-------|------|
+| [ ] | P1 | @api | Configure the Meta App: OAuth redirect URI + scopes (`pages_messaging`, `pages_show_list`, `pages_manage_metadata`, `instagram_basic`, `instagram_manage_messages`) |
+| [ ] | P1 | @frontend | "Connect with Facebook" button on the Integration page (replaces manual token/webhook fields) |
+| [ ] | P1 | @api | OAuth start endpoint → Meta consent screen; OAuth callback → exchange `code` for short-lived, then long-lived user token |
+| [ ] | P1 | @api | Fetch user pages (`GET /me/accounts`); let the user select which page(s) to connect |
+| [ ] | P1 | @api | Store page access token + page id on `Integration` (`access_token`, `integration_id`), set `is_connected=True` |
+| [ ] | P1 | @api | Auto-subscribe the page to the app webhook (`POST /{page-id}/subscribed_apps`) — no manual webhook URL/verify-token entry |
+| [ ] | P1 | @backend | App-level webhook endpoint + single verify token; route inbound events by `page_id` → `Integration` (replaces per-user verify tokens for OAuth-connected pages) |
+| [ ] | P2 | @api | Instagram connect via the IG business account linked to the connected page |
+| [ ] | P2 | @backend | Long-lived token refresh before expiry; mark integration disconnected + notify on refresh failure |
+| [ ] | P2 | @frontend | Integration page: connection status (Connected/Disconnected), page name/avatar, Disconnect button |
+| [ ] | P1 | @security | OAuth `state` CSRF token, validated redirect URI, tokens stored encrypted |
+| [ ] | P2 | @api | Disconnect flow — unsubscribe page (`DELETE /{page-id}/subscribed_apps`), clear tokens, set `is_connected=False` |
+
+---
+
+## EPIC 9 — Billing Fixes & Media Cost `P1`
+> Fix a credit-leak bug and start billing for image and voice analysis.
+
+| Status | Priority | Agent | Task |
+|--------|----------|-------|------|
+| [ ] | P1 | @billing | **BUG: default model not deducting.** In `deduct_for_reply` the `if pricing:` guard silently sets cost = 0 when the logged `model` has no active `ModelPricing` row. The default (`providers.DEFAULT_MODEL = "openai/gpt-4o-mini"`) must match a seeded `model_id` exactly so default-model replies always deduct. |
+| [ ] | P1 | @ai-pipeline | Ensure `_log` records the **resolved** model id actually sent (not OpenRouter's returned variant) so it matches `ModelPricing.model_id` |
+| [ ] | P1 | @billing | No silent free usage — log a WARNING (and/or apply a fallback default price) whenever a `UsageLog.model` has no matching `ModelPricing`, instead of charging 0 |
+| [ ] | P2 | @billing | Image analysis billing — account for vision input tokens / per-image surcharge in `ModelPricing` + `UsageLog` and include in the reply deduction |
+| [ ] | P2 | @billing | Voice/audio billing — bill transcription (per-second or per-token) when audio messages are transcribed before the pipeline |
+| [ ] | P2 | @backend | Extend `UsageLog.call_type` to distinguish `text` / `vision` / `transcription` calls for accurate reporting |
+| [ ] | P2 | @ai-pipeline | Log transcription + vision calls to `UsageLog` under the same `reply_id` so they roll into the reply's deduction |
+| [ ] | P2 | @billing | Update `setup_billing` seed with image + audio/transcription pricing rows |
+
+---
+
 ## Up Next (Recommended Order)
 
 > Highest-value tasks that are unblocked and ready to start.
 
-1. **`[x]` Pre-flight credit check** — done: `api/ai/pipeline.py:run()` checks `credits_remaining <= 0` before first LLM call.
-2. **`[x]` Usage alerts (20% threshold)** — done: `billing/deductions.py` logs `LOW_BALANCE` warning when `pct < 0.2`.
-3. **`[~]` KnowledgeBase model** `@backend P2` — unblocks voice/knowledge features; add to `context/models.py`, migrate.
-4. **`[~]` Voice message transcription** `@ai-pipeline P3` — in `api/webhooks.py` audio handling, call OpenRouter Whisper-compatible endpoint before pipeline.
-5. **`[~]` Security audit** `@security P2` — review all webhook + settings + billing endpoints for auth gaps and cross-tenant query leaks.
-6. **`[~]` Rate limit webhooks** `@security P2` — add `django-ratelimit` per `username` on all webhook `POST` handlers.
-7. **`[~]` Knowledge base manager UI** `@frontend P3` — blocked on #2 (KnowledgeBase model); CRUD page at `/db/settings/knowledge/`.
+1. **`[ ]` BUG — default model not deducting** `@billing P1` — `deduct_for_reply` charges 0 when the logged model has no `ModelPricing` row. Highest priority: it's a live credit leak (Epic 9).
+2. **`[x]` Multi-source product architecture** `@backend/@api P1` — done: `ProductSource` model, `api/products/` providers (Woo/Shopify/Internal/External) + resolver + sync + order push, AI tools wired, `/db/sources` UI. Remaining: inbound store webhooks (P3), live external `get_order_status` (P2).
+3. **`[ ]` One-click Meta OAuth connect** `@api P1` — Connect button → OAuth → auto-subscribe page webhook (Epic 8).
+4. **`[x]` Pre-flight credit check** — done: `api/ai/pipeline.py:run()` checks `credits_remaining <= 0` before first LLM call.
+5. **`[x]` Usage alerts (20% threshold)** — done: `billing/deductions.py` logs `LOW_BALANCE` warning when `pct < 0.2`.
+6. **`[~]` KnowledgeBase model** `@backend P2` — unblocks voice/knowledge features; add to `context/models.py`, migrate.
+7. **`[~]` Voice message transcription** `@ai-pipeline P3` — in `api/webhooks.py` audio handling, call OpenRouter Whisper-compatible endpoint before pipeline (pairs with Epic 9 voice billing).
+8. **`[~]` Security audit** `@security P2` — review all webhook + settings + billing endpoints for auth gaps and cross-tenant query leaks.
+9. **`[~]` Rate limit webhooks** `@security P2` — add `django-ratelimit` per `username` on all webhook `POST` handlers.
+10. **`[~]` Knowledge base manager UI** `@frontend P3` — blocked on #6 (KnowledgeBase model); CRUD page at `/db/settings/knowledge/`.
 
 ---
 

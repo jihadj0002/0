@@ -14,7 +14,16 @@ urlpatterns = [
     path("products/<int:pk>/gallery/<int:img_pk>/delete/", views.delete_gallery_image, name="delete_gallery_image"),
     path("products/import", views.import_products, name="import_products"),
     path("products/export", views.export_products, name="export_products"),
-    
+
+    # Product Sources (Multi-Source Architecture)
+    path("sources", views.product_sources, name="product_sources"),
+    path("sources/add", views.add_product_source, name="add_product_source"),
+    path("sources/<str:sid>/edit", views.edit_product_source, name="edit_product_source"),
+    path("sources/<str:sid>/delete", views.delete_product_source, name="delete_product_source"),
+    path("sources/<str:sid>/activate", views.activate_product_source, name="activate_product_source"),
+    path("sources/<str:sid>/test", views.test_product_source, name="test_product_source"),
+    path("sources/<str:sid>/sync", views.sync_product_source, name="sync_product_source"),
+
     # Package Management
     path("packages", views.packages, name="packages"),
     path("packages/add", views.add_package, name="add_package"),

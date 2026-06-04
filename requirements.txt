@@ -15,3 +15,4 @@ dj-database-url
 django-storages[s3]
 boto3
 openai
+cryptography==46.0.5

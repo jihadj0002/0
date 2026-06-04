@@ -150,7 +150,35 @@ def _image_url(path):
         return None
 
 
+def _external_row(r):
+    return {
+        "pid": r["external_id"],
+        "name": r["name"],
+        "price": r["price"],
+        "discounted_price": r.get("discounted_price"),
+        "in_stock": r.get("in_stock", True),
+        "stock": r.get("stock", 0),
+        "description": (r.get("description") or "")[:200],
+        "featured": False,
+    }
+
+
 def tool_search_products(user, query, limit=5, conversation=None):
+    # Live external source → query the provider in real time.
+    from api.products.factory import get_active_source, get_provider, is_external
+    try:
+        source = get_active_source(user)
+        if source and source.mode == "live" and is_external(user):
+            provider = get_provider(user)
+            if query and query.strip():
+                rows = provider.search(query, limit)
+            else:
+                rows = provider.list_products(limit=limit)
+            rows = rows or []
+            return {"products": [_external_row(r) for r in rows], "total": len(rows)}
+    except Exception:
+        logger.exception("Live search_products failed; falling back to local DB")
+
     # If a product is already selected for this conversation, return it directly
     if conversation and conversation.current_product:
         pid = conversation.current_product.strip()
@@ -202,6 +230,27 @@ def _product_row(p):
 
 
 def tool_get_product_details(user, pid):
+    # Live external source → fetch from the provider (pid is the external_id).
+    from api.products.factory import get_active_source, get_provider, is_external
+    try:
+        source = get_active_source(user)
+        if source and source.mode == "live" and is_external(user):
+            r = get_provider(user).get_product(pid)
+            if not r:
+                return {"error": f"Product '{pid}' not found"}
+            return {
+                "pid": r["external_id"],
+                "name": r["name"],
+                "price": r["price"],
+                "discounted_price": r.get("discounted_price"),
+                "stock": r.get("stock", 0),
+                "in_stock": r.get("in_stock", True),
+                "description": r.get("description") or "",
+                "upsell_enabled": False,
+            }
+    except Exception:
+        logger.exception("Live get_product_details failed; falling back to local DB")
+
     try:
         p = Product.objects.get(user=user, pid=pid)
     except Product.DoesNotExist:
@@ -228,6 +277,19 @@ def tool_get_product_details(user, pid):
 
 
 def tool_send_images(user, pid, conversation=None):
+    # Live external source → fetch images from the provider.
+    from api.products.factory import get_active_source, get_provider, is_external
+    try:
+        source = get_active_source(user)
+        if source and source.mode == "live" and is_external(user):
+            r = get_provider(user).get_product(pid)
+            if not r:
+                return {"error": f"Product '{pid}' not found", "images": []}
+            images = r.get("images") or ([r["image"]] if r.get("image") else [])
+            return {"pid": pid, "name": r["name"], "images": images}
+    except Exception:
+        logger.exception("Live send_images failed; falling back to local DB")
+
     try:
         p = Product.objects.get(user=user, pid=pid)
     except Product.DoesNotExist:
@@ -249,20 +311,62 @@ def tool_send_images(user, pid, conversation=None):
 
 def tool_create_order(user, conversation, customer_name, customer_phone, customer_address, items,
                       customer_city="", delivery_zone="inside_dhaka"):
+    from decimal import Decimal
+
+    from api.products.factory import get_active_source, get_provider, is_external
+
+    # Determine external context once.
+    source = get_active_source(user)
+    external_active = bool(source) and is_external(user)
+    live_mode = bool(source) and source.mode == "live" and external_active
+    provider = None
+    if live_mode:
+        try:
+            provider = get_provider(user)
+        except Exception:
+            logger.exception("Could not load provider for create_order; treating as non-live")
+            provider = None
+
+    # Each resolved entry: (product_or_None, qty, unit_price, product_name, external_id)
     resolved = []
     errors = []
 
     for item in items:
         pid = item.get("pid", "")
         qty = max(int(item.get("quantity", 1)), 1)
-        try:
-            product = Product.objects.get(user=user, pid=pid, status=True)
+
+        # 1) Local product by pid (system of record / internal / sync).
+        product = Product.objects.filter(user=user, pid=pid, status=True).first()
+
+        # 2) Synced external product matched by external_id.
+        if product is None and external_active:
+            product = Product.objects.filter(user=user, external_id=pid).first()
+
+        if product is not None:
             if product.stock_quantity < qty:
                 errors.append(f"{product.name}: only {product.stock_quantity} left in stock")
-            else:
-                resolved.append((product, qty))
-        except Product.DoesNotExist:
-            errors.append(f"Product '{pid}' not found")
+                continue
+            unit_price = product.discounted_price or product.price
+            resolved.append((product, qty, unit_price, product.name, product.external_id or None))
+            continue
+
+        # 3) Live external product with no local row — look up via provider.
+        if live_mode and provider is not None:
+            r = None
+            try:
+                r = provider.get_product(pid)
+            except Exception:
+                logger.exception("Live get_product failed for pid=%s during create_order", pid)
+            if r:
+                raw_price = r.get("discounted_price") or r.get("price") or "0"
+                try:
+                    unit_price = Decimal(str(raw_price))
+                except Exception:
+                    unit_price = Decimal("0")
+                resolved.append((None, qty, unit_price, r.get("name") or pid, pid))
+                continue
+
+        errors.append(f"Product '{pid}' not found")
 
     if errors:
         return {"error": "Cannot create order", "details": errors}
@@ -282,20 +386,22 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
         )
         total = 0
         line_items = []
-        for product, qty in resolved:
-            unit_price = product.discounted_price or product.price
+        for product, qty, unit_price, product_name, external_id in resolved:
             OrderItem.objects.create(
                 order=sale,
                 product=product,
-                product_name=product.name,
+                product_name=product_name,
                 price=unit_price,
                 quantity=qty,
                 action="base",
+                external_product_id=external_id or None,
             )
-            product.stock_quantity -= qty
-            product.save(update_fields=["stock_quantity"])
+            # Only adjust stock for local rows.
+            if product is not None:
+                product.stock_quantity -= qty
+                product.save(update_fields=["stock_quantity"])
             total += unit_price * qty
-            line_items.append({"name": product.name, "qty": qty, "unit_price": str(unit_price)})
+            line_items.append({"name": product_name, "qty": qty, "unit_price": str(unit_price)})
 
          # Add delivery charge
         store_config = StoreConfig.objects.filter(user=user).first()
@@ -303,7 +409,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
             delivery_charge = store_config.delivery_charge_inside if store_config else 0
         else:
             delivery_charge = store_config.delivery_charge_outside if store_config else 0
-        
+
         sale.amount = total + delivery_charge
         sale.save(update_fields=["amount"])
 
@@ -314,11 +420,22 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
         customer_city=customer_city or conversation.customer_city,
     )
 
+    # Push to the user's external source (safe to call always; no-op when internal).
+    push_result = {}
+    try:
+        from api.products.orders import push_order_to_source
+        push_result = push_order_to_source(sale) or {}
+    except Exception:
+        logger.exception("push_order_to_source failed for order %s", sale.oid)
+        push_result = {}
+
     return {
         "order_id": sale.oid,
         "status": sale.status,
         "total": str(sale.amount),
         "items": line_items,
+        "synced_to_store": bool(push_result.get("ok") and not push_result.get("skipped")),
+        "external_order_id": sale.external_order_id,
     }
 
 
