@@ -97,6 +97,8 @@ def build_system_prompt(user, conversation):
 
     # Current selected product (kept in context across turns). Resolve from the
     # active source so it works for both internal and external/live catalogs.
+    c_product = conversation.current_product.strip() if conversation.current_product else ""
+    cust.append(f"Current selected products: {c_product or 'None'}")
     pid = (conversation.current_product or "").strip()
     if pid:
         snap = _selected_product_snapshot(user, pid, currency, external_catalog)

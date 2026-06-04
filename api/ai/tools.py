@@ -195,6 +195,10 @@ def tool_search_products(user, query, limit=5, conversation=None):
             else:
                 rows = provider.list_products(limit=limit)
             rows = rows or []
+            
+            current_conv = Conversation.objects.filter(user=user, pk=conversation.pk).first() if conversation else None
+            current_conv.current_product = "rows[0]['external_id']" if rows else ""
+            current_conv.save(update_fields=["current_product"])
             return {"products": [_external_row(r) for r in rows], "total": len(rows)}
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
@@ -249,7 +253,7 @@ def _product_row(p):
     }
 
 
-def tool_get_product_details(user, pid):
+def tool_get_product_details(user, pid, conversation=None):
     # Live external source → fetch from the provider (pid is the external_id).
     from api.products.factory import get_active_source, get_provider, is_external
     try:
@@ -281,6 +285,9 @@ def tool_get_product_details(user, pid):
                     }
                     for v in variations
                 ]
+            current_conv = Conversation.objects.filter(user=user, pk=conversation.pk).first() if conversation else None
+            current_conv.current_product = details
+            current_conv.save(update_fields=["current_product"])
             return details
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
@@ -562,7 +569,7 @@ def execute_tool(name, arguments, user, conversation):
             return tool_search_products(user, args.get("query", ""), int(args.get("limit", 5)), conversation=conversation)
 
         if name == "get_product_details":
-            return tool_get_product_details(user, args.get("pid", ""))
+            return tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
 
         if name == "send_images":
             return tool_send_images(user, args.get("pid", ""), conversation)
