@@ -83,6 +83,10 @@ TOOL_DEFINITIONS = [
                             "properties": {
                                 "pid": {"type": "string"},
                                 "quantity": {"type": "integer", "default": 1},
+                                "variation_id": {
+                                    "type": "string",
+                                    "description": "Required for products that have variations (size/color). Use the variation_id from search_products/get_product_details.",
+                                },
                             },
                             "required": ["pid"],
                         },
@@ -151,7 +155,7 @@ def _image_url(path):
 
 
 def _external_row(r):
-    return {
+    row = {
         "pid": r["external_id"],
         "name": r["name"],
         "price": r["price"],
@@ -161,6 +165,22 @@ def _external_row(r):
         "description": (r.get("description") or "")[:200],
         "featured": False,
     }
+    if r.get("sku"):
+        row["sku"] = r["sku"]
+    # Surface variations so the AI can present options and pass a variation_id
+    # back into create_order (the external order API requires it).
+    variations = r.get("variations") or []
+    if variations:
+        row["variations"] = [
+            {
+                "variation_id": v.get("variation_id"),
+                "name": v.get("name"),
+                "price": v.get("price"),
+                "in_stock": v.get("in_stock", True),
+            }
+            for v in variations
+        ]
+    return row
 
 
 def tool_search_products(user, query, limit=5, conversation=None):
@@ -238,7 +258,7 @@ def tool_get_product_details(user, pid):
             r = get_provider(user).get_product(pid)
             if not r:
                 return {"error": f"Product '{pid}' not found"}
-            return {
+            details = {
                 "pid": r["external_id"],
                 "name": r["name"],
                 "price": r["price"],
@@ -248,6 +268,20 @@ def tool_get_product_details(user, pid):
                 "description": r.get("description") or "",
                 "upsell_enabled": False,
             }
+            if r.get("sku"):
+                details["sku"] = r["sku"]
+            variations = r.get("variations") or []
+            if variations:
+                details["variations"] = [
+                    {
+                        "variation_id": v.get("variation_id"),
+                        "name": v.get("name"),
+                        "price": v.get("price"),
+                        "in_stock": v.get("in_stock", True),
+                    }
+                    for v in variations
+                ]
+            return details
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
 
@@ -327,13 +361,15 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
             logger.exception("Could not load provider for create_order; treating as non-live")
             provider = None
 
-    # Each resolved entry: (product_or_None, qty, unit_price, product_name, external_id)
+    # Each resolved entry:
+    #   (product_or_None, qty, unit_price, product_name, external_id, variation_id)
     resolved = []
     errors = []
 
     for item in items:
         pid = item.get("pid", "")
         qty = max(int(item.get("quantity", 1)), 1)
+        requested_vid = item.get("variation_id")
 
         # 1) Local product by pid (system of record / internal / sync).
         product = Product.objects.filter(user=user, pid=pid, status=True).first()
@@ -347,7 +383,8 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
                 errors.append(f"{product.name}: only {product.stock_quantity} left in stock")
                 continue
             unit_price = product.discounted_price or product.price
-            resolved.append((product, qty, unit_price, product.name, product.external_id or None))
+            resolved.append((product, qty, unit_price, product.name,
+                             product.external_id or None, requested_vid or None))
             continue
 
         # 3) Live external product with no local row — look up via provider.
@@ -358,12 +395,40 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
             except Exception:
                 logger.exception("Live get_product failed for pid=%s during create_order", pid)
             if r:
-                raw_price = r.get("discounted_price") or r.get("price") or "0"
+                variations = r.get("variations") or []
+                chosen = None
+                if variations:
+                    if requested_vid:
+                        chosen = next(
+                            (v for v in variations
+                             if str(v.get("variation_id")) == str(requested_vid)),
+                            None,
+                        )
+                        if chosen is None:
+                            errors.append(f"{r.get('name') or pid}: variation '{requested_vid}' not found")
+                            continue
+                    elif len(variations) == 1:
+                        chosen = variations[0]
+                    else:
+                        opts = ", ".join(
+                            f"{v.get('name')} (variation_id={v.get('variation_id')})"
+                            for v in variations
+                        )
+                        errors.append(
+                            f"{r.get('name') or pid}: choose a variation before ordering — options: {opts}"
+                        )
+                        continue
+                raw_price = (
+                    (chosen or {}).get("promotion_price")
+                    or (chosen or {}).get("price")
+                    or r.get("discounted_price") or r.get("price") or "0"
+                )
                 try:
                     unit_price = Decimal(str(raw_price))
                 except Exception:
                     unit_price = Decimal("0")
-                resolved.append((None, qty, unit_price, r.get("name") or pid, pid))
+                vid = chosen.get("variation_id") if chosen else (requested_vid or None)
+                resolved.append((None, qty, unit_price, r.get("name") or pid, pid, vid))
                 continue
 
         errors.append(f"Product '{pid}' not found")
@@ -386,7 +451,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
         )
         total = 0
         line_items = []
-        for product, qty, unit_price, product_name, external_id in resolved:
+        for product, qty, unit_price, product_name, external_id, variation_id in resolved:
             OrderItem.objects.create(
                 order=sale,
                 product=product,
@@ -395,6 +460,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
                 quantity=qty,
                 action="base",
                 external_product_id=external_id or None,
+                external_variation_id=str(variation_id) if variation_id else None,
             )
             # Only adjust stock for local rows.
             if product is not None:

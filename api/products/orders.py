@@ -30,6 +30,7 @@ def push_order_to_source(sale) -> dict:
     for item in sale.items.all():
         items.append({
             "external_id": _item_external_id(item),
+            "variation_id": item.external_variation_id or None,
             "name": item.product_name or (item.product.name if item.product else ""),
             "quantity": int(item.quantity or 1),
             "price": str(item.price or "0"),

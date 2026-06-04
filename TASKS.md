@@ -137,6 +137,33 @@
 
 ---
 
+## EPIC 7.5 — External Products: Bug Fixes & Live Integration `P1`
+> Epic 7 shipped the multi-source scaffolding, but the **`external`/custom provider can't actually fetch products from a remote API** — it reads the local cache only. So a real external store (the monowamart ERP) connects but syncs **0 products** and the AI gets an empty catalog. This epic makes the external provider truly talk to a remote product + order API end-to-end.
+>
+> **Test fixtures** (use for every task below): base user **`test1`** · customer id **`35084552054491799`** (a `messenger` conversation, pk 44213). Active source `src_4ece2e`: provider `external`, `store_url=https://erp.monowamart.com/api/v1/ai/products`, `order_endpoint_url=https://erp.monowamart.com/api/v1/ai/order`, `mode=sync`, `is_active=True`. Note: the legacy `Update_External_Order_Item_To_Web` view (api/views.py:603) is a **stub** — outbound push to the ERP was never implemented; `push_order_to_source` is the first real attempt.
+
+| Status | Priority | Agent | Task |
+|--------|----------|-------|------|
+| [x] | P1 | @api | ~~Confirm the ERP contract.~~ **DONE** — tested live; full contract recorded in Notes. |
+| [x] | P1 | @api | ~~Browser User-Agent on ALL ERP calls.~~ **DONE** — `external.py` sends a Chrome `User-Agent` + `Accept: application/json` on every GET/POST (verified: was 403, now 200). |
+| [x] | P1 | @api | ~~Tenant base URL.~~ **DONE** — provider derives base `…/{business_id}/ai` and strips a trailing `/products`. `test1` `src_4ece2e` config corrected to include `/1/`. |
+| [x] | P1 | @api | ~~External provider can't fetch products.~~ **DONE** — `ExternalProvider` now HTTP-fetches with Laravel pagination, maps real fields, price/stock from `variations[]`, strips HTML, builds image URLs. Verified live: 7309 products. |
+| [x] | P1 | @api | ~~Expose variations.~~ **DONE** — normalized dict + `search_products`/`get_product_details` now include `variations:[{variation_id,name,price,in_stock}]` and `sku`. |
+| [x] | P1 | @api | ~~SKU search.~~ **DONE** — `search()` routes through `?query=` (the `?sku=` param returns 0; verified). |
+| [x] | P1 | @api | ~~Order-push payload.~~ **DONE** — `ExternalProvider.create_order` builds the confirmed ERP shape `{address, items:[{product_id,variation_id,quantity}], delivered_to, shipping_note, source:"ai", payment_method:"cod", rp_redeemed, rp_redeemed_amount}`, POSTs to `/order`, parses returned id. `orders.py` passes `variation_id` through. (Verified via mocked POST.) |
+| [x] | P1 | @ai-pipeline | ~~`create_order` variation handling.~~ **DONE** — item schema has optional `variation_id`; live resolve picks AI-chosen / sole / errors-with-options; writes `external_product_id`+`external_variation_id`. Verified end-to-end + missing-variation guard. |
+| [x] | P1 | @api | ~~`test_connection` is fake.~~ **DONE** — now GETs `{base}/products` with UA and reports product count; persists real status. |
+| [x] | P2 | @ai-pipeline | ~~Verify live read path.~~ **DONE** — `search_products`/`get_product_details` return real ERP products + variations for `test1`. |
+| [x] | P2 | @api | ~~Verify sync.~~ Underlying fetch verified; `test1` runs in **live** mode (preferred for an ERP with dynamic stock/price), so the synced-cache path is optional. `sync_products` reuses the now-working `list_products`. |
+| [~] | P2 | @ai-pipeline | End-to-end order — verified with a **mocked** ERP POST (Sale + OrderItem.external_variation_id + payload all correct). **Pending: one real POST to the live `/ai/order`** to confirm the ERP accepts it — needs user OK (creates a real order). |
+| [ ] | P2 | @ai-pipeline | **Image → SKU flow** — customer sends a product image → vision extracts the visible SKU → `search(?query={sku})`. Depends on vision handling in the pipeline (ties to Epic 9 image work). **Main remaining feature.** |
+| [~] | P2 | @api | `get_order_status` for external — provider method implemented (`GET {base}/orders/{id}`); AI tool still reads the local `Sale` (system of record). Wire the live lookup if richer status is needed. |
+| [ ] | P3 | @frontend | Sources UI polish — let users enter the products base URL for an external source, show product count after Test/Sync, surface ERP errors clearly. |
+
+**Remaining to fully close Epic 7.5:** (1) one real order POST to confirm ERP acceptance (needs user OK) · (2) image→SKU vision flow (Epic 9 dependency) · (3) `/db/sources` UI polish · (4) optional live `get_order_status` wiring.
+
+---
+
 ## EPIC 8 — One-Click OAuth Connect (Meta) `P1`
 > Replace the manual flow (copy webhook URL, paste verify token + app secret + page token) with a single **Connect with Facebook** button: OAuth → pick page → auto-provision the `Integration`, subscribe the page to the app webhook, and the AI starts running immediately.
 
@@ -178,8 +205,9 @@
 > Highest-value tasks that are unblocked and ready to start.
 
 1. **`[ ]` BUG — default model not deducting** `@billing P1` — `deduct_for_reply` charges 0 when the logged model has no `ModelPricing` row. Highest priority: it's a live credit leak (Epic 9).
-2. **`[x]` Multi-source product architecture** `@backend/@api P1` — done: `ProductSource` model, `api/products/` providers (Woo/Shopify/Internal/External) + resolver + sync + order push, AI tools wired, `/db/sources` UI. Remaining: inbound store webhooks (P3), live external `get_order_status` (P2).
-3. **`[ ]` One-click Meta OAuth connect** `@api P1` — Connect button → OAuth → auto-subscribe page webhook (Epic 8).
+2. **`[ ]` External products — fetch bug** `@api P1` — **start here for external work.** The `external` provider reads the local cache instead of the remote API, so `test1` syncs 0 products. Fix fetch + auth + order-push payload (Epic 7.5). Test with user `test1` / customer `35084552054491799`.
+3. **`[x]` Multi-source product architecture (scaffolding)** `@backend/@api P1` — done: `ProductSource` model, `api/products/` providers (Woo/Shopify/Internal/External) + resolver + sync + order push, AI tools wired, `/db/sources` UI. Bug fixes tracked in Epic 7.5.
+4. **`[ ]` One-click Meta OAuth connect** `@api P1` — Connect button → OAuth → auto-subscribe page webhook (Epic 8).
 4. **`[x]` Pre-flight credit check** — done: `api/ai/pipeline.py:run()` checks `credits_remaining <= 0` before first LLM call.
 5. **`[x]` Usage alerts (20% threshold)** — done: `billing/deductions.py` logs `LOW_BALANCE` warning when `pct < 0.2`.
 6. **`[~]` KnowledgeBase model** `@backend P2` — unblocks voice/knowledge features; add to `context/models.py`, migrate.
@@ -197,3 +225,157 @@
 - Billing deduction is post-reply; pre-flight check (Epic 4 P3) will add the guard before pipeline runs
 - All settings are on one tabbed page (`/db/settings/`) not separate URLs — simpler UX, one form POST per section
 - `top_up()` function exists in `billing/deductions.py` but has no view/admin endpoint yet
+- **monowamart ERP integration is inbound-only today** — the ERP pushes orders/sales INTO Matrix via `/orders/newex*` and `/orders/monowa`; outbound push (`Update_External_Order_Item_To_Web`) is a stub. Epic 7.5's `push_order_to_source` is the first outbound implementation.
+- **ERP contract — CONFIRMED (tested live 2026-06-04):**
+  - **Base URL** = `https://erp.monowamart.com/api/v1/{business_id}/ai` — `business_id` (the `/1/`) is **mandatory**. `test1`'s stored `store_url` is missing it → must be fixed.
+  - **Auth** = none, BUT Cloudflare returns **403** unless a browser `User-Agent` header is sent (default `requests`/`curl` UA is blocked). Send `User-Agent: Mozilla/5.0 …` on every call.
+  - **Products:** `GET {base}/products` (Laravel pagination: top-level `current_page`,`last_page`,`next_page_url`,`per_page`,`total`,`data[]`; page via `?page=N`). `GET {base}/products/{id}`. `?query={q}` works; **`?sku={sku}` is unreliable (returned 0 for a real sku)** → do SKU lookup via `?query={sku}`.
+  - **Product fields (real):** `id`→external_id, `name`, `sku`, `type` (`single`/`variable`), `product_description` (HTML→strip), `image_url`/`thumb_url` (full URLs), `media[]`, `total_stock` (string), `attributes[]`, and **`variations[]`** = `[{id (=variation_id), name, sub_sku, sell_price, regular_price, promotion_price, qty_available}]`. `single` types still have one variation (name `"DUMMY"`). Price/stock per variation.
+  - **Order create:** `POST {base}/order` (singular) with `{"address":{"name","mobile","address"},"items":[{"product_id","variation_id","quantity"}],"delivered_to":"inside_dhaka|outside_dhaka","shipping_note","source":"ai","payment_method":"cod","rp_redeemed":0,"rp_redeemed_amount":0}`. **No customer_id; price not sent (ERP computes). `variation_id` is required per item** → sync/search MUST expose variations.
+  - **Order read:** `GET {base}/orders` and `GET {base}/orders/{id}` (Laravel pagination; order objects have `id`, `status`, `payment_status`, `transaction_date`, totals).
+
+
+
+
+## Special Update and bug fixes on external products.
+-test api endpoint based on this endpoints
+Endpoint
+Base_url = https://erp.monowamart.com/api/v1/1/ai/
+
+Get products
+
+• Get all products paginated
+GET https://base_url/products
+you can add query params to get products by search query or sku
+• By sku
+GET https://base_url/products?sku={sku}
+• By search query
+GET https://base_url/products?query={query_string}
+• By ID
+GET https://base_url/products/{id}
+
+Orders
+• Get all orders paginated
+GET https://base_url/orders
+• Get Order by Id
+GET https://base_url/orders/{order_id}
+• Create new order
+POST https://base_url/order
+
+With below data
+{
+"address": {
+"name":"Jony",
+"mobile":"01873066166",
+"address":"Addres goes here"
+},
+"items":[
+{
+"product_id":6,
+"variation_id":53,
+"quantity":1
+}
+],
+"delivered_to": "inside_dhaka", // options inside_dhaka, outside_dhaka
+// "pickup_location_id": "1",
+"shipping_note":"Can be any requets by customer",
+"source":"ai",
+"payment_method":"cod",
+"rp_redeemed": 0,
+"rp_redeemed_amount": 0
+}
+
+- and output information is most likely this 
+
+{
+  "current_page": 1,
+  "data": [
+    {
+      "id": 31551,
+      "slug": "mastela-lullaby-orbit-electric-crib-smart-auto-swing-cradle-for-newborns-1",
+      "name": "Mastela Lullaby Orbit Electric Crib - Smart Auto Swing Cradle for Newborns",
+      "sku": "40284DG",
+
+      "price": {
+        "sell_price": 13500,
+        "regular_price": null,
+        "promotion_price": null
+      },
+
+      "stock": {
+        "available": 8,
+        "show_stock": false,
+        "allow_oversell": false
+      },
+
+      "category": {
+        "id": 8,
+        "sub_category_id": 291,
+        "sub_sub_category_id": 298
+      },
+
+      "brand": {
+        "id": 89,
+        "name": "Mastela"
+      },
+
+      "thumbnail_url": "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1-thumb.jpg",
+
+      "image_url": "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1.jpg",
+
+      "gallery_urls": [
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-3.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-4.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-5.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-6.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-convenient-1.jpg",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-2.png",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-4.png",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-3.png",
+        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1.png"
+      ],
+
+      "description": "...",
+
+      "attributes": [
+        {
+          "name": "Brand",
+          "value": "Mastela"
+        }
+      ],
+
+      "variation": {
+        "id": 52142,
+        "sku": "40284DG",
+        "quantity": 8
+      },
+
+      "seo": {
+        "title": "...",
+        "keywords": "...",
+        "description": "..."
+      },
+
+      "created_at": "2025-11-24 21:31:22",
+      "updated_at": "2026-01-26 13:48:36"
+    }
+  ],
+
+  "pagination": {
+    "current_page": 1
+  }
+}
+
+
+- For generating image URLs from the media array:
+
+{
+  "gallery_urls": [
+    "https://erp.monowamart.com/storage/files/1/{filename}.{extension}"
+  ]
+}
+
+- test all connection process like if external is connected and customer sends an image then image data generated to the ai assistant then he mostly have the image SKU then search the squ or via description for that product. and all.
+
+

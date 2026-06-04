@@ -7,7 +7,10 @@
       "Bash(python -c \"import cryptography; print\\('cryptography', cryptography.__version__\\)\")",
       "Bash(venv/bin/python *)",
       "Bash(venv/bin/pip show *)",
-      "Bash(venv/bin/pip install *)"
+      "Bash(venv/bin/pip install *)",
+      "Bash(curl -sS -m 20 -o /tmp/prod.json -w \"HTTP %{http_code}\\\\n\" \"https://erp.monowamart.com/api/v1/1/ai/products\")",
+      "Read(//tmp/**)",
+      "Bash(curl -sS -m 20 -o /tmp/prod2.json -w \"HTTP %{http_code}\\\\n\" \"https://erp.monowamart.com/api/v1/ai/products\")"
     ]
   }
 }
