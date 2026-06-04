@@ -284,7 +284,7 @@ html, body {
     <nav class="nav">
       <a class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'products' %}active{% endif %}" href="{% url 'back:products' %}">📦 Products</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'packages' %}active{% endif %}" href="{% url 'back:packages' %}">🧾 Packages</a>
+      <!-- <a class="nav-item {% if request.resolver_match.url_name == 'packages' %}active{% endif %}" href="{% url 'back:packages' %}">🧾 Packages</a> -->
       <a class="nav-item {% if request.resolver_match.url_name == 'orders' %}active{% endif %}" href="{% url 'back:orders' %}">🧾 Orders</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'c_dashboard' %}active{% endif %}" href="{% url 'back:c_dashboard' %}">🧾 Messages</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}">⚙️ Integrations</a>

@@ -221,8 +221,8 @@ def tool_get_product_details(user, pid):
         "stock": p.stock_quantity,
         "in_stock": p.stock_quantity > 0,
         "description": p.description or "",
-        "main_image": _image_url(p.image),
-        "gallery": extra_images,
+        # "main_image": _image_url(p.image),
+        # "gallery": extra_images,
         "upsell_enabled": p.upsell_enabled,
     }
 

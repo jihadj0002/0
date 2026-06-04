@@ -438,3 +438,4 @@ admin.site.register(Integration, IntegrationAdmin)
 admin.site.register(Message, MessageAdmin)
 admin.site.register(Package, PackageAdmin)
 admin.site.register(PackageItem, PackageItemAdmin)
+

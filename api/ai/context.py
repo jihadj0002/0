@@ -125,14 +125,17 @@ def build_system_prompt(user, conversation):
     # --- Core task rules ---
     parts.append(
         "## Rules\n"
-        "- Never invent product prices or stock — always call search_products first.\n"
+        "- Never invent product prices or stock — Look in ## Available Products OR call search_products.\n"
         "- Before creating an order collect: customer name, phone, delivery address.\n"
         "- Confirm order items aloud before calling create_order.\n"
+        "- Be Order Intended.\n"
         "- Use transfer_chat when the customer is angry, asks for a human, or issue is beyond your scope.\n"
-        "- Keep replies short and conversational unless the customer asks for detail.\n"
+        f"- Keep replies {identity.tone} and {identity.style} unless the customer asks for detail.\n"
         "- When suggesting products, always offer to send images with send_images.\n"
         "- Never send more than 5 images at once.\n"
         "- Never Send urls as outputs image urls should be sent via send_images.\n"
+
+    
     )
 
     # Join all parts and truncate if too long
