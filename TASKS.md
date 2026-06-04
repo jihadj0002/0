@@ -158,9 +158,15 @@
 | [~] | P2 | @ai-pipeline | End-to-end order — verified with a **mocked** ERP POST (Sale + OrderItem.external_variation_id + payload all correct). **Pending: one real POST to the live `/ai/order`** to confirm the ERP accepts it — needs user OK (creates a real order). |
 | [ ] | P2 | @ai-pipeline | **Image → SKU flow** — customer sends a product image → vision extracts the visible SKU → `search(?query={sku})`. Depends on vision handling in the pipeline (ties to Epic 9 image work). **Main remaining feature.** |
 | [~] | P2 | @api | `get_order_status` for external — provider method implemented (`GET {base}/orders/{id}`); AI tool still reads the local `Sale` (system of record). Wire the live lookup if richer status is needed. |
+| [x] | P1 | @ai-pipeline | **BUG — AI answered without searching.** Root cause in `api/ai/context.py`: (a) `MAX_PROMPT_LENGTH=4000` truncated the prompt and the `## Rules` were appended LAST → cut off; (b) conversation history was embedded in the system prompt AND added again by `pipeline.py` → bloat; (c) the inline `## Available Products` list + "look in list OR search" rule let the model skip the tool. **Fixed:** moved tool rules to the TOP (truncation-safe, cap 8000), removed the duplicated history, made the catalog source-aware. |
+| [x] | P1 | @ai-pipeline | **Catalog is source-aware** — for an external/live source the prompt no longer inlines local rows; it instructs the AI to ALWAYS `search_products` (mandatory). Internal sources still get a small inline sample. `## Rules` now spell out search → details → send_images and "never quote a price you didn't just fetch". |
+| [x] | P1 | @ai-pipeline | **BUG — wrong/placeholder images on external.** Was caused by the prompt surfacing 15 **stale synced** local rows (`sku_` PIDs, `img=product.jpg`) while live tools use ERP integer PIDs → mismatch. Fixed by the source-aware catalog. Live ERP image URLs verified deliverable (HTTP 200 to `facebookexternalhit`/`WhatsApp`/`Telegram` fetchers; only bare curl UA is 403). |
+| [x] | P1 | @ai-pipeline | Selected-product context now resolves via the live provider for external catalogs (`_selected_product_snapshot`), so a chosen external product stays in context across turns (was local-DB-only → silently dropped). |
+| [~] | P1 | @ai-pipeline | **Confirm live:** with no `OPENROUTER_API_KEY` in dev I could not run a real LLM turn. Verify on a keyed env that "cradle ache?" now triggers `search_products(query="cradle")` → details → reply. (Tool layer already verified: `search('cradle')` → 3 results.) |
+| [ ] | P2 | @api | **Stale synced rows in live mode** — `test1` has 15 leftover synced `Product` rows. In live mode `create_order` matches a local synced row by `external_id` (case 2) before the live lookup, so it may use stale price/stock. Prefer the live provider when the active source is live, or clear synced rows on switching to live. |
 | [ ] | P3 | @frontend | Sources UI polish — let users enter the products base URL for an external source, show product count after Test/Sync, surface ERP errors clearly. |
 
-**Remaining to fully close Epic 7.5:** (1) one real order POST to confirm ERP acceptance (needs user OK) · (2) image→SKU vision flow (Epic 9 dependency) · (3) `/db/sources` UI polish · (4) optional live `get_order_status` wiring.
+**Remaining to fully close Epic 7.5:** (1) confirm the search→details→reply flow on a keyed env (esp. "cradle ache?") · (2) one real order POST to confirm ERP acceptance (needs user OK) · (3) image→SKU **vision** flow — the only part needing the customer's photo read, depends on Epic 9 vision · (4) stale-synced-row preference in live mode · (5) `/db/sources` UI polish.
 
 ---
 
@@ -238,144 +244,7 @@
 
 
 ## Special Update and bug fixes on external products.
--test api endpoint based on this endpoints
-Endpoint
-Base_url = https://erp.monowamart.com/api/v1/1/ai/
 
-Get products
-
-• Get all products paginated
-GET https://base_url/products
-you can add query params to get products by search query or sku
-• By sku
-GET https://base_url/products?sku={sku}
-• By search query
-GET https://base_url/products?query={query_string}
-• By ID
-GET https://base_url/products/{id}
-
-Orders
-• Get all orders paginated
-GET https://base_url/orders
-• Get Order by Id
-GET https://base_url/orders/{order_id}
-• Create new order
-POST https://base_url/order
-
-With below data
-{
-"address": {
-"name":"Jony",
-"mobile":"01873066166",
-"address":"Addres goes here"
-},
-"items":[
-{
-"product_id":6,
-"variation_id":53,
-"quantity":1
-}
-],
-"delivered_to": "inside_dhaka", // options inside_dhaka, outside_dhaka
-// "pickup_location_id": "1",
-"shipping_note":"Can be any requets by customer",
-"source":"ai",
-"payment_method":"cod",
-"rp_redeemed": 0,
-"rp_redeemed_amount": 0
-}
-
-- and output information is most likely this 
-
-{
-  "current_page": 1,
-  "data": [
-    {
-      "id": 31551,
-      "slug": "mastela-lullaby-orbit-electric-crib-smart-auto-swing-cradle-for-newborns-1",
-      "name": "Mastela Lullaby Orbit Electric Crib - Smart Auto Swing Cradle for Newborns",
-      "sku": "40284DG",
-
-      "price": {
-        "sell_price": 13500,
-        "regular_price": null,
-        "promotion_price": null
-      },
-
-      "stock": {
-        "available": 8,
-        "show_stock": false,
-        "allow_oversell": false
-      },
-
-      "category": {
-        "id": 8,
-        "sub_category_id": 291,
-        "sub_sub_category_id": 298
-      },
-
-      "brand": {
-        "id": 89,
-        "name": "Mastela"
-      },
-
-      "thumbnail_url": "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1-thumb.jpg",
-
-      "image_url": "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1.jpg",
-
-      "gallery_urls": [
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-3.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-4.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-5.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-conveni-6.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib-convenient-1.jpg",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-2.png",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-4.png",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-3.png",
-        "https://erp.monowamart.com/storage/files/1/40284dg-mastela-lullaby-orbit-electric-crib---convenient-baby-crib-1.png"
-      ],
-
-      "description": "...",
-
-      "attributes": [
-        {
-          "name": "Brand",
-          "value": "Mastela"
-        }
-      ],
-
-      "variation": {
-        "id": 52142,
-        "sku": "40284DG",
-        "quantity": 8
-      },
-
-      "seo": {
-        "title": "...",
-        "keywords": "...",
-        "description": "..."
-      },
-
-      "created_at": "2025-11-24 21:31:22",
-      "updated_at": "2026-01-26 13:48:36"
-    }
-  ],
-
-  "pagination": {
-    "current_page": 1
-  }
-}
-
-
-- For generating image URLs from the media array:
-
-{
-  "gallery_urls": [
-    "https://erp.monowamart.com/storage/files/1/{filename}.{extension}"
-  ]
-}
-
-- test all connection process like if external is connected and customer sends an image then image data generated to the ai assistant then he mostly have the image SKU then search the squ or via description for that product. and all.
-
-
+- recieved images will have custom instructions each for their own user account.
+- in context available products is not needed.
+- try some ways to use search product tool to get specific product with search if possible.
