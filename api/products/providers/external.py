@@ -123,8 +123,8 @@ class ExternalProvider(ProductProvider):
             "discounted_price": first.get("promotion_price"),
             "stock": stock,
             "in_stock": stock > 0,
-            # "image": images[0] if images else None,
-            # "images": images,
+            "image": images[0] if images else None,
+            "images": images,
             "variations": variations,
             "raw": raw,
         }

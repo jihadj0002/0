@@ -154,6 +154,106 @@ def _image_url(path):
         return None
 
 
+# ---------------------------------------------------------------------------
+# Focused products — a rolling list (most-recent-first, max 5) persisted on
+# conversation.current_product as a JSON array. A single search can surface
+# several products, so the AI keeps context on the last few it touched (and can
+# pull a pid for send_images). The most recent product is kept in full detail
+# (description + variations); older entries are compact to fit the field.
+# Readers tolerate a legacy single-dict payload or raw-pid string, so the API
+# SelectProductView and older rows keep working.
+# ---------------------------------------------------------------------------
+
+FOCUS_MAX = 5
+
+
+def parse_focus_products(value):
+    """Return the focused-product list (most-recent-first) from current_product."""
+    if not value:
+        return []
+    value = value.strip()
+    try:
+        data = json.loads(value)
+        if isinstance(data, list):
+            return [d for d in data if isinstance(d, dict) and d.get("pid")]
+        if isinstance(data, dict) and data.get("pid"):
+            return [data]
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return [{"pid": value}]  # legacy: the whole value is a raw pid
+
+
+def _focus_pid(conversation):
+    items = parse_focus_products(getattr(conversation, "current_product", "") if conversation else "")
+    return items[0].get("pid", "") if items else ""
+
+
+def _build_focus_payload(product, full=True):
+    """Snapshot a product row/details dict. ``full`` keeps description + variations."""
+    payload = {"pid": str(product.get("pid", "")), "name": product.get("name") or ""}
+    for key in ("price", "discounted_price", "stock", "in_stock", "sku"):
+        val = product.get(key)
+        if val is not None:
+            payload[key] = val
+    if not full:
+        return payload
+    desc = (product.get("description") or "").strip()
+    if desc:
+        payload["description"] = desc[:300]
+    variations = product.get("variations") or []
+    if variations:
+        payload["variations"] = [
+            {
+                "variation_id": v.get("variation_id"),
+                "name": v.get("name"),
+                "price": v.get("price"),
+                "in_stock": v.get("in_stock", True),
+            }
+            for v in variations[:12]
+        ]
+    return payload
+
+
+def _focus_products(conversation, products):
+    """Prepend ``products`` (row/details dicts) to the rolling focus list.
+
+    Dedups by pid, keeps most-recent-first, caps at FOCUS_MAX. The newest entry
+    is stored in full detail; the rest are compact to respect the field size.
+    """
+    if not conversation or not products:
+        return
+    incoming = [p for p in products if p and p.get("pid")]
+    if not incoming:
+        return
+
+    existing = parse_focus_products(conversation.current_product)
+    ordered, seen = [], set()
+    for p in incoming + existing:
+        pid = str(p.get("pid"))
+        if pid and pid not in seen:
+            seen.add(pid)
+            ordered.append(p)
+        if len(ordered) >= FOCUS_MAX:
+            break
+
+    items = [_build_focus_payload(p, full=(i == 0)) for i, p in enumerate(ordered)]
+
+    payload = json.dumps(items)
+    # current_product is CharField(max_length=5000) — drop oldest until it fits.
+    while len(payload) > 4900 and len(items) > 1:
+        items.pop()
+        payload = json.dumps(items)
+    Conversation.objects.filter(pk=conversation.pk).update(current_product=payload)
+    conversation.current_product = payload
+
+
+def _clear_focus_product(conversation):
+    if not conversation:
+        return
+    Conversation.objects.filter(pk=conversation.pk).update(current_product="")
+    conversation.current_product = ""
+
+
 def _external_row(r):
     row = {
         "pid": r["external_id"],
@@ -195,27 +295,27 @@ def tool_search_products(user, query, limit=5, conversation=None):
             else:
                 rows = provider.list_products(limit=limit)
             rows = rows or []
-            
-            current_conv = Conversation.objects.filter(user=user, pk=conversation.pk).first() if conversation else None
-            current_conv.current_product = "rows[0]['external_id']" if rows else ""
-            current_conv.save(update_fields=["current_product"])
-            return {"products": [_external_row(r) for r in rows], "total": len(rows)}
+            results = [_external_row(r) for r in rows]
+            # Focus on the products this search surfaced (most-recent-first) so
+            # later turns (e.g. an image request) can reuse a pid from context.
+            if results:
+                _focus_products(conversation, results[:FOCUS_MAX])
+            return {"products": results, "total": len(results)}
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
 
     # If a product is already selected for this conversation, return it directly
-    if conversation and conversation.current_product:
-        pid = conversation.current_product.strip()
+    focus_pid = _focus_pid(conversation)
+    if focus_pid:
         try:
-            product = Product.objects.get(user=user, pid=pid, status=True)
+            product = Product.objects.get(user=user, pid=focus_pid, status=True)
             return {
                 "products": [_product_row(product)],
                 "total": 1,
                 "selected_product": True,
             }
         except Product.DoesNotExist:
-            Conversation.objects.filter(pk=conversation.pk).update(current_product="")
-            conversation.current_product = ""
+            _clear_focus_product(conversation)
 
     # Generic / empty query → show featured first, then fill with anything
     generic = not query or query.strip().lower() in ("", "product", "products", "show", "list", "all")
@@ -230,11 +330,9 @@ def tool_search_products(user, query, limit=5, conversation=None):
 
     products_list = list(qs[:limit])
 
-    # Auto-select the top result so the next context includes full product details
+    # Focus on this search's results so the next context lists the recent products
     if products_list and conversation:
-        top_pid = products_list[0].pid
-        Conversation.objects.filter(pk=conversation.pk).update(current_product=top_pid)
-        conversation.current_product = top_pid
+        _focus_products(conversation, [_product_row(p) for p in products_list[:FOCUS_MAX]])
 
     results = [_product_row(p) for p in products_list]
     return {"products": results, "total": len(results)}
@@ -285,9 +383,7 @@ def tool_get_product_details(user, pid, conversation=None):
                     }
                     for v in variations
                 ]
-            current_conv = Conversation.objects.filter(user=user, pk=conversation.pk).first() if conversation else None
-            current_conv.current_product = details
-            current_conv.save(update_fields=["current_product"])
+            _focus_products(conversation, [details])
             return details
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
@@ -303,7 +399,7 @@ def tool_get_product_details(user, pid, conversation=None):
         if _image_url(img)
     ]
 
-    return {
+    details = {
         "pid": p.pid,
         "name": p.name,
         "price": str(p.price),
@@ -315,9 +411,18 @@ def tool_get_product_details(user, pid, conversation=None):
         # "gallery": extra_images,
         "upsell_enabled": p.upsell_enabled,
     }
+    # Keep the conversation focused on this product.
+    _focus_products(conversation, [details])
+    return details
 
 
 def tool_send_images(user, pid, conversation=None):
+    # Fall back to the conversation's focused product when no pid was supplied.
+    if not pid:
+        pid = _focus_pid(conversation)
+    if not pid:
+        return {"error": "No product selected — search for a product first", "images": []}
+
     # Live external source → fetch images from the provider.
     from api.products.factory import get_active_source, get_provider, is_external
     try:

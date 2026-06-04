@@ -95,15 +95,15 @@ def build_system_prompt(user, conversation):
 
     currency = store.currency if store else "BDT"
 
-    # Current selected product (kept in context across turns). Resolve from the
-    # active source so it works for both internal and external/live catalogs.
-    c_product = conversation.current_product.strip() if conversation.current_product else ""
-    cust.append(f"Current selected products: {c_product or 'None'}")
-    pid = (conversation.current_product or "").strip()
-    if pid:
-        snap = _selected_product_snapshot(user, pid, currency, external_catalog)
-        if snap:
-            cust.append(snap)
+    # Focused products (kept in context across turns). search_products /
+    # get_product_details persist a rolling list (most-recent-first) of the last
+    # few products this conversation touched, so the AI can act on any of them —
+    # e.g. call send_images with a pid when the customer asks for photos, without
+    # searching again.
+    from .tools import parse_focus_products
+    focus_list = parse_focus_products(conversation.current_product)
+    if focus_list:
+        cust.append(_render_focus_products(focus_list, currency))
 
     if cust:
         parts.append("## Current Customer\n" + "\n".join(cust))
@@ -113,9 +113,8 @@ def build_system_prompt(user, conversation):
     # large and dynamic; the AI must use search_products (enforced in the rules).
     if external_catalog:
         parts.append(
-            "## Catalog\n"
-            "Products live in a connected external store and are NOT listed here. "
-            "Always use search_products to find anything the customer asks about."
+            "## END Of Focused Products\n"
+            
         )
     else:
         available_products = list(Product.objects.filter(user=user, status=True)[:10])
@@ -142,38 +141,50 @@ def build_system_prompt(user, conversation):
     return system_prompt
 
 
-def _selected_product_snapshot(user, pid, currency, external_catalog):
-    """Return a short text block describing the currently-selected product, or None.
+def _render_focus_products(focus_list, currency):
+    """Render the rolling focused-products list for the system prompt.
 
-    Resolves via the live provider for external catalogs, else the local DB.
+    The most recent product (index 0) is shown in full (description +
+    variations); the rest are listed compactly. The AI can call send_images /
+    get_product_details with any of these PIDs.
     """
-    if external_catalog:
-        try:
-            from api.products.factory import get_provider
-            r = get_provider(user).get_product(pid)
-            if not r:
-                return None
-            disc = f"  Discounted: {r['discounted_price']} {currency}" if r.get("discounted_price") else ""
-            return (
-                f"Selected product: {r['name']} (PID: {r['external_id']})\n"
-                f"Price: {r.get('price')} {currency}{disc}\n"
-                f"Stock: {r.get('stock', 0)} units\n"
-                f"Description: {(r.get('description') or 'N/A')[:200]}"
-            )
-        except Exception:
-            return None
+    lines = ["## Focused Products (recent — what this conversation is about, newest first)"]
 
-    try:
-        product = Product.objects.get(user=user, pid=pid, status=True)
-    except Product.DoesNotExist:
-        return None
-    disc = f"  Discounted: {product.discounted_price} {currency}" if product.discounted_price else ""
-    return (
-        f"Selected product: {product.name} (PID: {product.pid})\n"
-        f"Price: {product.price} {currency}{disc}\n"
-        f"Stock: {product.stock_quantity} units\n"
-        f"Description: {(product.description or 'N/A')[:200]}"
+    primary = focus_list[0]
+    p_pid = primary.get("pid", "")
+    p_name = primary.get("name") or ""
+    header = f"1. {p_name} (PID: {p_pid})" if p_name else f"1. PID: {p_pid}"
+    if primary.get("sku"):
+        header += f"  SKU: {primary['sku']}"
+    lines.append(header)
+    if primary.get("price") is not None:
+        price_line = f"   Price: {primary['price']} {currency}"
+        if primary.get("discounted_price"):
+            price_line += f"  Discounted: {primary['discounted_price']} {currency}"
+        lines.append(price_line)
+    if primary.get("stock") is not None:
+        lines.append(f"   Stock: {primary['stock']} ({'in stock' if primary.get('in_stock', True) else 'out of stock'})")
+    if primary.get("description"):
+        lines.append(f"   Description: {primary['description']}")
+    for v in primary.get("variations") or []:
+        stock_note = "" if v.get("in_stock", True) else " — out of stock"
+        lines.append(
+            f"   • {v.get('name')} — {v.get('price')} {currency} "
+            f"(variation_id={v.get('variation_id')}){stock_note}"
+        )
+
+    for i, f in enumerate(focus_list[1:], start=2):
+        name = f.get("name") or ""
+        label = f"{name} (PID: {f.get('pid')})" if name else f"PID: {f.get('pid')}"
+        price = f"{f['price']} {currency}" if f.get("price") is not None else ""
+        stock_note = "" if f.get("in_stock", True) else " — out of stock"
+        lines.append(f"{i}. {label}" + (f" — {price}" if price else "") + stock_note)
+
+    lines.append(
+        "For any product above, call send_images(pid=...) to send photos or "
+        "get_product_details(pid=...) for fresh price/stock/variations."
     )
+    return "\n".join(lines)
 
 
 def get_conversation_history(conversation, limit=20):
