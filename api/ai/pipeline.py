@@ -3,7 +3,7 @@ import logging
 import re
 import uuid
 
-from back.models import Message, UsageLog
+from back.models import Integration, Message, UsageLog
 
 # Image URLs (storage links, or any http(s) link ending in an image extension).
 _IMAGE_URL_RE = re.compile(
@@ -85,7 +85,7 @@ def run(conversation, incoming_message):
     messages = [{"role": "system", "content": system_prompt}] + history
 
     # Per-integration model override (falls back to provider default)
-    integration = user.integrations.filter(platform=conversation.platform).first()
+    integration = Integration.get_active(user, conversation.platform)
     model = (integration.ai_model or None) if integration else None
 
     final_text = None

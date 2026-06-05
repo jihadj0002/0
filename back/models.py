@@ -116,6 +116,12 @@ class Integration(models.Model):
     token_expires_at = models.DateTimeField(blank=True, null=True, help_text="Long-lived token expiry")
     ig_account_id = models.CharField(max_length=64, blank=True, null=True, help_text="Linked Instagram business account id")
 
+    @classmethod
+    def get_active(cls, user, platform):
+        """The integration to use for a platform: a connected one wins, else the most recent."""
+        qs = cls.objects.filter(user=user, platform=platform)
+        return qs.filter(is_connected=True).order_by("-id").first() or qs.order_by("-id").first()
+
 # -----------------------
 # Products
 # -----------------------

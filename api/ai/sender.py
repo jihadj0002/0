@@ -2,6 +2,8 @@ import logging
 
 import requests
 
+from back.models import Integration
+
 logger = logging.getLogger(__name__)
 
 GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
@@ -11,7 +13,7 @@ def send_reply(conversation, text, image_urls=None):
     """Dispatch a reply (text + optional images) to the customer via their platform."""
     platform = conversation.platform
     try:
-        integration = conversation.user.integrations.filter(platform=platform).first()
+        integration = Integration.get_active(conversation.user, platform)
         if not integration or not integration.access_token:
             logger.warning("No active integration for user=%s platform=%s", conversation.user_id, platform)
             return

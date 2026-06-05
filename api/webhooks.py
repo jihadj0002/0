@@ -246,7 +246,7 @@ class _BaseWebhookView(View):
     def _get_integration(self, username):
         try:
             user = User.objects.get(username=username)
-            return Integration.objects.filter(user=user, platform=self.platform).first()
+            return Integration.get_active(user, self.platform)
         except User.DoesNotExist:
             return None
 

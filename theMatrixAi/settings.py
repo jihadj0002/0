@@ -43,7 +43,7 @@ META_GRAPH_VERSION = env("META_GRAPH_VERSION", default="v19.0")
 # Space-separated OAuth scopes requested during Connect-with-Facebook.
 META_OAUTH_SCOPES = env(
     "META_OAUTH_SCOPES",
-    default="pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_manage_engagement,business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments",
+    default="pages_show_list,pages_messaging,pages_manage_metadata,pages_manage_engagement,pages_read_engagement,pages_read_user_content,pages_manage_posts,business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments,public_profile,email",
 )
 # Optional explicit redirect URI override (else built from the request).
 META_OAUTH_REDIRECT_URI = env("META_OAUTH_REDIRECT_URI", default="")

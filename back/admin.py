@@ -245,7 +245,7 @@ class ConversationAdmin(admin.ModelAdmin):
         # ── Pipeline test ─────────────────────────────────────────────────
         if "run_pipeline" in request.POST and selected_conv and message_text.strip():
             active_tab = "test"
-            integration = selected_user.integrations.filter(platform=selected_conv.platform).first()
+            integration = Integration.get_active(selected_user, selected_conv.platform)
             model = (integration.ai_model or None) if integration else None
 
             sp = build_system_prompt(selected_user, selected_conv)

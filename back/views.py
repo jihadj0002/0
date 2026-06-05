@@ -305,7 +305,7 @@ def bot_preview(request):
     conversation = get_object_or_404(Conversation, id=conv_id, user=request.user)
     user = request.user
 
-    integration = user.integrations.filter(platform=conversation.platform).first()
+    integration = Integration.get_active(user, conversation.platform)
     model = (integration.ai_model or None) if integration else None
 
     system_prompt = build_system_prompt(user, conversation)
@@ -570,7 +570,7 @@ def send_image_ajax(request):
     # Facebook Messenger Integration
     # =======================
     if convo.platform == "messenger":
-        integration = user.integrations.filter(platform="messenger").first()
+        integration = Integration.get_active(user, "messenger")
         if not integration:
             return HttpResponseForbidden("Messenger integration not configured.")
 
@@ -617,7 +617,7 @@ def send_image_ajax(request):
     # WhatsApp Integration
     # =======================
     elif convo.platform == "whatsapp":
-        integration = user.integrations.filter(platform="whatsapp").first()
+        integration = Integration.get_active(user, "whatsapp")
         if not integration:
             return HttpResponseForbidden("WhatsApp integration not configured.")
 
@@ -722,8 +722,9 @@ def send_message_ajax(request):
     
     if convo.platform == "messenger":
 
-        access_token = user.integrations.filter(platform="messenger").first().access_token
-        sender_id = user.integrations.filter(platform="messenger").first().integration_id
+        integration = Integration.get_active(user, "messenger")
+        access_token = integration.access_token if integration else None
+        sender_id = integration.integration_id if integration else None
         if not access_token and sender_id:
             return HttpResponseForbidden("Messenger integration or Sender ID not configured.")
         else:
@@ -744,8 +745,9 @@ def send_message_ajax(request):
     
     if convo.platform == "whatsapp":
 
-        access_token = user.integrations.filter(platform="whatsapp").first().access_token
-        sender_id = user.integrations.filter(platform="whatsapp").first().integration_id
+        integration = Integration.get_active(user, "whatsapp")
+        access_token = integration.access_token if integration else None
+        sender_id = integration.integration_id if integration else None
         if not access_token and sender_id:
             return HttpResponseForbidden("WhatsApp integration not configured.")
         else:

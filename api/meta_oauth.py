@@ -140,32 +140,74 @@ def list_pages(user_token):
         return {"error": str(exc)}
 
 
+def _body(resp):
+    """Parse a response body as JSON, falling back to truncated text. No tokens here."""
+    try:
+        return resp.json()
+    except ValueError:
+        return (resp.text or "")[:500]
+
+
 def subscribe_page(page_id, page_token):
-    """Subscribe the app to a Page's messaging events (app-level webhook)."""
+    """
+    Subscribe the app to a Page's messaging events (app-level webhook).
+
+    Returns a normalized dict ``{"ok": bool, "status": int, "body": <json|text>}``.
+    """
     try:
         resp = requests.post(
             f"{GRAPH}/{page_id}/subscribed_apps",
             data={"subscribed_fields": _SUBSCRIBE_FIELDS, "access_token": page_token},
             timeout=_TIMEOUT,
         )
-        return resp.json()
+        body = _body(resp)
+        ok = resp.ok and not (isinstance(body, dict) and body.get("error"))
+        logger.info(
+            "subscribe_page page=%s status=%s ok=%s body=%s",
+            page_id, resp.status_code, ok, body,
+        )
+        return {"ok": ok, "status": resp.status_code, "body": body}
     except Exception as exc:
         logger.warning("subscribe_page failed page=%s: %s", page_id, exc)
+        return {"ok": False, "status": 0, "body": {"error": str(exc)}}
+
+
+def get_subscribed_apps(page_id, page_token):
+    """GET the apps currently subscribed to a Page (diagnostic confirmation)."""
+    try:
+        resp = requests.get(
+            f"{GRAPH}/{page_id}/subscribed_apps",
+            params={"access_token": page_token},
+            timeout=_TIMEOUT,
+        )
+        return _body(resp)
+    except Exception as exc:
+        logger.warning("get_subscribed_apps failed page=%s: %s", page_id, exc)
         return {"error": str(exc)}
 
 
 def unsubscribe_page(page_id, page_token):
-    """Remove the app's subscription from a Page."""
+    """
+    Remove the app's subscription from a Page.
+
+    Returns a normalized dict ``{"ok": bool, "status": int, "body": <json|text>}``.
+    """
     try:
         resp = requests.delete(
             f"{GRAPH}/{page_id}/subscribed_apps",
             params={"access_token": page_token},
             timeout=_TIMEOUT,
         )
-        return resp.json()
+        body = _body(resp)
+        ok = resp.ok and not (isinstance(body, dict) and body.get("error"))
+        logger.info(
+            "unsubscribe_page page=%s status=%s ok=%s body=%s",
+            page_id, resp.status_code, ok, body,
+        )
+        return {"ok": ok, "status": resp.status_code, "body": body}
     except Exception as exc:
         logger.warning("unsubscribe_page failed page=%s: %s", page_id, exc)
-        return {"error": str(exc)}
+        return {"ok": False, "status": 0, "body": {"error": str(exc)}}
 
 
 def get_page(page_id, page_token):
@@ -204,11 +246,14 @@ def _connect_page(user, page, meta_user_id, expires_in):
         except (TypeError, ValueError):
             expires_at = None
 
+    # Lookup key is (user, platform) only — the app is one-page-per-platform-per-user,
+    # so this reuses/updates the single existing row (incl. the manual auto-created one)
+    # instead of creating a duplicate when integration_id differs.
     Integration.objects.update_or_create(
         user=user,
         platform="messenger",
-        integration_id=page_id,
         defaults={
+            "integration_id": page_id,
             "access_token": page_token,
             "app_secret": settings.META_APP_SECRET,
             "page_name": page_name,
@@ -222,16 +267,23 @@ def _connect_page(user, page, meta_user_id, expires_in):
 
     warning = None
     sub = subscribe_page(page_id, page_token)
-    if isinstance(sub, dict) and sub.get("error"):
-        warning = page_name
+    if not sub.get("ok"):
+        body = sub.get("body")
+        err = body.get("error", {}) if isinstance(body, dict) else {}
+        detail = err.get("message") if isinstance(err, dict) else None
+        warning = f"{page_name}: {detail}" if detail else page_name
+    else:
+        # Confirm this app now appears in the Page's subscribed apps.
+        confirm = get_subscribed_apps(page_id, page_token)
+        logger.info("subscribed_apps page=%s confirm=%s", page_id, confirm)
 
     # Linked Instagram business account → upsert an instagram Integration too.
     if ig_id:
         Integration.objects.update_or_create(
             user=user,
             platform="instagram",
-            integration_id=page_id,
             defaults={
+                "integration_id": page_id,
                 "access_token": page_token,
                 "app_secret": settings.META_APP_SECRET,
                 "page_name": page_name,
