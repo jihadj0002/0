@@ -1,8 +1,26 @@
 import json
 import logging
+import re
 import uuid
 
 from back.models import Message, UsageLog
+
+# Image URLs (storage links, or any http(s) link ending in an image extension).
+_IMAGE_URL_RE = re.compile(
+    r"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|bmp|svg)(?:\?\S*)?",
+    re.IGNORECASE,
+)
+
+
+def _strip_image_urls(text):
+    """Remove image URLs from a reply and tidy the leftover whitespace."""
+    if not text:
+        return text
+    cleaned = _IMAGE_URL_RE.sub("", text)
+    # Collapse blank lines / stray spaces left behind by removed URLs.
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 from .context import build_system_prompt, get_conversation_history
 from .providers import call_llm
@@ -101,8 +119,21 @@ def run(conversation, incoming_message):
 
             result = execute_tool(fn_name, fn_args, user, conversation)
 
+            # Collect images for delivery, but NEVER expose the raw URLs back to
+            # the LLM — otherwise it echoes them into the text reply. The model
+            # only gets a confirmation; images are sent separately by send_reply.
+            tool_content = result
             if fn_name == "send_images" and isinstance(result, dict):
-                pending_images.extend(result.get("images", []))
+                imgs = result.get("images", []) or []
+                pending_images.extend(imgs)
+                tool_content = {
+                    "pid": result.get("pid"),
+                    "name": result.get("name"),
+                    "images_sent": len(imgs),
+                    "status": "images sent to the customer" if imgs else "no images available for this product",
+                }
+                if result.get("error"):
+                    tool_content["error"] = result["error"]
 
             if fn_name == "transfer_chat":
                 transferred = True
@@ -110,7 +141,7 @@ def run(conversation, incoming_message):
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.id,
-                "content": json.dumps(result),
+                "content": json.dumps(tool_content),
             })
 
         if transferred:
@@ -120,6 +151,10 @@ def run(conversation, incoming_message):
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
         return
+
+    # Safety net: the AI must never put image URLs in text — images go only via
+    # send_images. Strip any that slipped through before saving/sending.
+    final_text = _strip_image_urls(final_text)
 
     # Deduplicate image URLs, cap at 5
     seen = set()
