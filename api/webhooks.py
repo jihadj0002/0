@@ -5,8 +5,10 @@ import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import close_old_connections
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -35,7 +37,16 @@ _batch_timers_lock = threading.Lock()
 # ---------------------------------------------------------------------------
 
 def _verify_meta_signature(body_bytes, app_secret, signature_header):
-    """Verify X-Hub-Signature-256. Returns True if not configured (skip mode)."""
+    """Verify X-Hub-Signature-256.
+
+    SECURITY: Returns True in "skip mode" when ``app_secret`` is empty or no
+    signature header is present. This is intentional for per-user webhooks
+    during manual setup (an Integration may not yet have an app_secret), but it
+    means signature checks SILENTLY PASS when the secret is unset. Callers that
+    serve multi-tenant traffic (e.g. the app-level webhook) MUST require a
+    configured secret + present signature themselves before calling this and
+    fail closed if either is missing — do not rely on skip mode in production.
+    """
     if not app_secret or not signature_header:
         return True
     h = hmac.new(app_secret.encode(), body_bytes, hashlib.sha256)
@@ -355,3 +366,115 @@ class TelegramWebhookView(_BaseWebhookView):
 
         self._submit(integration, parse_telegram(payload))
         return HttpResponse("OK", status=200)
+
+
+# ---------------------------------------------------------------------------
+# App-level webhook — single endpoint for ALL OAuth-connected Meta pages
+# ---------------------------------------------------------------------------
+# Configured ONCE in the Meta App dashboard. Meta sends every connected page's
+# events here. We attribute each entry to an Integration by its page/IG id and
+# fan out to the existing background processor. This is purely additive — the
+# per-user webhook views above are untouched.
+
+# object -> (platform, parser)
+_OBJECT_MAP = {
+    "page": "messenger",
+    "instagram": "instagram",
+    "whatsapp_business_account": "whatsapp",
+}
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class MetaAppWebhookView(View):
+
+    def get(self, request):
+        """Meta webhook verification challenge (app-level)."""
+        mode = request.GET.get("hub.mode")
+        token = request.GET.get("hub.verify_token", "")
+        challenge = request.GET.get("hub.challenge", "")
+
+        configured = settings.META_WEBHOOK_VERIFY_TOKEN or ""
+        if mode == "subscribe" and configured and token == configured:
+            return HttpResponse(challenge, content_type="text/plain")
+        return HttpResponse(status=403)
+
+    def post(self, request):
+        # Meta MUST always receive a 200 — never let this raise.
+        try:
+            body = request.body
+
+            # The app-level webhook receives events for EVERY connected tenant.
+            # If META_APP_SECRET is unset, _verify_meta_signature runs in skip
+            # mode (returns True) and forged payloads could inject messages into
+            # any tenant's conversations by guessing a page id. Refuse to process
+            # unsigned traffic on this shared endpoint — fail closed.
+            app_secret = settings.META_APP_SECRET or ""
+            signature = request.headers.get("X-Hub-Signature-256", "")
+            if not app_secret:
+                logger.error(
+                    "App-level webhook: META_APP_SECRET not configured — "
+                    "dropping event (cannot verify signature)."
+                )
+                return HttpResponse("EVENT_RECEIVED", status=200)
+            if not signature or not _verify_meta_signature(body, app_secret, signature):
+                logger.warning("App-level webhook: signature mismatch")
+                return HttpResponse("EVENT_RECEIVED", status=200)
+
+            try:
+                payload = json.loads(body)
+            except (json.JSONDecodeError, ValueError):
+                return HttpResponse("EVENT_RECEIVED", status=200)
+
+            platform = _OBJECT_MAP.get(payload.get("object"))
+            if not platform:
+                return HttpResponse("EVENT_RECEIVED", status=200)
+
+            parser = {
+                "messenger": parse_messenger,
+                "instagram": parse_instagram,
+                "whatsapp": parse_whatsapp,
+            }[platform]
+
+            for entry in payload.get("entry", []):
+                try:
+                    self._route_entry(platform, parser, payload.get("object"), entry)
+                except Exception:
+                    logger.exception("App-level webhook: failed routing an entry")
+
+        except Exception:
+            logger.exception("App-level webhook POST crashed")
+
+        return HttpResponse("EVENT_RECEIVED", status=200)
+
+    def _route_entry(self, platform, parser, object_type, entry):
+        entry_id = entry.get("id")
+        if not entry_id:
+            return
+
+        # Attribute the event to the Integration registered for this page/IG id.
+        qs = Integration.objects.filter(platform=platform, integration_id=entry_id)
+        if platform == "instagram":
+            qs = Integration.objects.filter(
+                Q(platform=platform)
+                & (Q(integration_id=entry_id) | Q(ig_account_id=entry_id))
+            )
+        integration = qs.first()
+        if not integration:
+            logger.info(
+                "App-level webhook: no integration for platform=%s entry_id=%s",
+                platform, entry_id,
+            )
+            return
+
+        single_payload = {"object": object_type, "entry": [entry]}
+        messages = parser(single_payload)
+        if not messages:
+            return
+
+        _executor.submit(
+            _process_webhook,
+            integration.user_id,
+            platform,
+            messages,
+            integration.access_token or "",
+        )

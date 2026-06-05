@@ -3,7 +3,8 @@ from django.urls import path, include
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from . import views
-from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView
+from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView, MetaAppWebhookView
+from .meta_oauth import meta_oauth_start, meta_oauth_callback, meta_oauth_select, meta_disconnect
 
 
 @csrf_exempt
@@ -88,5 +89,14 @@ urlpatterns = [
     path('<str:username>/webhook/messenger/', MessengerWebhookView.as_view(), name='webhook-messenger'),
     path('<str:username>/webhook/instagram/', InstagramWebhookView.as_view(), name='webhook-instagram'),
     path('<str:username>/webhook/telegram/', TelegramWebhookView.as_view(), name='webhook-telegram'),
+
+    # Meta OAuth — One-Click Connect (Epic 8)
+    path('connect/meta/start/', meta_oauth_start, name='meta-oauth-start'),
+    path('connect/meta/callback/', meta_oauth_callback, name='meta-oauth-callback'),
+    path('connect/meta/select/', meta_oauth_select, name='meta-oauth-select'),
+    path('connect/meta/disconnect/<str:platform>/', meta_disconnect, name='meta-disconnect'),
+
+    # App-level webhook — single endpoint for ALL OAuth-connected pages
+    path('meta/webhook/', MetaAppWebhookView.as_view(), name='meta-app-webhook'),
 
 ]

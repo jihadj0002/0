@@ -109,6 +109,13 @@ class Integration(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    CONNECTION_CHOICES = [("manual", "Manual"), ("oauth", "OAuth")]
+    connection_method = models.CharField(max_length=10, choices=CONNECTION_CHOICES, default="manual")
+    page_name = models.CharField(max_length=255, blank=True, null=True, help_text="Connected Meta Page name (OAuth)")
+    meta_user_id = models.CharField(max_length=64, blank=True, null=True, help_text="FB user id who connected (for token refresh)")
+    token_expires_at = models.DateTimeField(blank=True, null=True, help_text="Long-lived token expiry")
+    ig_account_id = models.CharField(max_length=64, blank=True, null=True, help_text="Linked Instagram business account id")
+
 # -----------------------
 # Products
 # -----------------------

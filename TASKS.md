@@ -177,18 +177,19 @@
 
 | Status | Priority | Agent | Task |
 |--------|----------|-------|------|
-| [ ] | P1 | @api | Configure the Meta App: OAuth redirect URI + scopes (`pages_messaging`, `pages_show_list`, `pages_manage_metadata`, `instagram_basic`, `instagram_manage_messages`) |
-| [ ] | P1 | @frontend | "Connect with Facebook" button on the Integration page (replaces manual token/webhook fields) |
-| [ ] | P1 | @api | OAuth start endpoint → Meta consent screen; OAuth callback → exchange `code` for short-lived, then long-lived user token |
-| [ ] | P1 | @api | Fetch user pages (`GET /me/accounts`); let the user select which page(s) to connect |
-| [ ] | P1 | @api | Store page access token + page id on `Integration` (`access_token`, `integration_id`), set `is_connected=True` |
-| [ ] | P1 | @api | Auto-subscribe the page to the app webhook (`POST /{page-id}/subscribed_apps`) — no manual webhook URL/verify-token entry |
-| [ ] | P1 | @backend | App-level webhook endpoint + single verify token; route inbound events by `page_id` → `Integration` (replaces per-user verify tokens for OAuth-connected pages) |
-| [ ] | P2 | @api | Instagram connect via the IG business account linked to the connected page |
-| [ ] | P2 | @backend | Long-lived token refresh before expiry; mark integration disconnected + notify on refresh failure |
-| [ ] | P2 | @frontend | Integration page: connection status (Connected/Disconnected), page name/avatar, Disconnect button |
-| [ ] | P1 | @security | OAuth `state` CSRF token, validated redirect URI, tokens stored encrypted |
-| [ ] | P2 | @api | Disconnect flow — unsubscribe page (`DELETE /{page-id}/subscribed_apps`), clear tokens, set `is_connected=False` |
+| [x] | P1 | @backend | Meta app config (settings.py env): `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`, `META_GRAPH_VERSION`, `META_OAUTH_SCOPES` (incl. messaging + comments: `pages_messaging`, `pages_read_user_content`, `instagram_manage_comments`, …), `META_OAUTH_REDIRECT_URI`. Integration model gained `connection_method`, `page_name`, `meta_user_id`, `token_expires_at`, `ig_account_id` (migration 0019). |
+| [x] | P1 | @frontend | "Connect with Facebook" button on the Integration page (`options.html`) for Messenger/Instagram; **manual setup kept** under an "Advanced" disclosure for admins. |
+| [x] | P1 | @api | OAuth start/callback (`api/meta_oauth.py`): consent → exchange `code` → short-lived → long-lived token; CSRF `state` in session. URLs `api:meta-oauth-start` / `-callback`. |
+| [x] | P1 | @api | Fetch pages (`GET /me/accounts`); 1 page → auto-connect, multiple → `meta_select_pages.html` selection. |
+| [x] | P1 | @api | Store page token + id on `Integration` (`connection_method="oauth"`, `page_name`, `token_expires_at`, `is_connected=True`). |
+| [x] | P1 | @api | Auto-subscribe page to the app webhook (`POST /{page-id}/subscribed_apps`, fields incl. `messages`,`feed` for comments). |
+| [x] | P1 | @backend/@api | App-level webhook `/api/meta/webhook/` + single verify token; routes inbound events by `page_id` → `Integration`. Per-user webhooks still work for manual setups. Verified routing to `test1`. |
+| [x] | P2 | @api | Instagram connect via the linked IG business account (`ig_account_id`); IG events route by that id. |
+| [ ] | P2 | @backend | Long-lived token refresh before expiry (`token_expires_at` is stored) — refresh job not yet built. |
+| [x] | P2 | @frontend | Connection status (Connected + page name / Not connected) + Disconnect button. |
+| [x] | P1 | @security | OAuth `state` CSRF (session, single-use), redirect to fixed internal view (no open redirect), page tokens only from session. **Fixed HIGH:** app-level webhook now fails closed when `META_APP_SECRET` unset (was accepting forged cross-tenant events). Token-at-rest encryption still a follow-up. |
+| [x] | P2 | @api | Disconnect flow — `unsubscribe_page` + clear tokens + `is_connected=False` (`api:meta-disconnect`). |
+| [ ] | P2 | @ai-pipeline | **Comment auto-reply** — permissions + `feed`/`comments` webhook subscription are enabled, so comment events are now delivered to `/api/meta/webhook/`. Still TODO: parse `entry[].changes` (feed/comments) and reply via the comment API (`POST /{comment-id}/comments` / private reply) — the parsers + sender currently handle DMs only. |
 
 ---
 

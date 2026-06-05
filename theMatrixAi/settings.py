@@ -35,6 +35,19 @@ SECRET_KEY = env("SECRET_KEY", default="django-insecure-!$#k@v1z&2e3g4h5i6j7k8l9
 ENCRYPT_KEY = env("ENCRYPT_KEY", default="default_encrypt_key_please_change_me_1234567890")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
+# --- Meta (Facebook/Instagram) OAuth + app-level webhook ---
+META_APP_ID = env("META_APP_ID", default="")
+META_APP_SECRET = env("META_APP_SECRET", default="")
+META_WEBHOOK_VERIFY_TOKEN = env("META_WEBHOOK_VERIFY_TOKEN", default="")
+META_GRAPH_VERSION = env("META_GRAPH_VERSION", default="v19.0")
+# Space-separated OAuth scopes requested during Connect-with-Facebook.
+META_OAUTH_SCOPES = env(
+    "META_OAUTH_SCOPES",
+    default="pages_show_list,pages_messaging,pages_manage_metadata,pages_read_engagement,pages_manage_engagement,business_management,instagram_basic,instagram_manage_messages,instagram_manage_comments",
+)
+# Optional explicit redirect URI override (else built from the request).
+META_OAUTH_REDIRECT_URI = env("META_OAUTH_REDIRECT_URI", default="")
+
 # SECURITY WARNING: don't run with debug turned on in production!
 
 if ENVIROMNENT == "development":

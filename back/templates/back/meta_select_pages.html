@@ -1,0 +1,28 @@
+{% extends "back/base.html" %}
+
+{% block title %}Select a Facebook Page{% endblock %}
+
+{% block content %}
+<div style="max-width: 560px; margin: 2rem auto;">
+  <h2>Select Facebook Page(s) to connect</h2>
+  <p>Choose which of your Facebook Pages you want the assistant to manage.</p>
+
+  <form method="post" action="{% url 'api:meta-oauth-select' %}">
+    {% csrf_token %}
+
+    {% for page in pages %}
+      <label style="display:flex; align-items:center; gap:.5rem; padding:.5rem 0;">
+        <input type="checkbox" name="page_id" value="{{ page.id }}">
+        <span>
+          {{ page.name }}
+          {% if page.ig %}<small>(+ Instagram)</small>{% endif %}
+        </span>
+      </label>
+    {% empty %}
+      <p>No pages available.</p>
+    {% endfor %}
+
+    <button type="submit" style="margin-top:1rem;">Connect selected</button>
+  </form>
+</div>
+{% endblock %}
