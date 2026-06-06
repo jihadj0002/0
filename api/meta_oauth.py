@@ -37,8 +37,7 @@ _TIMEOUT = 20
 # Fields we subscribe a Page to on the app-level webhook.
 # `feed` delivers Page post comments; the messaging_* fields deliver DMs.
 _SUBSCRIBE_FIELDS = (
-    "messages,messaging_postbacks,message_deliveries,messaging_optins,"
-    "message_reads,messaging_reactions,feed"
+    "messages, feed"
 )
 
 
