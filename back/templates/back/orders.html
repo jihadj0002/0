@@ -276,12 +276,12 @@
 
 
 {% for order in all_orders %}
-<div class="modal" id="orderModal{{ order.id }}">
+<div class="modal" id="orderModal{{ order.id }}" onclick="closeOrderModal({{ order.id }})">
   <div class="modal-content">
 
     <div class="modal-header">
       <h3>Order #{{ order.oid }}</h3>
-      <span class="close" onclick="closeOrderModal({{ order.id }}">&times;</span>
+      <span class="close" onclick="closeOrderModal({{ order.id }})">&times;</span>
     </div>
 
     <div class="modal-body">

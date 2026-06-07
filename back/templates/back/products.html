@@ -708,7 +708,8 @@
     if (!editId) return;
     if (!confirm("Delete this product permanently? This cannot be undone.")) return;
 
-    const url = "/db/products/" + editId + "/delete/";
+    
+    const url = "{% url 'back:delete_product' 0 %}".replace("/0/", "/" + editId + "/");
     fetch(url, { method: "DELETE", headers: { "X-CSRFToken": CSRF } })
       .then(r => r.json())
       .then(data => {
