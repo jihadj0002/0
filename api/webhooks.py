@@ -161,6 +161,17 @@ def _persist_message(user, platform, msg_data, access_token):
         defaults={"customer_name": msg_data.get("customer_name") or ""},
     )
 
+    # Using API to fetch User's name and profile picture for Messenger conversations, since the webhook payload doesn't include them. This enriches the conversation context for the AI and allows us to display the customer's name and profile image in the UI. We only do this on creation to avoid unnecessary API calls on every message, but we backfill the name if we learn it later and it was missing at creation time.
+    if created and platform == "messenger":
+        try:
+            from api.utils.get_msngr_profile import get_messenger_profile
+            profile = get_messenger_profile(customer_id, access_token)
+            conv.customer_name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
+            conv.profile_image = profile.get("profile_pic", "")
+            conv.save(update_fields=["customer_name", "profile_image"])
+        except Exception as exc:
+            logger.warning("Failed to fetch Messenger profile for customer_id=%s: %s", customer_id, exc)
+
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
         Conversation.objects.filter(pk=conv.pk).update(
@@ -195,7 +206,7 @@ def _persist_message(user, platform, msg_data, access_token):
     if att_type == "image" and media_url:
         try:
             from api.ai.media import analyze_image
-            analysis = analyze_image(media_url)
+            analysis = analyze_image(media_url, user, mid)
             if analysis:
                 attachments["analysis"] = analysis
                 # Combine caption + analysis so the AI has full context
@@ -208,7 +219,7 @@ def _persist_message(user, platform, msg_data, access_token):
         try:
             from api.ai.media import transcribe_audio
             mime = (attachments or {}).get("mime_type", "")
-            transcription = transcribe_audio(media_url, mime)
+            transcription = transcribe_audio(media_url, mime, user, mid)
             if transcription:
                 attachments["transcription"] = transcription
                 msg_text = transcription

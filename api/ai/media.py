@@ -22,7 +22,7 @@ def _or_client():
     )
 
 
-def analyze_image(image_url: str) -> str:
+def analyze_image(image_url: str, user=None, reply_id=None) -> str:
     """
     Describe the contents of an image using a vision LLM.
     Returns a one-paragraph natural-language description.
@@ -57,13 +57,19 @@ def analyze_image(image_url: str) -> str:
             temperature=0.3,
         )
         text = resp.choices[0].message.content or ""
-        return text.strip()
+        if user and reply_id and hasattr(resp, "usage"):
+            from .media import _log
+            usage = resp.usage.dict() if resp.usage else {}
+            _log(user, reply_id, usage, call_type="vision_analysis")
+            return text.strip()
+        else:
+            return text.strip()
     except Exception as exc:
         logger.warning("Image analysis failed url=%s: %s", image_url, exc)
         return ""
 
 
-def transcribe_audio(audio_url: str, mime_type: str = "") -> str:
+def transcribe_audio(audio_url: str, mime_type: str = "", user=None, reply_id=None) -> str:
     """
     Transcribe an audio/voice message.
     Attempts OpenAI Whisper via the official API if OPENAI_API_KEY is set,
@@ -101,7 +107,14 @@ def transcribe_audio(audio_url: str, mime_type: str = "") -> str:
             file=(filename, audio_resp.content, mime_type or "audio/ogg"),
         )
         text = transcription.text or ""
-        return text.strip()
+        
+        if user and reply_id and hasattr(transcription, "usage"):
+            from .media import _log
+            usage = transcription.usage.dict() if transcription.usage else {}
+            _log(user, reply_id, usage, call_type="audio_transcription")
+            return text.strip()
+        else:
+            return text.strip()
     except Exception as exc:
         logger.warning("Audio transcription failed url=%s: %s", audio_url, exc)
         return "[Customer sent a voice message — transcription failed]"
