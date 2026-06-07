@@ -206,7 +206,7 @@ def _persist_message(user, platform, msg_data, access_token):
     if att_type == "image" and media_url:
         try:
             from api.ai.media import analyze_image
-            analysis = analyze_image(media_url, user, mid)
+            analysis = analyze_image(media_url)
             if analysis:
                 attachments["analysis"] = analysis
                 # Combine caption + analysis so the AI has full context
@@ -219,7 +219,7 @@ def _persist_message(user, platform, msg_data, access_token):
         try:
             from api.ai.media import transcribe_audio
             mime = (attachments or {}).get("mime_type", "")
-            transcription = transcribe_audio(media_url, mime, user, mid)
+            transcription = transcribe_audio(media_url, mime)
             if transcription:
                 attachments["transcription"] = transcription
                 msg_text = transcription
