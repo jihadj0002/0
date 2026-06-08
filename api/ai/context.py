@@ -44,6 +44,7 @@ def build_system_prompt(user, conversation):
         "`variation_id` into create_order.\n"
         "- Before create_order collect: customer name, phone, delivery address; confirm the "
         "items aloud first.\n"
+        "use tool tool_get_order_status to check order status\n"
         "- Use transfer_chat when the customer is angry, asks for a human, or the issue is "
         "beyond your scope.\n"
         "- Never paste image URLs in text — send images only via send_images (max 5).\n"
@@ -117,7 +118,7 @@ def build_system_prompt(user, conversation):
             
         )
     else:
-        available_products = list(Product.objects.filter(user=user, status=True)[:10])
+        available_products = list(Product.objects.filter(user=user, status=True)[:20])
         if available_products:
             lines = ["## Available Products (sample — use search_products for the full catalog)"]
             for p in available_products:

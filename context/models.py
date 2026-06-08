@@ -90,6 +90,7 @@ class BehaviorRules(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="behavior_rules")
     greeting_message = models.TextField(blank=True, null=True)
     out_of_hours_message = models.TextField(blank=True, null=True)
+    custom_instructions = models.TextField(blank=True, null=True)
     chit_chat_enabled = models.BooleanField(default=True)
     chit_chat_style = models.CharField(max_length=20, choices=CHIT_CHAT_STYLE_CHOICES, default="moderate")
     cross_sell_enabled = models.BooleanField(default=True)
