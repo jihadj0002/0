@@ -606,6 +606,14 @@ body{background:var(--bg);}
                         alt="Image"
                         loading="lazy">
                   </div>
+                {% elif msg.attachments and msg.attachments.images %}
+                  {% for img_url in msg.attachments.images %}
+                    <div class="msg-image">
+                      <img src="{{ img_url }}"
+                          alt="Image"
+                          loading="lazy">
+                    </div>
+                  {% endfor %}
                 {% endif %}
 
                 <small>{{ msg.timestamp|date:"j M, Y H:i" }}</small>

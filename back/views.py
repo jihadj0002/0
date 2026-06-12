@@ -451,7 +451,10 @@ def ajax_load_messages(request):
             # ✅ local timezone
             "timestamp": local_msg_time.strftime("%d %b, %Y %H:%M") if local_msg_time else "",
 
-            "image": msg.attachments.get("payload", {}).get("url") if msg.attachments else None
+            "image": (
+                msg.attachments.get("payload", {}).get("url")
+                or (msg.attachments.get("images") or [None])[0]
+            ) if msg.attachments else None
         })
 
     # ==========================

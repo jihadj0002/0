@@ -120,15 +120,21 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
     """
     Runs in a thread pool worker. Persists each message and (re)starts the
     per-conversation 5-second batch timer so rapid bursts are collapsed into
-    one AI pipeline call.
+    one AI pipeline call. When AI is disabled for this platform, messages
+    are still stored (for human agent view) but media analysis and pipeline
+    scheduling are skipped.
     """
     close_old_connections()
     try:
         user = User.objects.get(id=user_id)
+        ai_enabled = Integration.objects.filter(
+            user=user, platform=platform, is_enabled=True
+        ).exists()
+
         conversation_ids = set()
         for msg_data in unified_messages:
             try:
-                conv_id = _persist_message(user, platform, msg_data, access_token)
+                conv_id = _persist_message(user, platform, msg_data, access_token, ai_enabled)
                 if conv_id:
                     conversation_ids.add(conv_id)
             except Exception:
@@ -136,16 +142,17 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
                     "Failed to persist message mid=%s user=%s platform=%s",
                     msg_data.get("message_id"), user_id, platform,
                 )
-        # (Re)start the 5-second timer for each affected conversation
-        for cid in conversation_ids:
-            _schedule_batch_pipeline(cid)
+        # Only schedule the AI pipeline when AI is active for this platform
+        if ai_enabled:
+            for cid in conversation_ids:
+                _schedule_batch_pipeline(cid)
     except Exception:
         logger.exception("_process_webhook crashed user_id=%s platform=%s", user_id, platform)
     finally:
         close_old_connections()
 
 
-def _persist_message(user, platform, msg_data, access_token):
+def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     """Persist a single incoming message. Returns the conversation id, or None if dropped."""
     mid = msg_data.get("message_id") or None
     customer_id = msg_data.get("customer_id", "")
@@ -203,12 +210,8 @@ def _persist_message(user, platform, msg_data, access_token):
     # This runs synchronously here (already in a background thread) so the result
     # is available before the 5-second batch timer fires.
     # Skip analysis when AI is disabled for this platform — saves API costs.
-    _ai_enabled = Integration.objects.filter(
-        user=user, platform=platform, is_enabled=True
-    ).exists()
-
     media_url = (attachments or {}).get("url") or (attachments or {}).get("payload", {}).get("url", "")
-    if att_type == "image" and media_url and _ai_enabled:
+    if att_type == "image" and media_url and ai_enabled:
         try:
             from api.ai.media import analyze_image
             analysis = analyze_image(media_url)
@@ -220,7 +223,7 @@ def _persist_message(user, platform, msg_data, access_token):
         except Exception as exc:
             logger.warning("Image analysis failed mid=%s: %s", mid, exc)
 
-    elif att_type in ("audio", "voice") and media_url and _ai_enabled:
+    elif att_type in ("audio", "voice") and media_url and ai_enabled:
         try:
             from api.ai.media import transcribe_audio
             mime = (attachments or {}).get("mime_type", "")
@@ -241,12 +244,14 @@ def _persist_message(user, platform, msg_data, access_token):
         raw_payload=msg_data.get("raw"),
     )
 
-    # Store enriched text in batch so _fire_batch_pipeline combines it correctly
-    MessageBatch.objects.create(
-        conversation=conv,
-        message_text=msg_text,
-        platform=platform,
-    )
+    # Store enriched text in batch so _fire_batch_pipeline combines it correctly.
+    # Only create batch rows when AI is active — no point batching for disabled-AI convos.
+    if ai_enabled:
+        MessageBatch.objects.create(
+            conversation=conv,
+            message_text=msg_text,
+            platform=platform,
+        )
 
     return conv.id
 
@@ -501,7 +506,7 @@ class MetaAppWebhookView(View):
 # ---------------------------------------------------------------------------
 
 def recover_zombie_batches():
-    """Fire the pipeline for any MessageBatch rows left unprocessed after a crash/restart."""
+    """Fire the pipeline for any MessageBatch rows left behind after a crash/restart."""
     close_old_connections()
     orphan = MessageBatch.objects.filter(processed=False)
     if not orphan.exists():
@@ -510,6 +515,12 @@ def recover_zombie_batches():
     logger.info("Recovering %d zombie batches across %d conversations", orphan.count(), len(cids))
     for cid in cids:
         try:
+            conv = Conversation.objects.get(id=cid)
+            if not conv.is_ai_enabled:
+                orphan.filter(conversation_id=cid).update(processed=True)
+                continue
             _fire_batch_pipeline(cid)
+        except Conversation.DoesNotExist:
+            orphan.filter(conversation_id=cid).delete()
         except Exception:
             logger.exception("Zombie recovery failed for conversation=%s", cid)
