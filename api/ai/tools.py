@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from django.core.files.storage import default_storage
 from django.db import transaction
@@ -20,12 +21,12 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Search the store's product catalog by name or description. Call this before quoting any price.",
+            "description": "Search products by SKU, partial SKU, name, or keyword. The tool automatically retries with different search strategies (stripped text, individual words) if the first attempt finds nothing. Call this before quoting any price.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Keywords to search"},
-                    "limit": {"type": "integer", "description": "Max results (default 5)", "default": 5},
+                    "query": {"type": "string", "description": "Search term — SKU code, product name, or keyword"},
+                    "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
                 },
                 "required": ["query"],
             },
@@ -49,13 +50,17 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "send_images",
-            "description": "Retrieve all image URLs for a product so they can be sent to the customer.",
+            "description": "Send product image cards to the customer. When you have multiple matching products, pass all their pids to show them as a scrollable carousel with images, names, and prices. The customer sees rich cards — do NOT list product details in your text.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pid": {"type": "string", "description": "Product PID"},
+                    "pid": {"type": "string", "description": "Single product PID (use when showing one product)"},
+                    "pids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "One or more product PIDs to show as a card carousel (prefer this over calling send_images multiple times)",
+                    },
                 },
-                "required": ["pid"],
             },
         },
     },
@@ -298,24 +303,99 @@ def _external_row(r):
     return row
 
 
-def tool_search_products(user, query, limit=5, conversation=None):
+def _generate_search_queries(original):
+    """Yield deduplicated query variations for multi-strategy search."""
+    seen = set()
+    cleaned = original.strip()
+    if not cleaned:
+        return
+
+    # 1. Original query
+    if cleaned not in seen:
+        seen.add(cleaned)
+        yield cleaned
+
+    # 2. Remove non-alphanumeric (keep spaces)
+    stripped = re.sub(r"[^\w\s]", "", cleaned).strip()
+    if stripped and stripped not in seen:
+        seen.add(stripped)
+        yield stripped
+
+    words = stripped.split()
+
+    # 3. First 2 words
+    if len(words) > 2:
+        first_two = " ".join(words[:2])
+        if first_two not in seen:
+            seen.add(first_two)
+            yield first_two
+
+    # 4. Last 2 words
+    if len(words) > 2:
+        last_two = " ".join(words[-2:])
+        if last_two not in seen:
+            seen.add(last_two)
+            yield last_two
+
+    # 5. Each individual word
+    for w in words:
+        if w and w not in seen:
+            seen.add(w)
+            yield w
+
+
+def _dedup_external(results):
+    """Deduplicate a list of external result dicts by external_id (stored as pid)."""
+    seen = set()
+    out = []
+    for r in results:
+        pid = r.get("pid") or r.get("external_id")
+        if pid and pid not in seen:
+            seen.add(pid)
+            out.append(r)
+    return out
+
+
+def tool_search_products(user, query, limit=10, conversation=None):
+    max_external_attempts = 4
+
     # Live external source → query the provider in real time.
     from api.products.factory import get_active_source, get_provider, is_external
     try:
         source = get_active_source(user)
         if source and source.mode == "live" and is_external(user):
             provider = get_provider(user)
-            if query and query.strip():
-                rows = provider.search(query, limit)
-            else:
+            if not (query and query.strip()):
                 rows = provider.list_products(limit=limit)
-            rows = rows or []
-            results = [_external_row(r) for r in rows]
-            # Focus on the products this search surfaced (most-recent-first) so
-            # later turns (e.g. an image request) can reuse a pid from context.
-            if results:
-                _focus_products(conversation, results[:FOCUS_MAX])
-            return {"products": results, "total": len(results)}
+                rows = rows or []
+                results = [_external_row(r) for r in rows]
+                if results:
+                    _focus_products(conversation, results[:FOCUS_MAX])
+                return {"products": results, "total": len(results)}
+
+            # Multi-strategy: try successive query variations
+            all_results = []
+            seen_ids = set()
+            for variation in _generate_search_queries(query):
+                if len(all_results) >= limit:
+                    break
+                if len(all_results) >= limit and len(seen_ids) >= max_external_attempts:
+                    break
+                try:
+                    rows = provider.search(variation, limit)
+                    rows = rows or []
+                    for r in rows:
+                        eid = r.get("external_id")
+                        if eid and eid not in seen_ids:
+                            seen_ids.add(eid)
+                            all_results.append(_external_row(r))
+                except Exception:
+                    logger.exception("External search failed for variation=%s", variation)
+
+            if all_results:
+                all_results = all_results[:limit]
+                _focus_products(conversation, all_results[:FOCUS_MAX])
+            return {"products": all_results, "total": len(all_results)}
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
 
@@ -336,14 +416,27 @@ def tool_search_products(user, query, limit=5, conversation=None):
     generic = not query or query.strip().lower() in ("", "product", "products", "show", "list", "all")
     if generic:
         qs = Product.objects.filter(user=user, status=True).order_by("-featured_product", "name")
+        products_list = list(qs[:limit])
     else:
-        qs = Product.objects.filter(
-            user=user, status=True
-        ).filter(
-            Q(name__icontains=query) | Q(description__icontains=query)
-        ).order_by("-featured_product", "name")
-
-    products_list = list(qs[:limit])
+        # Multi-strategy: build one combined OR query across all variations and fields
+        combined_q = Q()
+        for variation in _generate_search_queries(query):
+            combined_q |= (
+                Q(name__icontains=variation)
+                | Q(description__icontains=variation)
+                | Q(pid__icontains=variation)
+                | Q(external_id__icontains=variation)
+            )
+        qs = Product.objects.filter(user=user, status=True).filter(combined_q).order_by("-featured_product", "name")
+        # Dedup by pid (the combined query can return the same product via different variations)
+        seen = set()
+        products_list = []
+        for p in qs:
+            if p.pid not in seen:
+                seen.add(p.pid)
+                products_list.append(p)
+                if len(products_list) >= limit:
+                    break
 
     # Focus on this search's results so the next context lists the recent products
     if products_list and conversation:
@@ -431,43 +524,80 @@ def tool_get_product_details(user, pid, conversation=None):
     return details
 
 
-def tool_send_images(user, pid, conversation=None):
-    # Fall back to the conversation's focused product when no pid was supplied.
-    if not pid:
-        pid = _focus_pid(conversation)
-    if not pid:
-        return {"error": "No product selected — search for a product first", "images": []}
-
-    # Live external source → fetch images from the provider.
+def tool_send_images(user, pid="", pids=None, conversation=None):
     from api.products.factory import get_active_source, get_provider, is_external
-    try:
-        source = get_active_source(user)
-        if source and source.mode == "live" and is_external(user):
-            r = get_provider(user).get_product(pid)
-            if not r:
-                return {"error": f"Product '{pid}' not found", "images": []}
-            images = r.get("images") or ([r["image"]] if r.get("image") else [])
-            return {"pid": pid, "name": r["name"], "images": images}
-    except Exception:
-        logger.exception("Live send_images failed; falling back to local DB")
 
-    try:
-        p = Product.objects.get(user=user, pid=pid)
-    except Product.DoesNotExist:
-        return {"error": f"Product '{pid}' not found", "images": []}
+    # Collect all requested PIDs.
+    requested = []
+    if pids:
+        requested.extend(pids)
+    if pid:
+        requested.append(pid)
+    if not requested:
+        fallback = _focus_pid(conversation)
+        if fallback:
+            requested.append(fallback)
+    if not requested:
+        return {"error": "No product selected — search for a product first", "products": []}
 
-    images = []
-    main = _image_url(p.image)
-    if main:
-        images.append(main)
-    for img in ProductImages.objects.filter(product=p).values_list("images", flat=True):
-        url = _image_url(img)
-        if url and url not in images:
-            images.append(url)
+    source = get_active_source(user)
+    external_active = bool(source) and is_external(user)
+    live_mode = bool(source) and source.mode == "live" and external_active
 
-    # Return image URLs only — the pipeline collects them via pending_images
-    # and sends everything in one send_reply call at the end.
-    return {"pid": pid, "name": p.name, "images": images}
+    products = []
+    seen_pids = set()
+
+    for raw_pid in requested:
+        if raw_pid in seen_pids:
+            continue
+        seen_pids.add(raw_pid)
+
+        name = ""
+        images = []
+        price = ""
+        discounted_price = ""
+
+        if live_mode:
+            try:
+                provider = get_provider(user)
+                r = provider.get_product(raw_pid)
+                if r:
+                    name = r.get("name") or ""
+                    images = r.get("images") or ([r["image"]] if r.get("image") else [])
+                    price = str(r.get("price") or "")
+                    discounted_price = str(r.get("discounted_price") or "")
+            except Exception:
+                logger.exception("Live send_images failed for %s; falling back to local DB", raw_pid)
+
+        if not name:
+            try:
+                p = Product.objects.get(user=user, pid=raw_pid)
+                name = p.name
+                price = str(p.price) if p.price else ""
+                discounted_price = str(p.discounted_price) if p.discounted_price else ""
+                main = _image_url(p.image)
+                if main:
+                    images.append(main)
+                for img in ProductImages.objects.filter(product=p).values_list("images", flat=True):
+                    url = _image_url(img)
+                    if url and url not in images:
+                        images.append(url)
+            except Product.DoesNotExist:
+                continue
+
+        if name:
+            products.append({
+                "pid": raw_pid,
+                "name": name,
+                "images": images,
+                "price": price,
+                "discounted_price": discounted_price,
+            })
+
+    if not products:
+        return {"error": "No products found", "products": []}
+
+    return {"products": products, "total": len(products)}
 
 
 def tool_create_order(user, conversation, customer_name, customer_phone, customer_address, items,
@@ -701,7 +831,7 @@ def execute_tool(name, arguments, user, conversation):
             return tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
 
         if name == "send_images":
-            return tool_send_images(user, args.get("pid", ""), conversation)
+            return tool_send_images(user, pid=args.get("pid", ""), pids=args.get("pids"), conversation=conversation)
 
         if name == "create_order":
             return tool_create_order(

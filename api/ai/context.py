@@ -42,8 +42,10 @@ def build_system_prompt(user, conversation):
             "## Search Rules\n"
             "`search_products` FIRST with the SKU(s). Example: customer Sends an image sku contain 39328BB \"cradle ache?\" "
             "→ call search_products(query=\"39328BB\").\n"
-            "`pid` returned by search), then offer images with `send_images`.\n"
-            "- If no identifier is provided, search using keywords.\n"
+            "`pid` returned by search), then offer images with `send_images`. "
+            "When showing multiple products, pass ALL their pids in one send_images call (pids=[...]) "
+            "— they appear as a scrollable carousel with images and prices.\n"
+            "- If no identifier is provided, search using short tailed keywords.\n"
             "- NEVER state a price, stock, or product name you have not just obtained from "
             "search_products / get_product_details. Never guess or invent products.\n"
             "- If a product has variations (size/color), show the options and pass the chosen "
@@ -65,8 +67,11 @@ def build_system_prompt(user, conversation):
         parts.append(
             "`search_products` FIRST with the keyword(s). Example: customer says \"cradle ache?\" "
         "→ call search_products(query=\"cradle\").\n"
+            "- Do NOT retry search_products with different queries — the tool already tries multiple variations internally.\n"
             "- After searching, call `get_product_details` for the chosen product (use the exact "
-            "`pid` returned by search), then offer images with `send_images`.\n"
+            "`pid` returned by search), then offer images with `send_images`. "
+            "When showing multiple products, pass ALL their pids in one send_images call (pids=[...]) "
+            "— they appear as a scrollable carousel with images and prices.\n"
             "- NEVER state a price, stock, or product name you have not just obtained from "
             "search_products / get_product_details. Never guess or invent products.\n"
             "- If a product has variations (size/color), show the options and pass the chosen "
@@ -84,6 +89,8 @@ def build_system_prompt(user, conversation):
             "If their product is not found say that product is not available instead of saying not found.\n"
             f"- Keep replies {tone} and {style} unless the customer asks for detail."
         )
+    if rules.custom_instructions:
+            parts.append(f"Custom instructions: {rules.custom_instructions}")
 
     # --- Store info ---
     if store:
@@ -108,8 +115,7 @@ def build_system_prompt(user, conversation):
         )
         if rules.greeting_message:
             parts.append(f"Greeting template: {rules.greeting_message}")
-        if rules.out_of_hours_message:
-            parts.append(f"Out-of-hours reply: {rules.out_of_hours_message}")
+        
         
 
     # --- Live customer state ---
@@ -214,7 +220,8 @@ def _render_focus_products(focus_list, currency):
 
     lines.append(
         "For any product above, call send_images(pid=...) to send photos or "
-        "get_product_details(pid=...) for fresh price/stock/variations."
+        "get_product_details(pid=...) for fresh price/stock/variations. "
+        "To show multiple products as a carousel, call send_images(pids=[...]) with all their PIDs."
     )
     return "\n".join(lines)
 

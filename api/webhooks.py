@@ -91,6 +91,24 @@ def _fire_batch_pipeline(conversation_id):
 
         conversation = Conversation.objects.get(id=conversation_id)
 
+        # Guard: don't fire if AI was disabled since the timer was scheduled.
+        # Check both conversation-level and integration-level flags so that a
+        # race between "user disables AI" and a pending timer is caught here
+        # before any LLM call is made.
+        ai_still_enabled = (
+            conversation.is_ai_enabled
+            and Integration.objects.filter(
+                user=conversation.user,
+                platform=conversation.platform,
+                is_enabled=True,
+            ).exists()
+        )
+        if not ai_still_enabled:
+            MessageBatch.objects.filter(
+                conversation=conversation, processed=False
+            ).update(processed=True)
+            return
+
         batches = MessageBatch.objects.filter(
             conversation=conversation,
             processed=False,
@@ -165,7 +183,10 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
         user=user,
         platform=platform,
         customer_id=customer_id,
-        defaults={"customer_name": msg_data.get("customer_name") or ""},
+        defaults={
+            "customer_name": msg_data.get("customer_name") or "",
+            "is_ai_enabled": ai_enabled,
+        },
     )
 
     # Using API to fetch User's name and profile picture for Messenger conversations, since the webhook payload doesn't include them. This enriches the conversation context for the AI and allows us to display the customer's name and profile image in the UI. We only do this on creation to avoid unnecessary API calls on every message, but we backfill the name if we learn it later and it was missing at creation time.

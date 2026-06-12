@@ -1544,7 +1544,7 @@ def settings_view(request):
 
         elif section == 'behavior':
             rules.greeting_message = request.POST.get('greeting_message', '')
-            rules.out_of_hours_message = request.POST.get('out_of_hours_message', '')
+            rules.custom_instructions = request.POST.get('custom_instructions', '')
             rules.chit_chat_enabled = 'chit_chat_enabled' in request.POST
             rules.chit_chat_style = request.POST.get('chit_chat_style') or 'moderate'
             rules.cross_sell_enabled = 'cross_sell_enabled' in request.POST

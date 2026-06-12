@@ -266,8 +266,8 @@ input:checked + .slider::before { transform: translateX(20px); }
           <textarea name="greeting_message" placeholder="e.g. Hi! Welcome to Monowa Mart 👋 How can I help you today?">{{ rules.greeting_message|default:'' }}</textarea>
         </div>
         <div class="form-group full">
-          <label>Out-of-Hours Message</label>
-          <textarea name="out_of_hours_message" placeholder="e.g. We're currently offline. We'll get back to you during business hours.">{{ rules.out_of_hours_message|default:'' }}</textarea>
+          <label>Custom Instructions</label>
+          <textarea name="custom_instructions" placeholder="e.g. Always greet in Bengali first, recommend products under 5000 BDT, and upsert the customer's phone number after every third interaction.">{{ rules.custom_instructions|default:'' }}</textarea>
         </div>
       </div>
     </div>

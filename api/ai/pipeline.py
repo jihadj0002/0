@@ -50,6 +50,17 @@ def run(conversation, incoming_message):
 
     user = conversation.user
 
+    # Integration-level guard: don't proceed if AI is disabled at the platform
+    # level or if there's no access token to send replies with.
+    integration = Integration.get_active(user, conversation.platform)
+    if not integration or not integration.is_enabled:
+        logger.info("Integration AI disabled — skipping pipeline conv=%s", conversation.pk)
+        return
+    if not integration.access_token:
+        logger.info("No access token for platform=%s — skipping pipeline conv=%s", conversation.platform, conversation.pk)
+        return
+    model = (integration.ai_model or None) if integration else None
+
     # Pre-flight: ensure the user has a balance and still has credits
     try:
         from billing.models import Plan, UserBalance
@@ -84,12 +95,9 @@ def run(conversation, incoming_message):
 
     messages = [{"role": "system", "content": system_prompt}] + history
 
-    # Per-integration model override (falls back to provider default)
-    integration = Integration.get_active(user, conversation.platform)
-    model = (integration.ai_model or None) if integration else None
-
     final_text = None
     pending_images = []
+    product_cards = []
     transferred = False
 
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -119,19 +127,29 @@ def run(conversation, incoming_message):
 
             result = execute_tool(fn_name, fn_args, user, conversation)
 
-            # Collect images for delivery, but NEVER expose the raw URLs back to
-            # the LLM — otherwise it echoes them into the text reply. The model
-            # only gets a confirmation; images are sent separately by send_reply.
+            # Collect images and structured product cards for delivery.
+            # NEVER expose raw URLs back to the LLM — the model only gets
+            # a confirmation; visuals are sent separately by send_reply.
             tool_content = result
             if fn_name == "send_images" and isinstance(result, dict):
-                imgs = result.get("images", []) or []
-                pending_images.extend(imgs)
-                tool_content = {
-                    "pid": result.get("pid"),
-                    "name": result.get("name"),
-                    "images_sent": len(imgs),
-                    "status": "images sent to the customer" if imgs else "no images available for this product",
-                }
+                products = result.get("products")
+                if products is not None:
+                    product_cards.extend(products)
+                    for p in products:
+                        pending_images.extend(p.get("images", []))
+                    tool_content = {
+                        "cards_shown": len(products),
+                        "status": "product cards sent to the customer",
+                    }
+                else:
+                    imgs = result.get("images", []) or []
+                    pending_images.extend(imgs)
+                    tool_content = {
+                        "pid": result.get("pid"),
+                        "name": result.get("name"),
+                        "images_sent": len(imgs),
+                        "status": "images sent to the customer" if imgs else "no images available",
+                    }
                 if result.get("error"):
                     tool_content["error"] = result["error"]
 
@@ -175,7 +193,8 @@ def run(conversation, incoming_message):
     )
 
     # Send via platform
-    send_reply(conversation, final_text, image_urls=unique_images or None)
+    send_reply(conversation, final_text, image_urls=unique_images or None,
+               product_cards=product_cards or None)
 
     # Deduct credits after reply is confirmed sent
     try:

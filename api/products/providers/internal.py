@@ -73,7 +73,10 @@ class InternalProvider(ProductProvider):
         from django.db.models import Q
         try:
             qs = self._queryset().filter(
-                Q(name__icontains=query) | Q(description__icontains=query)
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(pid__icontains=query)
+                | Q(external_id__icontains=query)
             ).order_by("-featured_product", "-id")[: int(limit)]
             return [normalize_product(p) for p in qs]
         except Exception:

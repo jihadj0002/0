@@ -93,11 +93,32 @@ def parse_messenger(payload):
 
     for entry in payload.get("entry", []):
         for event in entry.get("messaging", []):
+            sender_id = event.get("sender", {}).get("id")
+
+            # Handle postback events (e.g. product card "Select" button)
+            postback = event.get("postback")
+            if postback:
+                payload_str = postback.get("payload", "")
+                if payload_str.startswith("SELECT_PRODUCT|"):
+                    pid = payload_str.split("|", 1)[1]
+                    mid = postback.get("mid") or f"postback_{pid}_{event.get('timestamp', '')}"
+                    messages.append({
+                        "platform": platform,
+                        "customer_id": sender_id,
+                        "customer_name": None,
+                        "message_id": mid,
+                        "timestamp": str(event.get("timestamp", "")),
+                        "type": "text",
+                        "text": f"Show product {pid} details",
+                        "attachments": {"type": "postback", "payload": payload_str},
+                        "raw": event,
+                    })
+                continue
+
             msg = event.get("message", {})
             if not msg or msg.get("is_echo"):
                 continue
 
-            sender_id = event.get("sender", {}).get("id")
             msg_type = "text"
             text = msg.get("text")
             attachments = None
