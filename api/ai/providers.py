@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
+LLM_TIMEOUT = 60
 
 
 def _client():
@@ -31,6 +32,7 @@ def call_llm(messages, tools=None, model=None, temperature=0.7, max_tokens=1024)
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "timeout": LLM_TIMEOUT,
     }
     if tools:
         kwargs["tools"] = tools

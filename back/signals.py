@@ -121,18 +121,20 @@ def update_message_counters(sender, instance, created, **kwargs):
     if not created:
         return
 
-    conv = instance.conversation
+    from django.db.models import F
 
+    updates = {}
     if instance.sender == "customer":
-        conv.customer_sent_count += 1
-        conv.bot_received_count += 1
+        updates["customer_sent_count"] = F("customer_sent_count") + 1
+        updates["bot_received_count"] = F("bot_received_count") + 1
     elif instance.sender == "bot":
-        conv.bot_sent_count += 1
+        updates["bot_sent_count"] = F("bot_sent_count") + 1
     elif instance.sender == "agent":
-        conv.agent_sent_count += 1
-        conv.bot_received_count += 1
+        updates["agent_sent_count"] = F("agent_sent_count") + 1
+        updates["bot_received_count"] = F("bot_received_count") + 1
 
-    conv.save()
+    if updates:
+        Conversation.objects.filter(pk=instance.conversation_id).update(**updates)
 
 
 # Pipeline is now triggered by the 5-second batch timer in api/webhooks.py,

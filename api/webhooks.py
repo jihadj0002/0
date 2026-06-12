@@ -22,7 +22,7 @@ from .utils.whatsapp import download_whatsapp_media
 logger = logging.getLogger(__name__)
 
 # Bounded thread pool — handles burst traffic without spawning unlimited threads.
-_executor = ThreadPoolExecutor(max_workers=20)
+_executor = ThreadPoolExecutor(max_workers=50)
 
 # Per-conversation timers: {conversation_id: threading.Timer}
 # When a new message arrives for a conversation, any existing timer is cancelled
@@ -202,8 +202,13 @@ def _persist_message(user, platform, msg_data, access_token):
     # For audio/voice: transcribe and use as the message text.
     # This runs synchronously here (already in a background thread) so the result
     # is available before the 5-second batch timer fires.
+    # Skip analysis when AI is disabled for this platform — saves API costs.
+    _ai_enabled = Integration.objects.filter(
+        user=user, platform=platform, is_enabled=True
+    ).exists()
+
     media_url = (attachments or {}).get("url") or (attachments or {}).get("payload", {}).get("url", "")
-    if att_type == "image" and media_url:
+    if att_type == "image" and media_url and _ai_enabled:
         try:
             from api.ai.media import analyze_image
             analysis = analyze_image(media_url)
@@ -215,7 +220,7 @@ def _persist_message(user, platform, msg_data, access_token):
         except Exception as exc:
             logger.warning("Image analysis failed mid=%s: %s", mid, exc)
 
-    elif att_type in ("audio", "voice") and media_url:
+    elif att_type in ("audio", "voice") and media_url and _ai_enabled:
         try:
             from api.ai.media import transcribe_audio
             mime = (attachments or {}).get("mime_type", "")
@@ -489,3 +494,22 @@ class MetaAppWebhookView(View):
             messages,
             integration.access_token or "",
         )
+
+
+# ---------------------------------------------------------------------------
+# Zombie recovery — process MessageBatch rows left behind after a restart
+# ---------------------------------------------------------------------------
+
+def recover_zombie_batches():
+    """Fire the pipeline for any MessageBatch rows left unprocessed after a crash/restart."""
+    close_old_connections()
+    orphan = MessageBatch.objects.filter(processed=False)
+    if not orphan.exists():
+        return
+    cids = set(orphan.values_list("conversation_id", flat=True))
+    logger.info("Recovering %d zombie batches across %d conversations", orphan.count(), len(cids))
+    for cid in cids:
+        try:
+            _fire_batch_pipeline(cid)
+        except Exception:
+            logger.exception("Zombie recovery failed for conversation=%s", cid)
