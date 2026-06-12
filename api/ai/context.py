@@ -110,8 +110,6 @@ def build_system_prompt(user, conversation):
             parts.append(f"Greeting template: {rules.greeting_message}")
         if rules.out_of_hours_message:
             parts.append(f"Out-of-hours reply: {rules.out_of_hours_message}")
-        if rules.knowledge_base and rules.knowledge_base.strip():
-            parts.append(f"## Knowledge Base\n{rules.knowledge_base.strip()}")
         
 
     # --- Live customer state ---

@@ -16,17 +16,21 @@ def cosine_similarity(a, b):
     return dot / (na * nb) if na and nb else 0.0
 
 
-def search_chunks(user, query, top_k=3, min_score=0.0):
+MAX_CHUNK_CHARS = 800
+
+
+def search_chunks(user, query, top_k=3, min_score=0.3):
     """Search active RAG chunks for the user by cosine similarity.
 
     Args:
         user: User instance.
         query: Natural language query string.
         top_k: Maximum number of results to return.
-        min_score: Minimum similarity score threshold (0.0 = no filter).
+        min_score: Minimum similarity score threshold (0.3 default).
 
     Returns:
         List of dicts: [{"content": str, "source": str, "chunk_index": int, "score": float}, ...]
+        Empty list if nothing relevant found (no embedding API cost wasted).
     """
     if not query or not query.strip():
         return []
@@ -52,11 +56,16 @@ def search_chunks(user, query, top_k=3, min_score=0.0):
 
     results = []
     for score, c in scored[:top_k]:
+        content = c.content
+        truncated = len(content) > MAX_CHUNK_CHARS
+        if truncated:
+            content = content[:MAX_CHUNK_CHARS] + "..."
         results.append({
-            "content": c.content,
+            "content": content,
             "source": c.get_source_display(),
             "chunk_index": c.chunk_index,
             "score": round(score, 4),
+            "truncated": truncated,
         })
 
     return results

@@ -144,11 +144,11 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_knowledge_base",
-            "description": "Search business knowledge base for policies, FAQs, return/exchange info, shipping details, company info, and training Q&A. Do NOT use for product queries — use search_products instead.",
+            "description": "Search business knowledge: policies, FAQs, return/exchange info, shipping, payment methods, company info, and training Q&A. Do NOT use for product queries — use search_products.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Natural language query to search the knowledge base"},
+                    "query": {"type": "string", "description": "What to look up (e.g. 'return policy', 'shipping time', 'payment methods')"},
                     "limit": {"type": "integer", "description": "Max results (default 3)", "default": 3},
                 },
                 "required": ["query"],

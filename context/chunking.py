@@ -32,9 +32,9 @@ def chunk_sample_qa(text):
         chunks.append("\n".join(current).strip())
 
     if not chunks and text.strip():
-        chunks = [text.strip()]
+        chunks = chunk_text(text, chunk_size=600, overlap=120)
 
-    return [c for c in chunks if len(c) > 10]
+    return [c for c in chunks if len(c) > 20]
 
 
 def chunk_text(text, chunk_size=600, overlap=120):
