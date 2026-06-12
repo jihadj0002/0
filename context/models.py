@@ -2,6 +2,12 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+RAG_SOURCE_CHOICES = [
+    ("sample_qa", "Sample Q&A"),
+    ("knowledge_base", "Knowledge Base"),
+]
+
+
 TONE_CHOICES = [
     ("formal", "Formal"),
     ("friendly", "Friendly"),
@@ -112,3 +118,28 @@ class BehaviorRules(models.Model):
 
     def __str__(self):
         return f"Behavior rules — {self.user.username}"
+
+
+# -----------------------
+# RAG Chunks (vector search)
+# -----------------------
+class RAGChunk(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="rag_chunks")
+    content = models.TextField(help_text="The chunk text (e.g. a single Q&A pair)")
+    embedding = models.JSONField(null=True, blank=True, help_text="Vector embedding as a list of floats")
+    source = models.CharField(max_length=50, choices=RAG_SOURCE_CHOICES, default="sample_qa")
+    chunk_index = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "RAG Chunk"
+        verbose_name_plural = "RAG Chunks"
+        indexes = [
+            models.Index(fields=["user", "source", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_source_display()} #{self.chunk_index} — {self.user.username}"

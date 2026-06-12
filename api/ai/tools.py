@@ -140,6 +140,21 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_base",
+            "description": "Search business knowledge base for policies, FAQs, return/exchange info, shipping details, company info, and training Q&A. Do NOT use for product queries — use search_products instead.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Natural language query to search the knowledge base"},
+                    "limit": {"type": "integer", "description": "Max results (default 3)", "default": 3},
+                },
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 
@@ -662,6 +677,15 @@ def tool_transfer_chat(conversation, reason):
 
 
 
+def tool_search_knowledge_base(user, query, limit=3):
+    """Search RAG chunks (sample Q&A, knowledge base) via vector similarity."""
+    from context.search import search_chunks
+    results = search_chunks(user, query, top_k=limit, min_score=0.0)
+    if not results:
+        return {"results": [], "total": 0, "note": "No matching knowledge found"}
+    return {"results": results, "total": len(results)}
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -705,6 +729,13 @@ def execute_tool(name, arguments, user, conversation):
 
         if name == "transfer_chat":
             return tool_transfer_chat(conversation, args.get("reason", "Customer requested"))
+
+        if name == "search_knowledge_base":
+            return tool_search_knowledge_base(
+                user=user,
+                query=args.get("query", ""),
+                limit=int(args.get("limit", 3)),
+            )
 
         return {"error": f"Unknown tool: {name}"}
 

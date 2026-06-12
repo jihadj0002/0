@@ -48,7 +48,13 @@ def build_system_prompt(user, conversation):
         "- Use transfer_chat when the customer is angry, asks for a human, or the issue is "
         "beyond your scope.\n"
         "- Never paste image URLs in text — send images only via send_images (max 5).\n"
+        "Use tool search_knowledge_base to access the knowledge base.\n"
+        "such as: FAQs, Policies, payment methods or any general information.\n"
+        "But product info must come within context or via search product.\n"
+        "If their product is not found say that product is not available instead of saying not found.\n"
+
         f"- Keep replies {tone} and {style} unless the customer asks for detail."
+
     )
 
     # --- Store info ---

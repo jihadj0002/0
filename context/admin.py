@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AgentIdentity, StoreConfig, BehaviorRules
+from .models import AgentIdentity, RAGChunk, StoreConfig, BehaviorRules
 
 
 class AgentIdentityAdmin(admin.ModelAdmin):
@@ -21,7 +21,12 @@ class BehaviorRulesAdmin(admin.ModelAdmin):
     search_fields = ("user__username", "user__email")
     ordering = ("-updated_at",)
 
+class RAGChunkAdmin(admin.ModelAdmin):
+    list_display = ("user", "source", "created_at", "is_active")
+    search_fields = ("source",)
+    ordering = ("-created_at",)
 
+admin.site.register(RAGChunk, RAGChunkAdmin)
 admin.site.register(AgentIdentity, AgentIdentityAdmin)
 admin.site.register(StoreConfig, StoreConfigAdmin)
 admin.site.register(BehaviorRules, BehaviorRulesAdmin)
