@@ -31,6 +31,13 @@ _executor = ThreadPoolExecutor(max_workers=50)
 _batch_timers: dict[int, threading.Timer] = {}
 _batch_timers_lock = threading.Lock()
 
+# Per-conversation pipeline locks — prevents overlapping run() calls for the
+# same conversation. When a timer fires and the lock is already held (previous
+# pipeline still running), this invocation skips; the unprocessed batches stay
+# in the DB and will be picked up by the next timer.
+_conv_locks: dict[int, threading.Lock] = {}
+_conv_locks_lock = threading.Lock()
+
 
 # ---------------------------------------------------------------------------
 # Signature helpers
@@ -63,14 +70,16 @@ def _schedule_batch_pipeline(conversation_id):
     (Re)start the 5-second batch timer for a conversation.
     Cancels any existing timer so rapid message bursts are collapsed into one
     pipeline run that fires 5 seconds after the LAST message in the burst.
-    Must be called from inside a `_batch_timers_lock` context is NOT required —
-    the lock is acquired internally.
+
+    The timer callback submits work to the shared thread pool rather than
+    running directly in a timer thread — this avoids spawning unlimited
+    database connections and keeps pipeline work managed by the same pool.
     """
     with _batch_timers_lock:
         existing = _batch_timers.get(conversation_id)
         if existing is not None:
             existing.cancel()
-        t = threading.Timer(5.0, _fire_batch_pipeline, args=(conversation_id,))
+        t = threading.Timer(5.0, lambda cid: _executor.submit(_fire_batch_pipeline, cid), args=(conversation_id,))
         t.daemon = True
         _batch_timers[conversation_id] = t
         t.start()
@@ -78,23 +87,35 @@ def _schedule_batch_pipeline(conversation_id):
 
 def _fire_batch_pipeline(conversation_id):
     """
-    Called by the timer after 5 seconds of silence for a conversation.
+    Called (via executor) after 5 seconds of silence for a conversation.
     Combines all unprocessed MessageBatch rows into a single AI turn.
-    """
-    with _batch_timers_lock:
-        _batch_timers.pop(conversation_id, None)
 
-    close_old_connections()
+    Locks per-conversation so overlapping runs never happen.  Batch rows are
+    pinned by primary key to prevent concurrent runs from stealing each other's
+    batches.
+    """
+    # Acquire per-conversation lock (non-blocking) — skip if already running.
+    with _conv_locks_lock:
+        conv_lock = _conv_locks.get(conversation_id)
+        if conv_lock is None:
+            conv_lock = threading.Lock()
+            _conv_locks[conversation_id] = conv_lock
+
+    if not conv_lock.acquire(blocking=False):
+        logger.info("Pipeline already running for conv=%s — batches preserved for next trip", conversation_id)
+        return
+
     try:
+        with _batch_timers_lock:
+            _batch_timers.pop(conversation_id, None)
+
+        close_old_connections()
         from types import SimpleNamespace
         from api.ai.pipeline import run
 
         conversation = Conversation.objects.get(id=conversation_id)
 
         # Guard: don't fire if AI was disabled since the timer was scheduled.
-        # Check both conversation-level and integration-level flags so that a
-        # race between "user disables AI" and a pending timer is caught here
-        # before any LLM call is made.
         ai_still_enabled = (
             conversation.is_ai_enabled
             and Integration.objects.filter(
@@ -109,35 +130,49 @@ def _fire_batch_pipeline(conversation_id):
             ).update(processed=True)
             return
 
-        batches = MessageBatch.objects.filter(
-            conversation=conversation,
-            processed=False,
-        ).order_by("timestamp")
-
-        if not batches.exists():
+        # Pin batch primary keys so concurrent invocations don't interfere.
+        batch_pks = list(
+            MessageBatch.objects.filter(
+                conversation=conversation,
+                processed=False,
+            ).order_by("timestamp").values_list("pk", flat=True)
+        )
+        if not batch_pks:
             return
 
-        combined_text = "\n".join(b.message_text for b in batches if b.message_text.strip())
+        combined_text = "\n".join(
+            b.message_text
+            for b in MessageBatch.objects.filter(pk__in=batch_pks)
+            if b.message_text.strip()
+        )
 
         if not combined_text.strip():
-            batches.update(processed=True)
+            MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
             return
 
         unified = SimpleNamespace(text=combined_text)
         try:
             run(conversation, unified)
         except Exception:
-            logger.exception("Pipeline crashed conv=%s — batches preserved for retry", conversation_id)
+            logger.exception(
+                "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
+            )
             return
 
-        # Only mark consumed AFTER pipeline completes successfully
-        batches.update(processed=True)
+        # Only mark consumed AFTER pipeline completes successfully, and only
+        # our pinned batches — never touch batches that arrived in the meantime.
+        MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
 
     except Conversation.DoesNotExist:
         pass
     except Exception:
         logger.exception("_fire_batch_pipeline failed for conversation=%s", conversation_id)
     finally:
+        conv_lock.release()
+        # Clean up the lock entry so the dict doesn't grow unbounded.
+        with _conv_locks_lock:
+            if _conv_locks.get(conversation_id) is conv_lock:
+                del _conv_locks[conversation_id]
         close_old_connections()
 
 
