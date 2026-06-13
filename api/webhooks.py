@@ -376,13 +376,19 @@ def _fetch_and_update_profile(conv_id, customer_id, access_token):
     close_old_connections()
     try:
         from api.utils.get_msngr_profile import can_fetch_profile, get_messenger_profile
+        from api.utils.files import download_profile_to_storage
         if not can_fetch_profile(access_token):
             return
         profile = get_messenger_profile(customer_id, access_token)
-        Conversation.objects.filter(pk=conv_id).update(
-            customer_name=f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip(),
-            profile_image=profile.get("profile_pic", ""),
-        )
+        name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
+        update_kwargs = {"customer_name": name}
+        pic_url = profile.get("profile_pic", "")
+        if pic_url:
+            try:
+                update_kwargs["profile_image"] = download_profile_to_storage(pic_url)
+            except Exception:
+                logger.warning("Failed to download profile pic for customer_id=%s", customer_id)
+        Conversation.objects.filter(pk=conv_id).update(**update_kwargs)
     except Exception as exc:
         logger.warning("Failed to fetch Messenger profile for customer_id=%s: %s", customer_id, exc)
     finally:
