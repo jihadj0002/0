@@ -199,6 +199,7 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
     are still stored (for human agent view) but media analysis and pipeline
     scheduling are skipped.
     """
+    logger.info("_process_webhook: starting user=%s platform=%s msgs=%s", user_id, platform, len(unified_messages))
     close_old_connections()
     try:
         user = User.objects.get(id=user_id)
@@ -534,6 +535,7 @@ class MetaAppWebhookView(View):
         # Meta MUST always receive a 200 — never let this raise.
         try:
             body = request.body
+            logger.info("App-level webhook: POST received len=%s", len(body))
 
             # The app-level webhook receives events for EVERY connected tenant.
             # If META_APP_SECRET is unset, _verify_meta_signature runs in skip
@@ -551,15 +553,23 @@ class MetaAppWebhookView(View):
             if not signature or not _verify_meta_signature(body, app_secret, signature):
                 logger.warning("App-level webhook: signature mismatch")
                 return HttpResponse("EVENT_RECEIVED", status=200)
+            logger.info("App-level webhook: signature OK")
 
             try:
                 payload = json.loads(body)
             except (json.JSONDecodeError, ValueError):
+                logger.info("App-level webhook: invalid JSON body")
                 return HttpResponse("EVENT_RECEIVED", status=200)
 
-            platform = _OBJECT_MAP.get(payload.get("object"))
+            object_type = payload.get("object")
+            platform = _OBJECT_MAP.get(object_type)
             if not platform:
+                logger.info("App-level webhook: unknown object_type=%s", object_type)
                 return HttpResponse("EVENT_RECEIVED", status=200)
+            logger.info(
+                "App-level webhook: object=%s platform=%s entries=%s",
+                object_type, platform, len(payload.get("entry", [])),
+            )
 
             parser = {
                 "messenger": parse_messenger,
@@ -569,7 +579,7 @@ class MetaAppWebhookView(View):
 
             for entry in payload.get("entry", []):
                 try:
-                    self._route_entry(platform, parser, payload.get("object"), entry)
+                    self._route_entry(platform, parser, object_type, entry)
                 except Exception:
                     logger.exception("App-level webhook: failed routing an entry")
 
@@ -581,6 +591,7 @@ class MetaAppWebhookView(View):
     def _route_entry(self, platform, parser, object_type, entry):
         entry_id = entry.get("id")
         if not entry_id:
+            logger.info("App-level webhook: entry with no id, skipping")
             return
 
         # Attribute the event to the Integration registered for this page/IG id.
@@ -598,8 +609,17 @@ class MetaAppWebhookView(View):
             )
             return
 
+        logger.info(
+            "App-level webhook: found integration pk=%s user=%s entry_id=%s",
+            integration.pk, integration.user_id, entry_id,
+        )
+
         single_payload = {"object": object_type, "entry": [entry]}
         messages = parser(single_payload)
+        logger.info(
+            "App-level webhook: parsed %s messages from entry_id=%s",
+            len(messages), entry_id,
+        )
         if not messages:
             return
 
@@ -609,6 +629,10 @@ class MetaAppWebhookView(View):
             platform,
             messages,
             integration.access_token or "",
+        )
+        logger.info(
+            "App-level webhook: submitted %s msgs to executor for user=%s",
+            len(messages), integration.user_id,
         )
 
 

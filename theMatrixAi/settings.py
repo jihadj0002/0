@@ -284,3 +284,39 @@ LOGIN_URL = 'front:login'
 #         'rest_framework.permissions.IsAuthenticated',
 #     ],
 # }
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "WARNING",
+    },
+    "loggers": {
+        "api": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "back": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "billing": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "context": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
