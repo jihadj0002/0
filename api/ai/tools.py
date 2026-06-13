@@ -39,7 +39,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_product_details",
-            "description": "Get full details and image URLs for a specific product by its PID.",
+            "description": "Get fresh price/stock for a product by PID. Only use as last resort — focused products (in system prompt) already have complete data including price, stock, description, variations. For focused products just call send_images.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -52,8 +52,8 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "send_images",
-            "description": "Send product images to the customer. Multiple PIDs via pids=[...] → scrollable carousel (1 image per card, buttons include product name). Single PID via pid=... → all product images sent individually one by one.",
+        "name": "send_images",
+        "description": "Send product images to the customer. Returns name, price, stock, SKU along with images — describe the product from returned data. Multiple PIDs via pids=[...] → scrollable carousel (1 image per card, buttons include product name). Single PID via pid=... → all product images sent individually one by one.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -214,7 +214,7 @@ def _focus_pid(conversation):
 def _build_focus_payload(product, full=True):
     """Snapshot a product row/details dict. ``full`` keeps description + variations."""
     payload = {"pid": str(product.get("pid", "")), "name": product.get("name") or ""}
-    for key in ("price", "discounted_price", "stock", "in_stock", "sku"):
+    for key in ("price", "discounted_price", "stock", "in_stock", "sku", "external_id"):
         val = product.get(key)
         if val is not None:
             payload[key] = val
@@ -279,7 +279,7 @@ def _clear_focus_product(conversation):
 
 def _external_row(r):
     row = {
-        "pid": r["external_id"],
+        "pid": r.get("sku") or r["external_id"],
         "name": r["name"],
         "price": r["price"],
         "discounted_price": r.get("discounted_price"),
@@ -287,6 +287,7 @@ def _external_row(r):
         "stock": r.get("stock", 0),
         "description": (r.get("description") or "")[:200],
         "featured": False,
+        "external_id": r["external_id"],
     }
     if r.get("sku"):
         row["sku"] = r["sku"]
@@ -528,8 +529,34 @@ def _product_row(p):
 
 
 def tool_get_product_details(user, pid, conversation=None):
-    # Live external source → fetch from the provider (pid is the external_id).
     from api.products.factory import get_active_source, get_provider, is_external
+
+    # 0) Focused products cache — avoids API calls when data is already in hand.
+    if conversation:
+        focus_list = parse_focus_products(conversation.current_product)
+        for fp in focus_list:
+            if fp.get("pid") == pid or fp.get("sku") == pid:
+                details = {
+                    "pid": fp.get("pid", ""),
+                    "name": fp.get("name", ""),
+                    "price": str(fp.get("price", "")),
+                    "discounted_price": str(fp.get("discounted_price") or ""),
+                    "stock": fp.get("stock", 0),
+                    "in_stock": fp.get("in_stock", True),
+                    "description": (fp.get("description") or "")[:300],
+                    "upsell_enabled": False,
+                }
+                if fp.get("sku"):
+                    details["sku"] = fp["sku"]
+                if fp.get("external_id"):
+                    details["external_id"] = fp["external_id"]
+                variations = fp.get("variations") or []
+                if variations:
+                    details["variations"] = variations
+                _focus_products(conversation, [details])
+                return details
+
+    # 1) Live external source.
     fallback_to_db = False
     try:
         source = get_active_source(user)
@@ -546,7 +573,7 @@ def tool_get_product_details(user, pid, conversation=None):
                 fallback_to_db = True
             else:
                 details = {
-                    "pid": r["external_id"],
+                    "pid": r.get("sku") or r["external_id"],
                     "name": r["name"],
                     "price": r["price"],
                     "discounted_price": r.get("discounted_price"),
@@ -554,6 +581,7 @@ def tool_get_product_details(user, pid, conversation=None):
                     "in_stock": r.get("in_stock", True),
                     "description": r.get("description") or "",
                     "upsell_enabled": False,
+                    "external_id": r["external_id"],
                 }
                 if r.get("sku"):
                     details["sku"] = r["sku"]
@@ -575,35 +603,30 @@ def tool_get_product_details(user, pid, conversation=None):
         fallback_to_db = True
 
     if not fallback_to_db:
-        # Not external — proceed with local lookup
         pass
-
     # Local DB fallback: search by pid first, then by external_id
     p = Product.objects.filter(Q(user=user, pid=pid) | Q(user=user, external_id=pid)).first()
-    if p is None:
-        return {"error": f"Product '{pid}' not found"}
+    if p is not None:
+        extra_images = [
+            _image_url(img)
+            for img in ProductImages.objects.filter(product=p).values_list("images", flat=True)
+            if _image_url(img)
+        ]
 
-    extra_images = [
-        _image_url(img)
-        for img in ProductImages.objects.filter(product=p).values_list("images", flat=True)
-        if _image_url(img)
-    ]
+        details = {
+            "pid": p.pid,
+            "name": p.name,
+            "price": str(p.price),
+            "discounted_price": str(p.discounted_price) if p.discounted_price else None,
+            "stock": p.stock_quantity,
+            "in_stock": p.stock_quantity > 0,
+            "description": p.description or "",
+            "upsell_enabled": p.upsell_enabled,
+        }
+        _focus_products(conversation, [details])
+        return details
 
-    details = {
-        "pid": p.pid,
-        "name": p.name,
-        "price": str(p.price),
-        "discounted_price": str(p.discounted_price) if p.discounted_price else None,
-        "stock": p.stock_quantity,
-        "in_stock": p.stock_quantity > 0,
-        "description": p.description or "",
-        # "main_image": _image_url(p.image),
-        # "gallery": extra_images,
-        "upsell_enabled": p.upsell_enabled,
-    }
-    # Keep the conversation focused on this product.
-    _focus_products(conversation, [details])
-    return details
+    return {"error": f"Product '{pid}' not found"}
 
 
 def tool_send_images(user, pid="", pids=None, conversation=None):
@@ -742,6 +765,12 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
                 r = provider.get_product(pid)
             except Exception:
                 logger.exception("Live get_product failed for pid=%s during create_order", pid)
+            if not r:
+                try:
+                    results = provider.search(pid, limit=1)
+                    r = results[0] if results else None
+                except Exception:
+                    pass
             if r:
                 variations = r.get("variations") or []
                 chosen = None
@@ -776,7 +805,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
                 except Exception:
                     unit_price = Decimal("0")
                 vid = chosen.get("variation_id") if chosen else (requested_vid or None)
-                resolved.append((None, qty, unit_price, r.get("name") or pid, pid, vid))
+                resolved.append((None, qty, unit_price, r.get("name") or pid, r["external_id"], vid))
                 continue
 
         errors.append(f"Product '{pid}' not found")

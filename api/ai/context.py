@@ -42,7 +42,10 @@ def build_system_prompt(user, conversation):
         "CRITICAL: When you find multiple products via search_products, NEVER list their names, "
         "prices, or descriptions in your text reply. Instead, immediately call send_images(pids=[...]) "
         "to show them as a carousel. Your text should only ask a follow-up question or guide the customer.\n"
-        "When customer selects a product, call send image with the pid and say follow up question or guide the customer.\n"
+        "When customer selects a product (e.g. SELECT_PRODUCT|...), the product's full data "
+        "(name, price, stock, description, variations) is already in Focused Products in this prompt. "
+        "Call send_images to show photos and describe the product from the Focused Products data. "
+        "Do NOT call get_product_details — you already have everything you need.\n"
         "## Search Rules\n"
     )
     if external_catalog:
@@ -228,9 +231,10 @@ def _render_focus_products(focus_list, currency):
         lines.append(f"{i}. {label}" + (f" — {price}" if price else "") + stock_note)
 
     lines.append(
-        "For any product above, call send_images(pid=...) to send photos or "
-        "get_product_details(pid=...) for fresh price/stock/variations. "
-        "To show multiple products as a carousel, call send_images(pids=[...]) with all their PIDs."
+        "All data above is COMPLETE — you already have name, price, stock, "
+        "description, and variations. Call send_images(pid=...) to send photos "
+        "and describe the product from this data. Do NOT call get_product_details "
+        "for any product listed above — the data is already here."
     )
     return "\n".join(lines)
 
