@@ -217,10 +217,6 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     mid = msg_data.get("message_id") or None
     customer_id = msg_data.get("customer_id", "")
 
-    # Idempotency — Meta retries on non-200, so the same mid may arrive twice
-    if mid and Message.objects.filter(mid=mid).exists():
-        return None
-
     conv, created = Conversation.objects.get_or_create(
         user=user,
         platform=platform,
@@ -300,23 +296,47 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
             logger.warning("Audio transcription failed mid=%s: %s", mid, exc)
             msg_text = msg_text or "[Voice message received]"
 
-    Message.objects.create(
-        conversation=conv,
-        mid=mid,
-        sender="customer",
-        text=msg_text or None,
-        attachments=attachments if attachments else None,
-        raw_payload=msg_data.get("raw"),
-    )
+    # Idempotent message creation — use get_or_create on mid to prevent the
+    # TOCTOU race between the old "check, then create" pattern.
+    if mid:
+        _, msg_created = Message.objects.get_or_create(
+            mid=mid,
+            defaults={
+                "conversation": conv,
+                "sender": "customer",
+                "text": msg_text or None,
+                "attachments": attachments if attachments else None,
+                "raw_payload": msg_data.get("raw"),
+            },
+        )
+        if not msg_created:
+            # Duplicate mid — Meta retried a message we already stored.
+            # The conversation already exists, so just return its id.
+            return conv.id
+    else:
+        try:
+            Message.objects.create(
+                conversation=conv,
+                sender="customer",
+                text=msg_text or None,
+                attachments=attachments if attachments else None,
+                raw_payload=msg_data.get("raw"),
+            )
+        except Exception:
+            logger.exception("Failed to create message (no mid) conv=%s", conv.pk)
+            return conv.id
 
     # Store enriched text in batch so _fire_batch_pipeline combines it correctly.
     # Only create batch rows when AI is active — no point batching for disabled-AI convos.
     if ai_enabled:
-        MessageBatch.objects.create(
-            conversation=conv,
-            message_text=msg_text,
-            platform=platform,
-        )
+        try:
+            MessageBatch.objects.create(
+                conversation=conv,
+                message_text=msg_text,
+                platform=platform,
+            )
+        except Exception:
+            logger.warning("MessageBatch creation failed conv=%s", conv.pk)
 
     return conv.id
 
