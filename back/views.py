@@ -1141,10 +1141,12 @@ def disable_all_bots(request):
 
 
 def enable_all_bots(request):
-    Conversation.objects.filter(user=request.user, is_ai_enabled=False).update(is_ai_enabled=True)
-    print("All bots enabled for user:", request.user.username)
-    # return JsonResponse({"success": True, "message": "All bots enabled."})
-    return redirect("back:options")  # update with your URL name
+    platforms = Integration.objects.filter(
+        user=request.user, is_enabled=True
+    ).values_list("platform", flat=True)
+    Conversation.objects.filter(
+        user=request.user, platform__in=platforms
+    ).update(is_ai_enabled=True)
 
 @login_required
 def add_product(request):

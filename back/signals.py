@@ -98,17 +98,6 @@ EXTERNAL_UPDATE_URL = "https://erp.monowamart.com/api/v1/1/ai/order"
 
 
 
-@receiver(post_save, sender=Integration)
-def sync_ai_status_to_conversations(sender, instance, **kwargs):
-    Conversation.objects.filter(
-        user=instance.user,
-        platform=instance.platform
-    ).update(
-        is_ai_enabled=instance.is_enabled,
-        # ai_disabled_at=None if instance.is_enabled else timezone.now()
-    )
-
-
 @receiver(post_save, sender=User)
 def create_or_update_user_profile(sender, instance, created, **kwargs):
     if created:
