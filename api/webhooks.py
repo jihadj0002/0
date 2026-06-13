@@ -305,23 +305,44 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
             logger.warning("Audio transcription failed mid=%s: %s", mid, exc)
             msg_text = msg_text or "[Voice message received]"
 
-    # Idempotent message creation — use get_or_create on mid to prevent the
-    # TOCTOU race between the old "check, then create" pattern.
     if mid:
-        _, msg_created = Message.objects.get_or_create(
-            mid=mid,
-            defaults={
-                "conversation": conv,
-                "sender": "customer",
-                "text": msg_text or None,
-                "attachments": attachments if attachments else None,
-                "raw_payload": msg_data.get("raw"),
-            },
-        )
-        if not msg_created:
-            logger.info("_persist_message: duplicate mid=%s conv=%s", mid, conv.pk)
-            return conv.id
-        logger.info("_persist_message: created msg mid=%s conv=%s", mid, conv.pk)
+        mid_available = True
+        try:
+            existing_msg = Message.objects.get(mid=mid)
+            if existing_msg.conversation_id != conv.pk:
+                logger.warning(
+                    "Mid collision mid=%s belongs to conv=%s but this is conv=%s — "
+                    "will create message without mid",
+                    mid, existing_msg.conversation_id, conv.pk,
+                )
+                mid_available = False
+            else:
+                logger.info("_persist_message: duplicate mid=%s conv=%s", mid, conv.pk)
+                return conv.id
+        except Message.DoesNotExist:
+            pass
+
+        if mid_available:
+            try:
+                Message.objects.create(
+                    mid=mid,
+                    conversation=conv,
+                    sender="customer",
+                    text=msg_text or None,
+                    attachments=attachments if attachments else None,
+                    raw_payload=msg_data.get("raw"),
+                )
+            except Exception:
+                logger.exception("Failed to create message mid=%s conv=%s", mid, conv.pk)
+                return conv.id
+        else:
+            Message.objects.create(
+                conversation=conv,
+                sender="customer",
+                text=msg_text or None,
+                attachments=attachments if attachments else None,
+                raw_payload=msg_data.get("raw"),
+            )
     else:
         try:
             Message.objects.create(
