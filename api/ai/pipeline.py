@@ -144,7 +144,7 @@ def run(conversation, incoming_message):
                         for p in products:
                             pending_images.extend(p.get("images", []))
                         tool_content = {
-                            "products_count": 1,
+                            "products_count": len(products),
                             "images_sent": len(pending_images),
                             "status": "product images sent to the customer one by one — you may describe what is shown",
                         }

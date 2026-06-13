@@ -118,13 +118,20 @@ def _fire_batch_pipeline(conversation_id):
             return
 
         combined_text = "\n".join(b.message_text for b in batches if b.message_text.strip())
-        batches.update(processed=True)
 
         if not combined_text.strip():
+            batches.update(processed=True)
             return
 
         unified = SimpleNamespace(text=combined_text)
-        run(conversation, unified)
+        try:
+            run(conversation, unified)
+        except Exception:
+            logger.exception("Pipeline crashed conv=%s — batches preserved for retry", conversation_id)
+            return
+
+        # Only mark consumed AFTER pipeline completes successfully
+        batches.update(processed=True)
 
     except Conversation.DoesNotExist:
         pass

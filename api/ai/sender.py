@@ -70,9 +70,9 @@ def _messenger(conversation, integration, text, image_urls, product_cards=None):
             images = card.get("images", [])
             price_str = ""
             if card.get("discounted_price"):
-                price_str = f"${card['discounted_price']}"
+                price_str = f"৳{card['discounted_price']}"
             elif card.get("price"):
-                price_str = f"${card['price']}"
+                price_str = f"৳{card['price']}"
             subtitle = price_str[:80] if price_str else " "
             elements.append({
                 "title": (card.get("name") or "Product")[:80],
