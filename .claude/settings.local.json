@@ -10,7 +10,8 @@
       "Bash(venv/bin/pip install *)",
       "Bash(curl -sS -m 20 -o /tmp/prod.json -w \"HTTP %{http_code}\\\\n\" \"https://erp.monowamart.com/api/v1/1/ai/products\")",
       "Read(//tmp/**)",
-      "Bash(curl -sS -m 20 -o /tmp/prod2.json -w \"HTTP %{http_code}\\\\n\" \"https://erp.monowamart.com/api/v1/ai/products\")"
+      "Bash(curl -sS -m 20 -o /tmp/prod2.json -w \"HTTP %{http_code}\\\\n\" \"https://erp.monowamart.com/api/v1/ai/products\")",
+      "Bash(python -m py_compile api/webhooks.py)"
     ]
   }
 }

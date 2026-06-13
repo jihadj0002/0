@@ -102,7 +102,13 @@ def _fire_batch_pipeline(conversation_id):
             _conv_locks[conversation_id] = conv_lock
 
     if not conv_lock.acquire(blocking=False):
-        logger.info("Pipeline already running for conv=%s — batches preserved for next trip", conversation_id)
+        # A pipeline run is already in flight for this conversation. The batches
+        # that triggered THIS timer would otherwise be stranded: the customer may
+        # have stopped sending, so no future message would ever create a new
+        # timer to pick them up. Reschedule a fresh timer so the in-flight run's
+        # leftovers get drained once it releases the lock.
+        logger.info("Pipeline already running for conv=%s — rescheduling to drain remaining batches", conversation_id)
+        _schedule_batch_pipeline(conversation_id)
         return
 
     try:
@@ -162,6 +168,15 @@ def _fire_batch_pipeline(conversation_id):
         # Only mark consumed AFTER pipeline completes successfully, and only
         # our pinned batches — never touch batches that arrived in the meantime.
         MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+
+        # New messages may have arrived DURING this run. Their timer could have
+        # fired while we held the lock (it reschedules itself), but cover the race
+        # explicitly: if unprocessed batches remain, drain them on a fresh timer
+        # so the tail of a burst is never left without an AI reply.
+        if MessageBatch.objects.filter(
+            conversation=conversation, processed=False
+        ).exists():
+            _schedule_batch_pipeline(conversation_id)
 
     except Conversation.DoesNotExist:
         pass
