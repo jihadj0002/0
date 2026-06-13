@@ -39,8 +39,10 @@ def build_system_prompt(user, conversation):
         "(1 image per card, buttons include product name). "
         "For a single product, send_images(pid=...) sends all its images individually one by one — "
         "you may describe them in text. "
-        "Do NOT list product names, prices, or image details in text when carousel is shown.\n"
-        
+        "CRITICAL: When you find multiple products via search_products, NEVER list their names, "
+        "prices, or descriptions in your text reply. Instead, immediately call send_images(pids=[...]) "
+        "to show them as a carousel. Your text should only ask a follow-up question or guide the customer.\n"
+        "When customer selects a product, call send image with the pid and say follow up question or guide the customer.\n"
         "## Search Rules\n"
     )
     if external_catalog:

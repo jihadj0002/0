@@ -43,6 +43,7 @@ def normalize_product(item):
         "in_stock": (inv is None) or int(inv) > 0,
         "image": images[0] if images else None,
         "images": images,
+        "sku": first_variant.get("sku") or None,
         "raw": item,
         "_variant_id": str(first_variant.get("id")) if first_variant.get("id") else None,
     }

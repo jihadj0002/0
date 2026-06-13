@@ -4,7 +4,8 @@ import re
 
 from django.core.files.storage import default_storage
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import DecimalField, F, Q, Value
+from django.db.models.functions import Coalesce
 
 from back.models import Conversation, OrderItem, Product, ProductImages, Sale
 from context.models import AgentIdentity, StoreConfig, BehaviorRules
@@ -21,12 +22,14 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Search products by SKU, partial SKU, name, or keyword. The tool automatically retries with different search strategies (stripped text, individual words) if the first attempt finds nothing. Call this before quoting any price.",
+            "description": "Search products by SKU, partial SKU, name, or keyword. You can optionally specify min_price and/or max_price to narrow results by budget. The tool automatically retries with different search strategies (stripped text, individual words) if the first attempt finds nothing. Call this before quoting any price.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search term — SKU code, product name, or keyword"},
                     "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+                    "min_price": {"type": "number", "description": "Minimum price / budget floor — optional; omit if no lower bound"},
+                    "max_price": {"type": "number", "description": "Maximum price / budget ceiling — optional; e.g. if customer says 'budget of 500 taka' pass 500"},
                 },
                 "required": ["query"],
             },
@@ -356,7 +359,25 @@ def _dedup_external(results):
     return out
 
 
-def tool_search_products(user, query, limit=10, conversation=None):
+def _filter_by_budget(results, min_price, max_price):
+    """Filter a list of product dicts by effective price (discounted if available, else price)."""
+    if min_price is None and max_price is None:
+        return results
+    out = []
+    for r in results:
+        try:
+            eff = float(r.get("discounted_price") or r.get("price") or 0)
+        except (ValueError, TypeError):
+            eff = 0
+        if min_price is not None and eff < min_price:
+            continue
+        if max_price is not None and eff > max_price:
+            continue
+        out.append(r)
+    return out
+
+
+def tool_search_products(user, query, limit=10, conversation=None, min_price=None, max_price=None):
     max_external_attempts = 4
 
     # Live external source → query the provider in real time.
@@ -369,9 +390,15 @@ def tool_search_products(user, query, limit=10, conversation=None):
                 rows = provider.list_products(limit=limit)
                 rows = rows or []
                 results = [_external_row(r) for r in rows]
+                results = _filter_by_budget(results, min_price, max_price)
                 if results:
                     _focus_products(conversation, results[:FOCUS_MAX])
-                return {"products": results, "total": len(results)}
+                    out = {"products": results, "total": len(results)}
+                    out["_instruction"] = (
+                        "Do NOT list product names, prices, or descriptions in your text reply. "
+                        "Use send_images(pids=[...]) to show them as a carousel."
+                    )
+                    return out
 
             # Multi-strategy: try successive query variations
             all_results = []
@@ -392,23 +419,47 @@ def tool_search_products(user, query, limit=10, conversation=None):
                 except Exception:
                     logger.exception("External search failed for variation=%s", variation)
 
+            all_results = _filter_by_budget(all_results, min_price, max_price)
+            all_results = all_results[:limit]
             if all_results:
-                all_results = all_results[:limit]
                 _focus_products(conversation, all_results[:FOCUS_MAX])
-            return {"products": all_results, "total": len(all_results)}
+                out = {"products": all_results, "total": len(all_results)}
+                out["_instruction"] = (
+                    "Do NOT list product names, prices, or descriptions in your text reply. "
+                    "Use send_images(pids=[...]) to show them as a carousel."
+                )
+                return out
+            # External search returned nothing — fall through to local DB
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
 
     # If a product is already selected for this conversation, return it directly
+    # (but check budget — if the focused product doesn't fit, fall through to search).
     focus_pid = _focus_pid(conversation)
     if focus_pid:
         try:
             product = Product.objects.get(user=user, pid=focus_pid, status=True)
-            return {
-                "products": [_product_row(product)],
-                "total": 1,
-                "selected_product": True,
-            }
+            if min_price is not None or max_price is not None:
+                eff = float(product.discounted_price or product.price or 0)
+                in_budget = True
+                if min_price is not None and eff < min_price:
+                    in_budget = False
+                if max_price is not None and eff > max_price:
+                    in_budget = False
+                if not in_budget:
+                    _clear_focus_product(conversation)
+                else:
+                    return {
+                        "products": [_product_row(product)],
+                        "total": 1,
+                        "selected_product": True,
+                    }
+            else:
+                return {
+                    "products": [_product_row(product)],
+                    "total": 1,
+                    "selected_product": True,
+                }
         except Product.DoesNotExist:
             _clear_focus_product(conversation)
 
@@ -428,6 +479,17 @@ def tool_search_products(user, query, limit=10, conversation=None):
                 | Q(external_id__icontains=variation)
             )
         qs = Product.objects.filter(user=user, status=True).filter(combined_q).order_by("-featured_product", "name")
+
+        # Budget filter — use effective price (discounted if available, else price)
+        if min_price is not None or max_price is not None:
+            qs = qs.annotate(
+                _eff_price=Coalesce("discounted_price", "price", output_field=DecimalField())
+            )
+            if min_price is not None:
+                qs = qs.filter(_eff_price__gte=min_price)
+            if max_price is not None:
+                qs = qs.filter(_eff_price__lte=max_price)
+
         # Dedup by pid (the combined query can return the same product via different variations)
         seen = set()
         products_list = []
@@ -443,7 +505,13 @@ def tool_search_products(user, query, limit=10, conversation=None):
         _focus_products(conversation, [_product_row(p) for p in products_list[:FOCUS_MAX]])
 
     results = [_product_row(p) for p in products_list]
-    return {"products": results, "total": len(results)}
+    out = {"products": results, "total": len(results)}
+    if len(results) > 0:
+        out["_instruction"] = (
+            "Do NOT list product names, prices, or descriptions in your text reply. "
+            "Use send_images(pids=[...]) to show them as a carousel."
+        )
+    return out
 
 
 def _product_row(p):
@@ -462,43 +530,57 @@ def _product_row(p):
 def tool_get_product_details(user, pid, conversation=None):
     # Live external source → fetch from the provider (pid is the external_id).
     from api.products.factory import get_active_source, get_provider, is_external
+    fallback_to_db = False
     try:
         source = get_active_source(user)
         if source and source.mode == "live" and is_external(user):
-            r = get_provider(user).get_product(pid)
+            provider = get_provider(user)
+            r = provider.get_product(pid)
             if not r:
-                return {"error": f"Product '{pid}' not found"}
-            details = {
-                "pid": r["external_id"],
-                "name": r["name"],
-                "price": r["price"],
-                "discounted_price": r.get("discounted_price"),
-                "stock": r.get("stock", 0),
-                "in_stock": r.get("in_stock", True),
-                "description": r.get("description") or "",
-                "upsell_enabled": False,
-            }
-            if r.get("sku"):
-                details["sku"] = r["sku"]
-            variations = r.get("variations") or []
-            if variations:
-                details["variations"] = [
-                    {
-                        "variation_id": v.get("variation_id"),
-                        "name": v.get("name"),
-                        "price": v.get("price"),
-                        "in_stock": v.get("in_stock", True),
-                    }
-                    for v in variations
-                ]
-            _focus_products(conversation, [details])
-            return details
+                try:
+                    results = provider.search(pid, limit=1)
+                    r = results[0] if results else None
+                except Exception:
+                    pass
+            if not r:
+                fallback_to_db = True
+            else:
+                details = {
+                    "pid": r["external_id"],
+                    "name": r["name"],
+                    "price": r["price"],
+                    "discounted_price": r.get("discounted_price"),
+                    "stock": r.get("stock", 0),
+                    "in_stock": r.get("in_stock", True),
+                    "description": r.get("description") or "",
+                    "upsell_enabled": False,
+                }
+                if r.get("sku"):
+                    details["sku"] = r["sku"]
+                variations = r.get("variations") or []
+                if variations:
+                    details["variations"] = [
+                        {
+                            "variation_id": v.get("variation_id"),
+                            "name": v.get("name"),
+                            "price": v.get("price"),
+                            "in_stock": v.get("in_stock", True),
+                        }
+                        for v in variations
+                    ]
+                _focus_products(conversation, [details])
+                return details
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
+        fallback_to_db = True
 
-    try:
-        p = Product.objects.get(user=user, pid=pid)
-    except Product.DoesNotExist:
+    if not fallback_to_db:
+        # Not external — proceed with local lookup
+        pass
+
+    # Local DB fallback: search by pid first, then by external_id
+    p = Product.objects.filter(Q(user=user, pid=pid) | Q(user=user, external_id=pid)).first()
+    if p is None:
         return {"error": f"Product '{pid}' not found"}
 
     extra_images = [
@@ -556,16 +638,24 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
         images = []
         price = ""
         discounted_price = ""
+        sku = ""
 
         if live_mode:
             try:
                 provider = get_provider(user)
                 r = provider.get_product(raw_pid)
+                if not r:
+                    try:
+                        results = provider.search(raw_pid, limit=1)
+                        r = results[0] if results else None
+                    except Exception:
+                        pass
                 if r:
                     name = r.get("name") or ""
                     images = r.get("images") or ([r["image"]] if r.get("image") else [])
                     price = str(r.get("price") or "")
                     discounted_price = str(r.get("discounted_price") or "")
+                    sku = r.get("sku") or ""
             except Exception:
                 logger.exception("Live send_images failed for %s; falling back to local DB", raw_pid)
 
@@ -592,6 +682,7 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                 "images": images,
                 "price": price,
                 "discounted_price": discounted_price,
+                "sku": sku,
             })
 
     if not products:
@@ -791,6 +882,8 @@ def tool_update_customer(conversation, name=None, phone=None, city=None, address
         updates["customer_phone"] = phone
     if city:
         updates["customer_city"] = city
+    if address:
+        updates["customer_address"] = address
     if updates:
         Conversation.objects.filter(pk=conversation.pk).update(**updates)
     return {"updated": list(updates.keys())}
@@ -825,7 +918,14 @@ def execute_tool(name, arguments, user, conversation):
         args = arguments if isinstance(arguments, dict) else {}
 
         if name == "search_products":
-            return tool_search_products(user, args.get("query", ""), int(args.get("limit", 5)), conversation=conversation)
+            return tool_search_products(
+                user,
+                args.get("query", ""),
+                int(args.get("limit", 5)),
+                conversation=conversation,
+                min_price=args.get("min_price"),
+                max_price=args.get("max_price"),
+            )
 
         if name == "get_product_details":
             return tool_get_product_details(user, args.get("pid", ""), conversation=conversation)

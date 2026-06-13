@@ -35,6 +35,7 @@ def normalize_product(item):
         "in_stock": item.get("stock_status") == "instock",
         "image": images[0] if images else None,
         "images": images,
+        "sku": item.get("sku") or None,
         "raw": item,
     }
 

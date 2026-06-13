@@ -74,6 +74,7 @@ def _messenger(conversation, integration, text, image_urls, product_cards=None):
             elif card.get("price"):
                 price_str = f"৳{card['price']}"
             subtitle = price_str[:80] if price_str else " "
+            btn_pid = card.get("sku") or card.get("pid", "")
             elements.append({
                 "title": (card.get("name") or "Product")[:80],
                 "subtitle": subtitle,
@@ -82,7 +83,7 @@ def _messenger(conversation, integration, text, image_urls, product_cards=None):
                     {
                         "type": "postback",
                         "title": f"View {card.get('name', 'Product')}"[:20],
-                        "payload": f"SELECT_PRODUCT|{card.get('pid', '')}",
+                        "payload": f"SELECT_PRODUCT|{btn_pid}",
                     }
                 ],
             })
