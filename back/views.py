@@ -454,7 +454,7 @@ def ajax_load_messages(request):
             "image": (
                 msg.attachments.get("payload", {}).get("url")
                 or (msg.attachments.get("images") or [None])[0]
-            ) if msg.attachments else None
+            ) if isinstance(msg.attachments, dict) else (msg.attachments if isinstance(msg.attachments, str) else None)
         })
 
     # ==========================
