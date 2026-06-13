@@ -231,7 +231,9 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     # This runs synchronously here (already in a background thread) so the result
     # is available before the 5-second batch timer fires.
     # Skip analysis when AI is disabled for this platform — saves API costs.
-    media_url = (attachments or {}).get("url") or (attachments or {}).get("payload", {}).get("url", "")
+    media_url = (attachments or {}).get("url") or ""
+    if not media_url and isinstance((attachments or {}).get("payload"), dict):
+        media_url = (attachments or {}).get("payload", {}).get("url", "")
     if att_type == "image" and media_url and ai_enabled:
         try:
             from api.ai.media import analyze_image
