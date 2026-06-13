@@ -375,10 +375,8 @@ def _fetch_and_update_profile(conv_id, customer_id, access_token):
     """Fetch Messenger profile in a background thread. Never blocks message processing."""
     close_old_connections()
     try:
-        from api.utils.get_msngr_profile import can_fetch_profile, get_messenger_profile
+        from api.utils.get_msngr_profile import get_messenger_profile
         from api.utils.files import download_profile_to_storage
-        if not can_fetch_profile(access_token):
-            return
         profile = get_messenger_profile(customer_id, access_token)
         name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
         update_kwargs = {"customer_name": name}
