@@ -35,6 +35,8 @@ def build_system_prompt(user, conversation):
         "- You do NOT have the catalog memorised. For ANY product question — by name, "
         "description, category, SKU o,r an image the customer sends — you MUST call "
         "`search_products` FIRST with the keyword(s) or identifier."
+        "When Using send Images it already shows a carusel with product name, price and description and image urls so no need to mention them in text response. "
+        
         "## Search Rules\n"
     )
     if external_catalog:
