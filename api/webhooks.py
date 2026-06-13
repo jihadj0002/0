@@ -242,16 +242,9 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
         },
     )
 
-    # Using API to fetch User's name and profile picture for Messenger conversations, since the webhook payload doesn't include them. This enriches the conversation context for the AI and allows us to display the customer's name and profile image in the UI. We only do this on creation to avoid unnecessary API calls on every message, but we backfill the name if we learn it later and it was missing at creation time.
+    # Fetch Messenger profile asynchronously so it never blocks message processing.
     if created and platform == "messenger":
-        try:
-            from api.utils.get_msngr_profile import get_messenger_profile
-            profile = get_messenger_profile(customer_id, access_token)
-            conv.customer_name = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
-            conv.profile_image = profile.get("profile_pic", "")
-            conv.save(update_fields=["customer_name", "profile_image"])
-        except Exception as exc:
-            logger.warning("Failed to fetch Messenger profile for customer_id=%s: %s", customer_id, exc)
+        _executor.submit(_fetch_and_update_profile, conv.pk, customer_id, access_token)
 
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
@@ -354,6 +347,24 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
             logger.warning("MessageBatch creation failed conv=%s", conv.pk)
 
     return conv.id
+
+
+def _fetch_and_update_profile(conv_id, customer_id, access_token):
+    """Fetch Messenger profile in a background thread. Never blocks message processing."""
+    close_old_connections()
+    try:
+        from api.utils.get_msngr_profile import can_fetch_profile, get_messenger_profile
+        if not can_fetch_profile(access_token):
+            return
+        profile = get_messenger_profile(customer_id, access_token)
+        Conversation.objects.filter(pk=conv_id).update(
+            customer_name=f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip(),
+            profile_image=profile.get("profile_pic", ""),
+        )
+    except Exception as exc:
+        logger.warning("Failed to fetch Messenger profile for customer_id=%s: %s", customer_id, exc)
+    finally:
+        close_old_connections()
 
 
 # ---------------------------------------------------------------------------

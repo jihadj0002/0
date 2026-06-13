@@ -32,6 +32,7 @@ def analyze_image(image_url: str, user=None, reply_id=None) -> str:
         client = _or_client()
         resp = client.chat.completions.create(
             model=VISION_MODEL,
+            timeout=60,
             messages=[{
                 "role": "user",
                 "content": [
@@ -106,6 +107,7 @@ def transcribe_audio(audio_url: str, mime_type: str = "", user=None, reply_id=No
         transcription = client.audio.transcriptions.create(
             model="whisper-1",
             file=(filename, audio_resp.content, mime_type or "audio/ogg"),
+            timeout=60,
         )
         text = transcription.text or ""
         
