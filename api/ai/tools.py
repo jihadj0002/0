@@ -50,7 +50,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "send_images",
-            "description": "Send product image cards to the customer. When you have multiple matching products, pass all their pids to show them as a scrollable carousel with images, names, and prices. The customer sees rich cards — do NOT list product details in your text.",
+            "description": "Send product images to the customer. Multiple PIDs via pids=[...] → scrollable carousel (1 image per card, buttons include product name). Single PID via pid=... → all product images sent individually one by one.",
             "parameters": {
                 "type": "object",
                 "properties": {

@@ -134,13 +134,20 @@ def run(conversation, incoming_message):
             if fn_name == "send_images" and isinstance(result, dict):
                 products = result.get("products")
                 if products is not None:
-                    product_cards.extend(products)
-                    for p in products:
-                        pending_images.extend(p.get("images", []))
-                    tool_content = {
-                        "cards_shown": len(products),
-                        "status": "product cards sent to the customer",
-                    }
+                    if len(products) > 1:
+                        product_cards.extend(products)
+                        tool_content = {
+                            "products_count": len(products),
+                            "status": "showing products as a scrollable carousel (1 image each) — do NOT list product details in your text reply",
+                        }
+                    else:
+                        for p in products:
+                            pending_images.extend(p.get("images", []))
+                        tool_content = {
+                            "products_count": 1,
+                            "images_sent": len(pending_images),
+                            "status": "product images sent to the customer one by one — you may describe what is shown",
+                        }
                 else:
                     imgs = result.get("images", []) or []
                     pending_images.extend(imgs)

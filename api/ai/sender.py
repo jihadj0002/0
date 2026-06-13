@@ -81,7 +81,7 @@ def _messenger(conversation, integration, text, image_urls, product_cards=None):
                 "buttons": [
                     {
                         "type": "postback",
-                        "title": "Select",
+                        "title": f"View {card.get('name', 'Product')}"[:20],
                         "payload": f"SELECT_PRODUCT|{card.get('pid', '')}",
                     }
                 ],
