@@ -319,9 +319,9 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
             },
         )
         if not msg_created:
-            # Duplicate mid — Meta retried a message we already stored.
-            # The conversation already exists, so just return its id.
+            logger.info("_persist_message: duplicate mid=%s conv=%s", mid, conv.pk)
             return conv.id
+        logger.info("_persist_message: created msg mid=%s conv=%s", mid, conv.pk)
     else:
         try:
             Message.objects.create(
