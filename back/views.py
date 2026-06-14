@@ -4,7 +4,7 @@ from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required, user_passes_test
 
 from django.db.models import Sum, Count, Q, Avg
-from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem, ProductSource
+from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem, ProductSource, SupportTicket
 from django.views.decorators.http import require_GET
 # Create your views here.
 from django.db.models.functions import TruncDay
@@ -283,6 +283,79 @@ def message_dashboard(request):
 
 
 @login_required
+def tickets_view(request):
+    return render(request, "back/tickets.html")
+
+
+@login_required
+def ajax_tickets(request):
+    status_filter = request.GET.get("status", "all")
+    qs = SupportTicket.objects.select_related("conversation", "assigned_to")
+    if request.user.is_staff:
+        pass
+    else:
+        qs = qs.filter(
+            Q(conversation__user=request.user) |
+            Q(assigned_to=request.user)
+        )
+    if status_filter != "all":
+        qs = qs.filter(status=status_filter)
+    data = []
+    for t in qs:
+        data.append({
+            "id": t.pk,
+            "subject": t.subject,
+            "description": t.description,
+            "status": t.status,
+            "priority": t.priority,
+            "assigned_to": t.assigned_to.username if t.assigned_to else None,
+            "customer_name": t.conversation.customer_name or t.conversation.customer_id,
+            "customer_id": t.conversation.customer_id,
+            "platform": t.conversation.platform,
+            "conversation_id": t.conversation_id,
+            "created_at": timezone.localtime(t.created_at).strftime("%d %b %H:%M") if t.created_at else "",
+            "resolved_at": timezone.localtime(t.resolved_at).strftime("%d %b %H:%M") if t.resolved_at else None,
+        })
+    return JsonResponse({"tickets": data})
+
+
+@login_required
+@require_POST
+def ajax_ticket_claim(request):
+    ticket_id = request.POST.get("ticket_id")
+    ticket = get_object_or_404(SupportTicket, pk=ticket_id)
+    if ticket.assigned_to and ticket.assigned_to != request.user:
+        return JsonResponse({"error": "Already assigned to someone else"}, status=400)
+    ticket.assigned_to = request.user
+    if ticket.status == "open":
+        ticket.status = "in_progress"
+    ticket.save(update_fields=["assigned_to", "status"])
+    return JsonResponse({"status": ticket.status, "assigned_to": request.user.username})
+
+
+@login_required
+@require_POST
+def ajax_ticket_resolve(request):
+    ticket_id = request.POST.get("ticket_id")
+    ticket = get_object_or_404(SupportTicket, pk=ticket_id)
+    if ticket.assigned_to and ticket.assigned_to != request.user:
+        return JsonResponse({"error": "Not assigned to you"}, status=400)
+    ticket.resolve()
+    return JsonResponse({"status": "resolved"})
+
+
+@login_required
+@require_POST
+def ajax_ticket_reopen(request):
+    ticket_id = request.POST.get("ticket_id")
+    ticket = get_object_or_404(SupportTicket, pk=ticket_id)
+    ticket.status = "open"
+    ticket.resolved_at = None
+    ticket.save(update_fields=["status", "resolved_at"])
+    return JsonResponse({"status": "open"})
+
+
+@login_required
 @require_POST
 def bot_preview(request):
     """Dry-run the AI pipeline for a given conversation + message. No platform send, no credit deduction."""
@@ -347,7 +420,7 @@ def bot_preview(request):
                     "content": _json.dumps(tc_result, default=str),
                 })
 
-                if fn_name == "transfer_chat":
+                if fn_name == "create_ticket":
                     final_text = "I'm connecting you with a human agent now."
                     break
 
@@ -1769,7 +1842,7 @@ def ai_debug(request):
                                     if fn_name == "send_images" and isinstance(result, dict):
                                         pending_images.extend(result.get("images", []))
                                     
-                                    if fn_name == "transfer_chat":
+                                    if fn_name == "create_ticket":
                                         transferred = True
                                     
                                     messages_list.append({

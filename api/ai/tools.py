@@ -137,14 +137,21 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-            "name": "transfer_chat",
-            "description": "Disable AI and hand the conversation to a human agent. Use when: customer requests human, complaint escalation, or issue is beyond AI scope.",
+            "name": "create_ticket",
+            "description": "Create a support ticket and hand the conversation to a human agent. Use when: customer requests human, complaint escalation, or issue is beyond AI scope.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "reason": {"type": "string", "description": "Short reason for the transfer"},
+                    "subject": {"type": "string", "description": "Short summary of the issue"},
+                    "description": {"type": "string", "description": "Detailed description of the issue"},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "urgent"],
+                        "description": "Issue priority (default medium)",
+                        "default": "medium",
+                    },
                 },
-                "required": ["reason"],
+                "required": ["subject", "description"],
             },
         },
     },
@@ -918,12 +925,26 @@ def tool_update_customer(conversation, name=None, phone=None, city=None, address
     return {"updated": list(updates.keys())}
 
 
-def tool_transfer_chat(conversation, reason):
+def tool_create_ticket(conversation, subject, description, priority="medium"):
+    from back.models import SupportTicket
+    ticket, created = SupportTicket.objects.get_or_create(
+        conversation=conversation,
+        defaults={"subject": subject, "description": description, "priority": priority},
+    )
+    if not created:
+        ticket.subject = subject
+        ticket.description = description
+        ticket.priority = priority
+        ticket.status = "open"
+        ticket.resolved_at = None
+        ticket.save()
     conversation.disable_ai()
     return {
+        "ticket_id": ticket.pk,
+        "subject": subject,
+        "priority": priority,
         "transferred": True,
-        "reason": reason,
-        "note": "AI disabled — human agent will take over",
+        "note": f"Ticket #{ticket.pk} created — AI disabled, human agent will take over",
     }
 
 
@@ -986,8 +1007,13 @@ def execute_tool(name, arguments, user, conversation):
                 address=args.get("address"),
             )
 
-        if name == "transfer_chat":
-            return tool_transfer_chat(conversation, args.get("reason", "Customer requested"))
+        if name == "create_ticket":
+            return tool_create_ticket(
+                conversation=conversation,
+                subject=args.get("subject", ""),
+                description=args.get("description", ""),
+                priority=args.get("priority", "medium"),
+            )
 
         if name == "search_knowledge_base":
             return tool_search_knowledge_base(

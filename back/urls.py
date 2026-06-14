@@ -66,5 +66,10 @@ urlpatterns = [
 
     path("settings/", views.settings_view, name="settings"),
     path("billing/", views.billing_dashboard, name="billing"),
+    path("tickets", views.tickets_view, name="tickets"),
+    path("tickets/data", views.ajax_tickets, name="ajax_tickets"),
+    path("tickets/claim", views.ajax_ticket_claim, name="ajax_ticket_claim"),
+    path("tickets/resolve", views.ajax_ticket_resolve, name="ajax_ticket_resolve"),
+    path("tickets/reopen", views.ajax_ticket_reopen, name="ajax_ticket_reopen"),
     path("ai-debug/", views.ai_debug, name="ai_debug"),
 ]

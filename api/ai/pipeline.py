@@ -169,7 +169,7 @@ def run(conversation, incoming_message):
                 if result.get("error"):
                     tool_content["error"] = result["error"]
 
-            if fn_name == "transfer_chat":
+            if fn_name == "create_ticket":
                 transferred = True
 
             messages.append({

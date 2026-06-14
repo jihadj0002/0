@@ -1037,5 +1037,8 @@ function clearPreview() {
 ============================== */
 document.querySelector(".content")?.classList.add("chat-page");
 loadConversations("all");
+
+const urlCid = new URLSearchParams(location.search).get("cid");
+if (urlCid) openConversation(parseInt(urlCid));
 </script>
 {% endblock %}

@@ -290,6 +290,7 @@ html, body {
       <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}">⚙️ Integrations</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'back:settings' %}">🤖 AI Settings</a>
       <a class="nav-item {% if request.resolver_match.url_name == 'billing' %}active{% endif %}" href="{% url 'back:billing' %}">💳 Billing</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'tickets' %}active{% endif %}" href="{% url 'back:tickets' %}">🎫 Tickets</a>
       <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
     </nav>
   </aside>

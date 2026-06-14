@@ -668,7 +668,46 @@ class MessageBatch(models.Model):
 
     def __str__(self):
         return f"Batch message for {self.conversation_id} at {self.timestamp}"
-        return f"{self.user.username} | {self.model} | in={self.input_tokens} out={self.output_tokens} | {self.timestamp:%Y-%m-%d %H:%M}"
+
+
+class SupportTicket(models.Model):
+    STATUS_CHOICES = [
+        ("open", "Open"),
+        ("in_progress", "In Progress"),
+        ("resolved", "Resolved"),
+        ("closed", "Closed"),
+    ]
+    PRIORITY_CHOICES = [
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+        ("urgent", "Urgent"),
+    ]
+
+    conversation = models.OneToOneField(Conversation, on_delete=models.CASCADE, related_name="ticket")
+    subject = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open")
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default="medium")
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_tickets")
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [
+            models.Index(fields=["status", "priority"]),
+            models.Index(fields=["assigned_to", "status"]),
+        ]
+
+    def __str__(self):
+        return f"[{self.get_status_display()}] {self.subject} — {self.conversation.customer_name or self.conversation.customer_id}"
+
+    def resolve(self):
+        self.status = "resolved"
+        self.resolved_at = timezone.now()
+        self.save(update_fields=["status", "resolved_at"])
 
 
 

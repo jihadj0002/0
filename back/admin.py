@@ -9,7 +9,7 @@ from django.urls import path
 from .models import (
     Conversation, Integration, Message, OrderItem, Package, PackageImages,
     PackageItem, Product, ProductImages, ProductSource, Sale, Setting,
-    UserProfile, UsageLog,
+    SupportTicket, UserProfile, UsageLog,
 )
 
 
@@ -124,7 +124,7 @@ class ConversationAdmin(admin.ModelAdmin):
             "create_order": "🛒",
             "get_order_status": "📋",
             "update_customer": "👤",
-            "transfer_chat": "🔀",
+            "create_ticket": "🎫",
         }
 
         # Pre-process into a display-friendly list so the template never calls
@@ -322,8 +322,8 @@ class ConversationAdmin(admin.ModelAdmin):
                             "content": json.dumps(tc_result),
                         })
 
-                        if fn_name == "transfer_chat":
-                            final_text = "Transferring to human agent."
+                        if fn_name == "create_ticket":
+                            final_text = "Creating support ticket and transferring to human agent."
                             iter_data["is_final"] = True
                             iter_data["response"] = final_text
                             break
@@ -449,4 +449,26 @@ admin.site.register(Message, MessageAdmin)
 admin.site.register(Package, PackageAdmin)
 admin.site.register(ProductSource, ProductSourceAdmin)
 admin.site.register(PackageItem, PackageItemAdmin)
+
+@admin.register(SupportTicket)
+class SupportTicketAdmin(admin.ModelAdmin):
+    list_display = ["pk", "subject", "status", "priority", "assigned_to", "conversation_link", "created_at"]
+    list_filter = ["status", "priority"]
+    search_fields = ["subject", "description", "conversation__customer_name", "conversation__customer_id"]
+    actions = ["mark_resolved", "mark_open"]
+
+    def conversation_link(self, obj):
+        from django.utils.html import format_html
+        return format_html('<a href="/admin/back/conversation/{}/change/">View</a>', obj.conversation_id)
+    conversation_link.short_description = "Conversation"
+
+    @admin.action(description="Mark selected as resolved")
+    def mark_resolved(self, request, queryset):
+        updated = queryset.update(status="resolved", resolved_at=timezone.now())
+        self.message_user(request, f"{updated} ticket(s) resolved.")
+
+    @admin.action(description="Reopen selected")
+    def mark_open(self, request, queryset):
+        updated = queryset.update(status="open", resolved_at=None)
+        self.message_user(request, f"{updated} ticket(s) reopened.")
 

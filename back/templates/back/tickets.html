@@ -1,0 +1,213 @@
+{% extends 'back/base.html' %}
+{% load static %}
+{% block title %}Support Tickets — Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.tickets-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.tickets-header h2 { margin: 0; font-size: 1.2rem; font-weight: 700; }
+.filter-tabs { display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap; }
+.filter-tab {
+  padding: 6px 14px; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  background: #fff; font-size: 0.82rem; font-weight: 600; color: #64748b;
+  cursor: pointer; transition: all 0.15s;
+}
+.filter-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.filter-tab:hover { background: #f1f5f9; }
+.filter-tab.active:hover { background: #1e4ed8; }
+
+.ticket-count {
+  font-size: 0.75rem; color: #94a3b8; margin-left: 4px;
+  font-weight: 400;
+}
+
+.ticket-table { width: 100%; border-collapse: collapse; }
+.ticket-table th {
+  text-align: left; padding: 10px 12px; font-size: 0.75rem;
+  font-weight: 700; color: #64748b; text-transform: uppercase;
+  letter-spacing: 0.04em; border-bottom: 2px solid #eef2f6;
+}
+.ticket-table td {
+  padding: 10px 12px; font-size: 0.85rem; border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+.ticket-table tr:hover td { background: #f8fafc; }
+.ticket-table tr.open td { border-left: 3px solid #ef4444; }
+.ticket-table tr.in_progress td { border-left: 3px solid #f59e0b; }
+.ticket-table tr.resolved td { border-left: 3px solid #10b981; }
+.ticket-table tr.closed td { border-left: 3px solid #94a3b8; }
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  font-size: 0.72rem; font-weight: 700;
+}
+.badge-open { background: #fef2f2; color: #ef4444; }
+.badge-in_progress { background: #fffbeb; color: #d97706; }
+.badge-resolved { background: #f0fdf4; color: #16a34a; }
+.badge-closed { background: #f1f5f9; color: #64748b; }
+
+.badge-urgent { background: #fef2f2; color: #dc2626; }
+.badge-high { background: #fff7ed; color: #ea580c; }
+.badge-medium { background: #fffbeb; color: #d97706; }
+.badge-low { background: #f0fdf4; color: #16a34a; }
+
+.ticket-subject { font-weight: 600; color: #0f172a; }
+.ticket-desc { font-size: 0.78rem; color: #64748b; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.action-btn {
+  padding: 4px 10px; border-radius: 6px; font-size: 0.72rem;
+  font-weight: 600; border: 1.5px solid #e2e8f0; background: #fff;
+  cursor: pointer; transition: all 0.15s;
+}
+.action-btn:hover { background: #f1f5f9; }
+.action-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.action-btn.primary:hover { background: #1e4ed8; }
+.action-btn.success { background: #10b981; color: #fff; border-color: #10b981; }
+.action-btn.success:hover { background: #059669; }
+.action-btn.warning { background: #f59e0b; color: #fff; border-color: #f59e0b; }
+
+.empty-state { text-align: center; padding: 60px 20px; color: #94a3b8; }
+.empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+.empty-state p { font-size: 0.9rem; }
+
+@media (max-width: 768px) {
+  .ticket-table { font-size: 0.78rem; }
+  .ticket-table th, .ticket-table td { padding: 8px 8px; }
+  .ticket-desc { max-width: 120px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="ticketsApp">
+  <div class="tickets-header">
+    <h2>🎫 Support Tickets</h2>
+  </div>
+
+  <div class="filter-tabs">
+    <button class="filter-tab active" data-status="all">All</button>
+    <button class="filter-tab" data-status="open">Open</button>
+    <button class="filter-tab" data-status="in_progress">In Progress</button>
+    <button class="filter-tab" data-status="resolved">Resolved</button>
+    <button class="filter-tab" data-status="closed">Closed</button>
+  </div>
+
+  <div id="ticketList">
+    <div class="empty-state"><div class="icon">🎫</div><p>Loading tickets…</p></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CSRF = (() => { const m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : ""; })();
+let currentStatus = "all";
+
+function loadTickets() {
+  document.getElementById("ticketList").innerHTML =
+    '<div class="empty-state"><div class="icon">⏳</div><p>Loading tickets…</p></div>';
+  fetch(`{% url 'back:ajax_tickets' %}?status=${currentStatus}`)
+    .then(r => r.json())
+    .then(data => renderTickets(data.tickets));
+}
+
+function renderTickets(tickets) {
+  const el = document.getElementById("ticketList");
+  if (!tickets.length) {
+    el.innerHTML = '<div class="empty-state"><div class="icon">🎫</div><p>No tickets found</p></div>';
+    return;
+  }
+  let html = `<table class="ticket-table"><thead><tr>
+    <th>Subject</th><th>Priority</th><th>Status</th><th>Assigned</th><th>Customer</th><th>Platform</th><th>Created</th><th>Actions</th>
+  </tr></thead><tbody>`;
+  tickets.forEach(t => {
+    const statusLabel = t.status.replace("_", " ");
+    const priorityLabel = t.priority;
+    html += `<tr class="${t.status}">
+      <td>
+        <div class="ticket-subject">${escHtml(t.subject)}</div>
+        <div class="ticket-desc">${escHtml(t.description || "")}</div>
+      </td>
+      <td><span class="badge badge-${t.priority}">${priorityLabel}</span></td>
+      <td><span class="badge badge-${t.status}">${statusLabel}</span></td>
+      <td>${t.assigned_to ? escHtml(t.assigned_to) : '<span style="color:#94a3b8">—</span>'}</td>
+      <td><a href="/dbchats?cid=${t.conversation_id}" target="_blank" style="color:var(--accent);text-decoration:none;font-weight:600;">${escHtml(t.customer_name)}</a></td>
+      <td><span style="font-size:0.75rem;color:#64748b;">${t.platform}</span></td>
+      <td style="font-size:0.78rem;color:#94a3b8;">${t.created_at}</td>
+      <td style="position:relative;">
+  <div class="action-dropdown">
+    <button class="action-btn" onclick="toggleDropdown(this)">Actions ▾</button>
+    <div class="dropdown-menu" style="display:none;position:absolute;right:0;top:100%;z-index:10;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);min-width:140px;padding:4px;">
+      ${t.status === "open" ? `<button class="dropdown-item" onclick="claimTicket(${t.id})">✅ Claim & Take Over</button>` : ""}
+      ${t.status === "in_progress" ? `<button class="dropdown-item" onclick="resolveTicket(${t.id})">✅ Resolve</button>` : ""}
+      ${t.status === "resolved" || t.status === "closed" ? `<button class="dropdown-item" onclick="reopenTicket(${t.id})">🔄 Reopen</button>` : ""}
+      <button class="dropdown-item" onclick="openChat(${t.conversation_id})">💬 Open Chat</button>
+    </div>
+  </div>
+</td>
+    </tr>`;
+  });
+  html += "</tbody></table>";
+  el.innerHTML = html;
+}
+
+function claimTicket(id) {
+  const fd = new FormData(); fd.append("ticket_id", id);
+  fetch("{% url 'back:ajax_ticket_claim' %}", { method:"POST", headers:{"X-CSRFToken":CSRF}, body: fd })
+    .then(r => r.json())
+    .then(d => { if (d.error) { alert(d.error); } else { loadTickets(); } });
+}
+
+function resolveTicket(id) {
+  if (!confirm("Mark this ticket as resolved?")) return;
+  const fd = new FormData(); fd.append("ticket_id", id);
+  fetch("{% url 'back:ajax_ticket_resolve' %}", { method:"POST", headers:{"X-CSRFToken":CSRF}, body: fd })
+    .then(r => r.json())
+    .then(d => loadTickets());
+}
+
+function reopenTicket(id) {
+  if (!confirm("Reopen this ticket?")) return;
+  const fd = new FormData(); fd.append("ticket_id", id);
+  fetch("{% url 'back:ajax_ticket_reopen' %}", { method:"POST", headers:{"X-CSRFToken":CSRF}, body: fd })
+    .then(r => r.json())
+    .then(d => loadTickets());
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function toggleDropdown(btn) {
+  const menu = btn.parentElement.querySelector(".dropdown-menu");
+  if (!menu) return;
+  const isOpen = menu.style.display === "block";
+  document.querySelectorAll(".dropdown-menu").forEach(m => m.style.display = "none");
+  menu.style.display = isOpen ? "none" : "block";
+}
+
+function openChat(cid) {
+  window.open(`/db/chats?cid=${cid}`, "_blank");
+}
+
+document.addEventListener("click", e => {
+  if (!e.target.closest(".action-dropdown")) {
+    document.querySelectorAll(".dropdown-menu").forEach(m => m.style.display = "none");
+  }
+});
+
+document.querySelectorAll(".filter-tab").forEach(t => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".filter-tab").forEach(x => x.classList.remove("active"));
+    t.classList.add("active");
+    currentStatus = t.dataset.status;
+    loadTickets();
+  });
+});
+
+loadTickets();
+</script>
+{% endblock %}
