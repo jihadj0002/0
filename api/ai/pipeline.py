@@ -133,10 +133,9 @@ def run(conversation, incoming_message):
             tool_content = result
             if fn_name == "send_images" and isinstance(result, dict):
                 products = result.get("products")
-                if products is not None:
-                    # Always persist card data for dashboard rendering
-                    product_cards.extend(products)
+                if products:
                     if len(products) > 1:
+                        product_cards.extend(products)
                         tool_content = {
                             "products": [
                                 {"pid": p.get("pid"), "name": p.get("name"),
