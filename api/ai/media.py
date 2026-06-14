@@ -40,6 +40,7 @@ def analyze_image(image_url: str, user=None, reply_id=None) -> str:
                         "type": "text",
                         "text": (
                             "You are a helpful assistant for an online store. "
+                            "First, Look for any text in the image, especially on the corners, Most Likely SKU.read and return it. "
                             "Analyse this image sent by a customer. "
                             "If it shows a product (clothing, electronics, furniture, food, etc.), "
                             "describe it clearly: what it is, colour, visible features, brand if readable, condition. "
