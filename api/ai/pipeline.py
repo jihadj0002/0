@@ -134,17 +134,27 @@ def run(conversation, incoming_message):
             if fn_name == "send_images" and isinstance(result, dict):
                 products = result.get("products")
                 if products is not None:
+                    # Always persist card data for dashboard rendering
+                    product_cards.extend(products)
                     if len(products) > 1:
-                        product_cards.extend(products)
                         tool_content = {
+                            "products": [
+                                {"pid": p.get("pid"), "name": p.get("name"),
+                                 "price": p.get("price"), "sku": p.get("sku")}
+                                for p in products
+                            ],
                             "products_count": len(products),
-                            "status": "showing products as a scrollable carousel (1 image each) — do NOT list product details in your text reply",
+                            "status": "products sent as a scrollable carousel — do NOT list product details in your text reply",
                         }
                     else:
                         for p in products:
                             pending_images.extend(p.get("images", []))
+                        p = products[0]
                         tool_content = {
-                            "products_count": len(products),
+                            "pid": p.get("pid"),
+                            "name": p.get("name"),
+                            "price": p.get("price"),
+                            "sku": p.get("sku"),
                             "images_sent": len(pending_images),
                             "status": "product images sent to the customer one by one — you may describe what is shown",
                         }
@@ -192,16 +202,24 @@ def run(conversation, incoming_message):
                 break
 
     # Persist bot reply
+    attachment = {}
+    if unique_images:
+        attachment["images"] = unique_images
+    if product_cards:
+        attachment["cards"] = product_cards
+        attachment["type"] = "product_cards" if len(product_cards) > 1 else "product_card"
+
     Message.objects.create(
         conversation=conversation,
         sender="bot",
         text=final_text,
-        attachments={"images": unique_images} if unique_images else None,
+        attachments=attachment or None,
     )
 
-    # Send via platform
+    # Send via platform — pass product_cards only for multi-product carousel;
+    # single-product images are sent individually (avoids duplicate image messages).
     send_reply(conversation, final_text, image_urls=unique_images or None,
-               product_cards=product_cards or None)
+               product_cards=product_cards if len(product_cards) > 1 else None)
 
     # Deduct credits after reply is confirmed sent
     try:

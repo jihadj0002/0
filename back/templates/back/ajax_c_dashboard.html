@@ -155,7 +155,36 @@
 .msg-meta { font-size: 0.7rem; color: #94a3b8; margin-top: 4px; }
 .msg-row.to .msg-meta { text-align: right; }
 
-.msg-image img { max-width: 200px; border-radius: 10px; display: block; margin-top: 6px; }
+.msg-image img { max-width: 240px; border-radius: 10px; display: block; margin-top: 6px; }
+
+/* Product cards — e-commerce style */
+.msg-cards          { display: flex; gap: 12px; margin-top: 10px; }
+.msg-carousel       { overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 10px; max-width: 100%; }
+.msg-card           { min-width: 170px; max-width: 190px; border-radius: 14px; overflow: hidden; background: #fff; scroll-snap-align: start; flex-shrink: 0; box-shadow: 0 2px 12px rgba(0,0,0,0.08); border: 1px solid #f0f0f0; }
+.msg-card-img       { width: 100%; height: 150px; object-fit: cover; display: block; background: #f8fafc; }
+.msg-card-body      { padding: 10px 12px 12px; }
+.msg-card-name      { font-size: 0.82rem; font-weight: 600; color: #0f172a; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.msg-card-price     { font-size: 1rem; color: #059669; font-weight: 700; margin-top: 4px; }
+.msg-card-btn       { display: block; width: 100%; margin-top: 10px; padding: 8px 12px; font-size: 0.78rem; font-weight: 600; border-radius: 8px; border: none; background: var(--accent); color: #fff; cursor: pointer; transition: background 0.15s, transform 0.1s; }
+.msg-card-btn:active { background: #1e4ed8; transform: scale(0.97); }
+
+/* Audio / Video / File */
+.msg-audio audio { width: 100%; max-width: 280px; margin-top: 6px; border-radius: 8px; }
+.msg-video video { max-width: 100%; max-height: 300px; border-radius: 10px; margin-top: 6px; display: block; }
+.msg-file { margin-top: 6px; }
+.msg-file a { display: inline-flex; align-items: center; gap: 6px; padding: 8px 12px; background: #f1f5f9; border-radius: 8px; font-size: 0.82rem; color: var(--accent); text-decoration: none; font-weight: 600; }
+.msg-file a:hover { background: #e2e8f0; }
+.msg-location { margin-top: 6px; font-size: 0.82rem; }
+.msg-location a { color: var(--accent); text-decoration: none; font-weight: 600; }
+
+/* Load more button */
+.load-more-btn {
+  display: block; width: 100%; padding: 8px; margin-bottom: 8px;
+  border: 1px solid #e2e8f0; border-radius: 8px;
+  background: #f8fafc; font-size: 0.78rem; color: #64748b;
+  cursor: pointer; text-align: center; font-weight: 600;
+}
+.load-more-btn:hover { background: #f1f5f9; }
 
 .cw-input {
   padding: 12px 16px; background: #fff;
@@ -345,11 +374,50 @@
   .rp { display: none; }
 }
 @media (max-width: 640px) {
-  .chat-layout { border-radius: 0; border: none; box-shadow: none; }
-  .cl { height: 50vh; }
-  .cw { height: 50vh; }
-  .cw-layout-hidden { display: none; }
+  body:has(.chat-layout) .content.chat-page {
+    padding: 0 !important;
+  }
+  .chat-layout {
+    position: fixed;
+    top: 60px; left: 0; right: 0; bottom: 0;
+    height: auto; min-height: 0;
+    border-radius: 0; border: none; box-shadow: none;
+    z-index: 100;
+  }
+  .cl, .cw {
+    flex: 1 0 100%; height: 100%; border-radius: 0;
+  }
+  .cw { display: none; }
+  .cl.mobile-hidden { display: none; }
+  .cw.mobile-shown { display: flex; }
+
   .mobile-back { display: inline-flex !important; }
+
+  /* Messenger-like messages */
+  .msg-row { max-width: 92%; }
+  .msg-bubble { font-size: 0.95rem; padding: 10px 14px; }
+  .cw-messages { padding: 12px; gap: 8px; }
+  .cw-input { padding: 10px 12px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .cw-input-box { font-size: 0.95rem; padding: 10px 12px; }
+  .cw-send-btn { padding: 10px 16px; font-size: 0.95rem; }
+  .cw-attach-btn { padding: 10px 10px; }
+
+  /* Header less cluttered on mobile */
+  .cw-header { padding: 10px 12px; }
+  .cw-header-avatar { width: 34px; height: 34px; }
+  .cw-header-name { font-size: 0.9rem; }
+  .ai-toggle-btn { padding: 4px 10px; font-size: 0.72rem; }
+
+  /* Conversation list tighter */
+  .cl-head { padding: 12px 12px 8px; }
+  .cl-head h3 { font-size: 0.9rem; margin-bottom: 6px; }
+  .cl-tabs { padding: 8px 12px 0; overflow-x: auto; }
+  .cl-tab { font-size: 0.72rem; padding: 4px 10px; white-space: nowrap; }
+  .cl-body { padding: 4px; }
+  .ci { padding: 8px 8px; gap: 8px; }
+  .ci-avatar { width: 36px; height: 36px; font-size: 0.85rem; }
+  .ci-name { font-size: 0.82rem; }
+  .ci-preview { font-size: 0.72rem; }
 }
 
 .mobile-back {
@@ -527,6 +595,8 @@ function renderConvList() {
   }).join("");
 }
 
+let _convListHash = "";
+
 function loadConversations(platform = activePlatform) {
   const params = new URLSearchParams({ platform, q: searchQuery });
   fetch(`{% url 'back:ajax_load_conversations' %}?${params}`)
@@ -538,18 +608,27 @@ function loadConversations(platform = activePlatform) {
       const map = {};
       old.forEach(c => map[c.id] = c);
       data.conversations.forEach(c => map[c.id] = c);
-      convoCache[platform][key] = Object.values(map)
+      const merged = Object.values(map)
         .sort((a, b) => new Date(b.updated_at_raw) - new Date(a.updated_at_raw))
         .slice(0, 60);
+      convoCache[platform][key] = merged;
+
       if (platform === "all") {
         ["messenger","whatsapp","instagram","telegram"].forEach(p => {
           convoCache[p] = convoCache[p] || {};
           convoCache[p][key] = data.conversations.filter(c => c.platform === p);
         });
       }
-      if (platform === activePlatform) renderConvList();
+      if (platform === activePlatform) {
+        const h = merged.map(c => `${c.id}:${c.updated_at_raw}`).join("|");
+        if (h !== _convListHash) { _convListHash = h; renderConvList(); }
+      }
     });
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+  renderConvList();
+});
 
 /* Tab switching */
 document.querySelectorAll(".cl-tab").forEach(t => {
@@ -589,6 +668,11 @@ function openConversation(id, el) {
 
   document.getElementById("cwMessages").innerHTML = "";
 
+  if (window.innerWidth <= 640) {
+    document.getElementById("clPanel").classList.add("mobile-hidden");
+    document.getElementById("cwPanel").classList.add("mobile-shown");
+  }
+
   if (msgCache[id]) {
     appendMessages(msgCache[id]);
     lastMsgId = msgCache[id].at(-1)?.id || 0;
@@ -611,6 +695,10 @@ function deselectConversation() {
   stopPoll();
   document.getElementById("cwEmpty").style.display = "flex";
   document.getElementById("cwChat").style.display = "none";
+  if (window.innerWidth <= 640) {
+    document.getElementById("clPanel").classList.remove("mobile-hidden");
+    document.getElementById("cwPanel").classList.remove("mobile-shown");
+  }
 }
 
 /* ==============================
@@ -689,7 +777,39 @@ function appendMessages(msgs) {
 
     let inner = "";
     if (m.text) inner += `<div class="msg-bubble">${escHtml(m.text)}</div>`;
-    if (m.image) inner += `<div class="msg-image"><img src="${m.image}" loading="lazy"></div>`;
+
+    if (m.attachment) {
+      const att = m.attachment;
+      if (att.type === "product_card" || att.type === "product_cards") {
+        const cards = att.cards || [];
+        inner += `<div class="msg-cards${cards.length > 1 ? ' msg-carousel' : ''}">`;
+        cards.forEach(c => {
+          const img = (c.images && c.images[0]) ? `<img class="msg-card-img" src="${c.images[0]}" loading="lazy">` : `<div class="msg-card-img"></div>`;
+          const btn = c.sku ? `<button class="msg-card-btn" data-sku="${escHtml(c.sku)}">View Product</button>` : "";
+          inner += `<div class="msg-card">${img}<div class="msg-card-body"><div class="msg-card-name">${escHtml(c.name || "")}</div><div class="msg-card-price">${escHtml(c.price || "")}</div>${btn}</div></div>`;
+        });
+        inner += `</div>`;
+      } else if (att.type === "image") {
+        const imgs = att.images || (att.url ? [att.url] : []);
+        imgs.forEach(src => { if (src) inner += `<div class="msg-image"><img src="${src}" loading="lazy"></div>`; });
+      } else if (att.type === "audio" || att.type === "voice") {
+        if (att.url) inner += `<div class="msg-audio"><audio controls src="${att.url}"></audio></div>`;
+      } else if (att.type === "video") {
+        if (att.url) inner += `<div class="msg-video"><video controls src="${att.url}" loading="lazy"></video></div>`;
+      } else if (att.type === "document" || att.type === "file") {
+        const name = (att.payload && att.payload.name) || "Document";
+        if (att.url) inner += `<div class="msg-file"><a href="${att.url}" target="_blank" rel="noopener">📄 ${escHtml(name)}</a></div>`;
+      } else if (att.type === "location") {
+        const p = att.payload || {};
+        const lat = p.latitude || "", lng = p.longitude || "";
+        const title = p.title || "Location";
+        if (lat && lng) inner += `<div class="msg-location">📍 <a href="https://maps.google.com/?q=${lat},${lng}" target="_blank" rel="noopener">${escHtml(title)}</a></div>`;
+      } else if (att.type === "sticker") {
+        const src = att.url || (att.images ? att.images[0] : "");
+        if (src) inner += `<div class="msg-image"><img src="${src}" loading="lazy" style="max-width:120px"></div>`;
+      }
+    }
+
     inner += `<div class="msg-meta">${m.timestamp}${isBot ? " · 🤖" : ""}</div>`;
 
     const row = document.createElement("div");
@@ -700,6 +820,14 @@ function appendMessages(msgs) {
   });
   box.scrollTop = box.scrollHeight;
 }
+
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".msg-card-btn");
+  if (!btn) return;
+  e.preventDefault();
+  const sku = btn.dataset.sku;
+  if (sku) window.open(`/db/products?search=${encodeURIComponent(sku)}`, "_blank");
+});
 
 function escHtml(str) {
   return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\n/g,"<br>");
@@ -907,6 +1035,7 @@ function clearPreview() {
 /* ==============================
    BOOT
 ============================== */
+document.querySelector(".content")?.classList.add("chat-page");
 loadConversations("all");
 </script>
 {% endblock %}

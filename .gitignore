@@ -28,6 +28,9 @@ __pycache__/
 venv/
 .env
 
+# .md files (markdown documentation)
+.md
+
 # Logs
 *.log
 

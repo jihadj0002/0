@@ -389,18 +389,6 @@ def ajax_load_messages(request):
         user=request.user
     )
 
-    # 👉 get last message for preview info
-    last_msg = (
-        Message.objects
-        .filter(conversation=convo)
-        .order_by("-timestamp")
-        .first()
-    )
-
-    # ==========================
-    # Conversation meta data
-    # ==========================
-
     local_created = timezone.localtime(convo.timestamp) if convo.timestamp else None
     local_updated = timezone.localtime(convo.updated_at) if convo.updated_at else None
 
@@ -409,20 +397,15 @@ def ajax_load_messages(request):
         "username": username,
         "customer_id": convo.customer_id,
         "platform": convo.platform,
-
         "name": convo.customer_name or f"ID: {convo.id}",
-        
         "profile_image": (
-                convo.profile_image.url
-                if convo.profile_image and hasattr(convo.profile_image, "url")
-                else None
-            ),
+            convo.profile_image.url
+            if convo.profile_image and hasattr(convo.profile_image, "url")
+            else None
+        ),
         "chat_summary": convo.chat_summary,
-
         "is_ai_enabled": convo.is_ai_enabled,
-
-        "last_message": last_msg.text if last_msg else "",
-        # ✅ local time
+        "last_message": convo.message_text or "",
         "timestamp": local_created.strftime("%H:%M") if local_created else "",
         "updated_at": local_updated.strftime("%H:%M") if local_updated else "",
     }
@@ -431,30 +414,50 @@ def ajax_load_messages(request):
     # Messages query
     # ==========================
 
-    qs = Message.objects.filter(
-        conversation=convo
-    ).order_by("id")
+    qs = Message.objects.filter(conversation=convo).defer("raw_payload")
 
     if last_msg_id:
-        qs = qs.filter(id__gt=last_msg_id)
+        qs = qs.filter(id__gt=last_msg_id).order_by("id")
+    else:
+        qs = qs.order_by("-id")[:50]
+        qs = list(qs)
+        qs.reverse()
 
     messages_data = []
 
     for msg in qs:
         local_msg_time = timezone.localtime(msg.timestamp) if msg.timestamp else None
 
+        attachment = None
+        if msg.attachments:
+            if isinstance(msg.attachments, dict):
+                att = msg.attachments
+                att_type = att.get("type")
+                if not att_type:
+                    if att.get("cards"):
+                        att_type = "product_cards" if len(att["cards"]) > 1 else "product_card"
+                    elif att.get("images"):
+                        att_type = "image"
+                attachment = {
+                    "type": att_type,
+                    "images": att.get("images"),
+                    "cards": att.get("cards"),
+                    "url": (
+                        att["payload"].get("url") if isinstance(att.get("payload"), dict) else None
+                        or (att.get("images") or [None])[0]
+                        or att.get("url")
+                    ),
+                    "payload": att.get("payload") if isinstance(att.get("payload"), dict) else None,
+                }
+            elif isinstance(msg.attachments, str):
+                attachment = {"type": "image", "url": msg.attachments}
 
         messages_data.append({
             "id": msg.id,
             "sender": msg.sender,
             "text": msg.text,
-            # ✅ local timezone
             "timestamp": local_msg_time.strftime("%d %b, %Y %H:%M") if local_msg_time else "",
-
-            "image": (
-                msg.attachments.get("payload", {}).get("url")
-                or (msg.attachments.get("images") or [None])[0]
-            ) if isinstance(msg.attachments, dict) else (msg.attachments if isinstance(msg.attachments, str) else None)
+            "attachment": attachment,
         })
 
     # ==========================
@@ -463,7 +466,7 @@ def ajax_load_messages(request):
 
     return JsonResponse({
         "conversation": conversation_data,
-        "messages": messages_data
+        "messages": messages_data,
     })
 
 @login_required
@@ -471,21 +474,19 @@ def ajax_load_conversations(request):
     platform = request.GET.get("platform", "all")
     q = request.GET.get("q", "").strip()
 
-    convos = Conversation.objects.filter(user=request.user)
+    convos = Conversation.objects.filter(user=request.user).only(
+        "id", "customer_name", "customer_id", "platform", "message_text",
+        "updated_at", "timestamp", "profile_image",
+    )
     
     if platform != "all":
         convos = convos.filter(platform=platform)
-        print("Conversation Platform selected")
-        print(platform)
 
     if q:
         convos = convos.filter(
             Q(customer_name__icontains=q) |
             Q(customer_id__icontains=q)
-            
         )
-        print("Conversation Query selected")
-        print(q)
     
     # convos = convos.order_by("-updated_at")[:50]
     
