@@ -9,7 +9,7 @@ from django.urls import path
 from .models import (
     Conversation, Integration, Message, OrderItem, Package, PackageImages,
     PackageItem, Product, ProductImages, ProductSource, Sale, Setting,
-    SupportTicket, UserProfile, UsageLog,
+    SupportTicket, ToolCallLog, UserProfile, UsageLog,
 )
 
 
@@ -471,4 +471,18 @@ class SupportTicketAdmin(admin.ModelAdmin):
     def mark_open(self, request, queryset):
         updated = queryset.update(status="open", resolved_at=None)
         self.message_user(request, f"{updated} ticket(s) reopened.")
+
+
+@admin.register(ToolCallLog)
+class ToolCallLogAdmin(admin.ModelAdmin):
+    list_display = ["tool_name", "conversation_id", "reply_id", "iteration", "execution_time_ms", "timestamp"]
+    list_filter = ["tool_name", "timestamp"]
+    search_fields = ["tool_name", "reply_id", "result_summary"]
+    readonly_fields = [f.name for f in ToolCallLog._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 

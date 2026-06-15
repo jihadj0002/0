@@ -710,6 +710,26 @@ class SupportTicket(models.Model):
         self.save(update_fields=["status", "resolved_at"])
 
 
+class ToolCallLog(models.Model):
+    conversation = models.ForeignKey(
+        Conversation, on_delete=models.CASCADE, db_index=True
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    reply_id = models.CharField(max_length=255, db_index=True)
+    iteration = models.IntegerField()
+    tool_name = models.CharField(max_length=100, db_index=True)
+    arguments = models.JSONField()
+    result_summary = models.TextField()
+    execution_time_ms = models.IntegerField()
+    timestamp = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        verbose_name = "Tool Call Log"
+        verbose_name_plural = "Tool Call Logs"
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["conversation", "timestamp"]),
+        ]
 
-
+    def __str__(self):
+        return f"{self.tool_name} ({self.conversation_id})"
