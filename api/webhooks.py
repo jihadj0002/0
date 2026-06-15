@@ -283,13 +283,26 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
         media_url = (attachments or {}).get("payload", {}).get("url", "")
     if att_type == "image" and media_url and ai_enabled:
         try:
-            from api.ai.media import analyze_image
-            analysis = analyze_image(media_url)
-            if analysis:
-                attachments["analysis"] = analysis
-                # Combine caption + analysis so the AI has full context
+            from api.ai.media import analyze_image_structured
+            data = analyze_image_structured(media_url)
+            structured = {k: v for k, v in data.items() if k != "description"}
+            attachments["analysis_data"] = structured
+            desc = data.get("description", "")
+            if desc:
+                attachments["analysis"] = desc
+                parts = [desc]
+                if data.get("sku"):
+                    parts.append(f"SKU: {data['sku']}")
+                if data.get("product_name"):
+                    parts.append(f"Name: {data['product_name']}")
+                if data.get("brand"):
+                    parts.append(f"Brand: {data['brand']}")
+                if data.get("color"):
+                    parts.append(f"Color: {data['color']}")
+                if data.get("capacity"):
+                    parts.append(f"Capacity: {data['capacity']}")
                 caption = msg_text or ""
-                msg_text = f"{caption}\n[Image: {analysis}]".strip()
+                msg_text = f"{caption}\n[Image: {' | '.join(parts)}]".strip()
         except Exception as exc:
             logger.warning("Image analysis failed mid=%s: %s", mid, exc)
 

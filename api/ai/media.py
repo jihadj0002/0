@@ -23,10 +23,29 @@ def _or_client():
 
 
 def analyze_image(image_url: str, user=None, reply_id=None) -> str:
+    """Backward-compatible wrapper — returns only the description string."""
+    data = analyze_image_structured(image_url, user, reply_id)
+    return data.get("description", "")
+
+
+def analyze_image_structured(image_url: str, user=None, reply_id=None) -> dict:
     """
-    Describe the contents of an image using a vision LLM.
-    Returns a one-paragraph natural-language description.
-    Falls back to a placeholder string on any error.
+    Analyse an image in a single vision call. Returns BOTH structured fields
+    and a natural-language description. Call this once — do NOT also call
+    analyze_image() on the same image.
+
+    Prioritises scanning: SKU/PID → product_name → type → brand → capacity → color.
+
+    Returns:
+        {
+            "sku": str,          # SKU, PID, barcode number found anywhere on the image
+            "product_name": str, # product name from packaging/label
+            "type": str,         # what kind of product (food container, sweater, …)
+            "brand": str,        # brand name if visible
+            "capacity": str,     # size, volume, weight, dimensions
+            "color": str,        # colour(s)
+            "description": str,  # one-sentence summary
+        }
     """
     try:
         client = _or_client()
@@ -39,13 +58,22 @@ def analyze_image(image_url: str, user=None, reply_id=None) -> str:
                     {
                         "type": "text",
                         "text": (
-                            "You are a helpful assistant for an online store. "
-                            "Analyse this image sent by a customer. "
-                            "If image contains SKU, PID, on any corner of the image, read and return it. "
-                            "If it shows a product (clothing, electronics, furniture, food, etc.), "
-                            "describe it clearly: what it is, colour, visible features, brand if readable, condition. "
-                            "If it is a screenshot of something (order, receipt, chat), summarise what it says. "
-                            "Reply in 1-3 short sentences only — no headers or bullet points."
+                            "Return ONLY valid JSON — no markdown, no code fences, no extra text.\n\n"
+                            "Analyse this image from a customer of an online store. "
+                            "Scan the ENTIRE image carefully — all corners, labels, tags, barcodes, stickers.\n\n"
+                            "Extract these fields (use empty string if not found):\n"
+                            "1. \"sku\" — any SKU, PID, item code, barcode/model number visible anywhere\n"
+                            "2. \"product_name\" — product name if readable from packaging or label\n"
+                            "3. \"type\" — what kind of product (e.g. food container, sweater, phone case)\n"
+                            "4. \"brand\" — brand name if visible\n"
+                            "5. \"capacity\" — size, volume, weight, or dimensions if mentioned\n"
+                            "6. \"color\" — colour(s) of the product\n\n"
+                            "Then write \"description\": a single concise sentence summarising the image.\n\n"
+                            "Example:\n"
+                            "{\"sku\":\"34186\",\"product_name\":\"Rovco Food Container Penguin\","
+                            "\"type\":\"food container\",\"brand\":\"Rovco\","
+                            "\"capacity\":\"900ml\",\"color\":\"white, blue\","
+                            "\"description\":\"A white and blue Rovco food container with a penguin design on the lid.\"}"
                         ),
                     },
                     {
@@ -54,21 +82,24 @@ def analyze_image(image_url: str, user=None, reply_id=None) -> str:
                     },
                 ],
             }],
-            max_tokens=200,
-            temperature=0.3,
+            max_tokens=300,
+            temperature=0.1,
         )
         text = resp.choices[0].message.content or ""
-        # if user and reply_id and hasattr(resp, "usage"):
-        #     from .media import _log
-        #     usage = resp.usage.dict() if resp.usage else {}
-        #     _log(user, reply_id, usage, call_type="vision_analysis")
-        #     return text.strip()
-        # else:
-        #     return text.strip()
-        return text.strip()
+        import json as _json
+        data = _json.loads(text)
+        return {
+            "sku": str(data.get("sku", "") or ""),
+            "product_name": str(data.get("product_name", "") or ""),
+            "type": str(data.get("type", "") or ""),
+            "brand": str(data.get("brand", "") or ""),
+            "capacity": str(data.get("capacity", "") or ""),
+            "color": str(data.get("color", "") or ""),
+            "description": str(data.get("description", "") or ""),
+        }
     except Exception as exc:
-        logger.warning("Image analysis failed url=%s: %s", image_url, exc)
-        return ""
+        logger.warning("Structured image analysis failed url=%s: %s", image_url, exc)
+        return {}
 
 
 def transcribe_audio(audio_url: str, mime_type: str = "", user=None, reply_id=None) -> str:

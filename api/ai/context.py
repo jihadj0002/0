@@ -79,7 +79,6 @@ def build_system_prompt(user, conversation):
         parts.append(
             "`search_products` FIRST with the keyword(s). Example: customer says \"cradle ache?\" "
         "→ call search_products(query=\"cradle\").\n"
-            "- Do NOT retry search_products with different queries — the tool already tries multiple variations internally.\n"
             "- After searching, call `get_product_details` for the chosen product (use the exact "
             "`pid` returned by search), then offer images with `send_images`. "
             "Multiple PIDs via pids=[...] → scrollable carousel (1 image per card). "
@@ -101,6 +100,27 @@ def build_system_prompt(user, conversation):
             "If their product is not found say that product is not available instead of saying not found.\n"
             f"- Keep replies {tone} and {style} unless the customer asks for detail."
         )
+
+    # --- Image search & iterative search guidance ---
+    parts.append(
+        "## Image Search & Multiple Searches\n"
+        "When a customer sends an image, the message shows structured data: "
+        "SKU, product name, type, brand, color, capacity.\n"
+        "Use search_products to find the matching product — you can call it "
+        "MULTIPLE times with different queries:\n"
+        "  1. First try the SKU (if available) as the exact search query.\n"
+        "  2. If no good match, try the product_name.\n"
+        "  3. Then try type + brand, or type + color, or brand alone.\n"
+        "  4. Then try individual keywords (just the brand, just the type).\n"
+        "Compare each search result against the image data (SKU, name, brand, "
+        "type, color). When you find a confident match, use send_images.\n"
+        "If nothing matches after several attempts, tell the customer and ask "
+        "for more details (SKU number, brand name, etc.).\n"
+        "CRITICAL: Only send product images when the match is reliable — "
+        "do NOT send a product whose name/type/brand clearly doesn't match "
+        "what the customer showed."
+    )
+
     if rules.custom_instructions:
             parts.append(f"Custom instructions: {rules.custom_instructions}")
 
