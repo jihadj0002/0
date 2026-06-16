@@ -416,6 +416,36 @@
         <div class="empty-state">No tool calls yet. Send a message to see tool usage.</div>
       {% endif %}
     </div>
+
+    <!-- Historical Tool Call Logs -->
+    <div class="debug-panel">
+      <h3>Tool Call History</h3>
+      {% if tool_call_logs %}
+        <div style="margin-bottom:10px;font-size:0.85rem;color:#666">
+          {{ tool_call_logs|length }} logged tool call(s) for this conversation
+        </div>
+        {% for tcl in tool_call_logs %}
+          <div class="tool-call" style="margin-bottom:8px">
+            <div class="tool-call-header" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef9c3;border-bottom:1px solid #fde68a;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+              <span>🔧</span>
+              <span style="font-weight:700;font-size:13px;color:#92400e">{{ tcl.tool_name }}</span>
+              <span style="font-size:11px;color:#666;margin-left:auto">
+                iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
+              </span>
+            </div>
+            <div class="tool-call-body" style="display:none;padding:10px 12px">
+              <div style="font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Arguments</div>
+              <pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;margin-bottom:8px">{{ tcl.arguments }}</pre>
+              <div style="font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Result Summary</div>
+              <pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:80px;overflow-y:auto">{{ tcl.result_summary|default:"—" }}</pre>
+              <div style="font-size:10px;color:#999;margin-top:6px;text-align:right">{{ tcl.timestamp|date:"M d H:i:s" }} · <code>{{ tcl.reply_id|truncatechars:16 }}</code></div>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">No tool call logs recorded yet for this conversation.</div>
+      {% endif %}
+    </div>
   </div>
 </div>
 

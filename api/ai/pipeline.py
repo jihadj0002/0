@@ -1,9 +1,10 @@
 import json
 import logging
 import re
+import time
 import uuid
 
-from back.models import Integration, Message, UsageLog
+from back.models import Integration, Message, ToolCallLog, UsageLog
 
 # Image URLs (storage links, or any http(s) link ending in an image extension).
 _IMAGE_URL_RE = re.compile(
@@ -29,7 +30,80 @@ from .tools import TOOL_DEFINITIONS, execute_tool
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_ITERATIONS = 7
+
+
+def _summarize_tool_result(tool_name, result):
+    """Produce a short human-readable summary of a tool result for ToolCallLog."""
+    if not isinstance(result, dict):
+        return str(result)[:500]
+
+    if "error" in result:
+        return f"Error: {result['error']}"
+
+    if tool_name == "search_products":
+        products = result.get("products", [])
+        names = [p.get("name", p.get("pid", "?"))[:40] for p in products[:5]]
+        extra = f" (+{len(products)-5} more)" if len(products) > 5 else ""
+        return f"Found {result.get('total', len(products))} products: {', '.join(names)}{extra}"
+
+    if tool_name == "send_images":
+        products = result.get("products", [])
+        if products:
+            names = []
+            for p in products[:3]:
+                imgs = len(p.get("images", []))
+                names.append(f"{p.get('name', p.get('pid', '?'))} ({imgs} imgs)")
+            extra = f" (+{len(products)-3} more)" if len(products) > 3 else ""
+            return f"Sent images for {len(products)} product(s): {', '.join(names)}{extra}"
+        if result.get("images"):
+            return f"Sent {len(result['images'])} image(s) for pid={result.get('pid', '?')}"
+        return "No images available"
+
+    if tool_name == "create_order":
+        if result.get("order_id"):
+            return (
+                f"Order {result['order_id']} created, "
+                f"status={result['status']}, total={result.get('total', '?')}"
+            )
+        return f"Error: {result.get('error', 'unknown')}"
+
+    if tool_name == "get_product_details":
+        if result.get("name"):
+            return (
+                f"Product: {result['name']} "
+                f"(price={result.get('price', '?')}, stock={result.get('stock', '?')})"
+            )
+        return f"Error: {result.get('error', 'not found')}"
+
+    if tool_name == "get_order_status":
+        if result.get("status"):
+            return (
+                f"Order {result.get('order_id', '?')}: "
+                f"{result['status']}, total={result.get('total', '?')}"
+            )
+        return f"Error: {result.get('error', 'not found')}"
+
+    if tool_name == "create_ticket":
+        if result.get("ticket_id"):
+            return (
+                f"Ticket #{result['ticket_id']} created, "
+                f"priority={result.get('priority', 'medium')}"
+            )
+        return f"Error: {result.get('error', 'unknown')}"
+
+    if tool_name == "update_customer":
+        updated = result.get("updated", [])
+        if updated:
+            return f"Updated customer fields: {', '.join(updated)}"
+        return "No updates"
+
+    if tool_name == "search_knowledge_base":
+        count = result.get("total", 0)
+        return f"Found {count} knowledge base result(s)"
+
+    keys = list(result.keys())[:5]
+    return f"Result keys: {', '.join(keys)}"
 
 
 def run(conversation, incoming_message):
@@ -125,7 +199,24 @@ def run(conversation, incoming_message):
             except (json.JSONDecodeError, TypeError):
                 fn_args = {}
 
+            t0 = time.time()
             result = execute_tool(fn_name, fn_args, user, conversation)
+            elapsed = int((time.time() - t0) * 1000)
+
+            # Log every tool call to ToolCallLog for audit trail
+            try:
+                ToolCallLog.objects.create(
+                    conversation=conversation,
+                    user=user,
+                    reply_id=reply_id,
+                    iteration=iteration,
+                    tool_name=fn_name,
+                    arguments=fn_args,
+                    result_summary=_summarize_tool_result(fn_name, result),
+                    execution_time_ms=elapsed,
+                )
+            except Exception as exc:
+                logger.warning("ToolCallLog write failed: %s", exc)
 
             # Collect images and structured product cards for delivery.
             # NEVER expose raw URLs back to the LLM — the model only gets

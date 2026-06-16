@@ -186,6 +186,7 @@ details[open] summary{color:var(--blue)}
       <button type="button" class="tab-btn {% if active_tab == 'prompt' %}active{% endif %}" onclick="switchTab('prompt')">System Prompt</button>
       <button type="button" class="tab-btn {% if active_tab == 'test' %}active{% endif %}" onclick="switchTab('test')">Pipeline Tester</button>
       <button type="button" class="tab-btn {% if active_tab == 'history' %}active{% endif %}" onclick="switchTab('history')">Conversation History</button>
+      <button type="button" class="tab-btn {% if active_tab == 'tools' %}active{% endif %}" onclick="switchTab('tools')">Tool History</button>
       <button type="button" class="tab-btn {% if active_tab == 'account' %}active{% endif %}" onclick="switchTab('account')">Account Audit</button>
     </div>
 
@@ -333,6 +334,37 @@ details[open] summary{color:var(--blue)}
               <div class="code-block" style="margin-top:4px;font-size:11px">{{ msg.raw_payload|default_if_none:"null" }}</div>
             </details>
             {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    {# ── Tab: Tool History ─────────────────────────────────────── #}
+    <div class="tab-panel {% if active_tab == 'tools' %}active{% endif %}" id="tab-tools">
+      {% if not selected_conv %}
+        <div class="no-data">Select a conversation to see its tool call history.</div>
+      {% elif not tool_call_logs %}
+        <div class="no-data">No tool calls logged for this conversation yet.</div>
+      {% else %}
+        <div style="margin-bottom:12px;font-size:12px;color:#666">
+          {{ tool_call_logs|length }} tool call(s) · <strong>{{ selected_conv.customer_name|default:selected_conv.customer_id }}</strong> · {{ selected_conv.platform }}
+        </div>
+        {% for tcl in tool_call_logs %}
+        <div class="iteration" style="margin-bottom:8px">
+          <div class="iter-header">
+            <span class="tool-name" style="font-size:13px">🔧 {{ tcl.tool_name }}</span>
+            <span style="font-size:11px;color:#666;margin-left:12px">
+              iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
+              · <code style="font-size:10px">{{ tcl.reply_id|truncatechars:16 }}</code>
+            </span>
+            <span style="font-size:11px;color:#666;margin-left:auto">{{ tcl.timestamp|date:"M d H:i:s" }}</span>
+          </div>
+          <div class="iter-body" style="padding:10px 14px">
+            <div class="tool-label">Arguments</div>
+            <div class="code-block" style="max-height:120px;margin-bottom:8px">{{ tcl.arguments }}</div>
+            <div class="tool-label">Result</div>
+            <div class="code-block" style="max-height:80px">{{ tcl.result_summary|default:"—" }}</div>
           </div>
         </div>
         {% endfor %}

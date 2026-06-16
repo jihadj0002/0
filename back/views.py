@@ -1724,8 +1724,10 @@ def ai_debug(request):
     from api.ai.context import build_system_prompt, get_conversation_history
     from api.ai.tools import TOOL_DEFINITIONS, execute_tool
     from api.ai.providers import call_llm
+    from back.models import ToolCallLog
     import json
     import time
+    import uuid
     
     # Initialize context variables
     users = User.objects.all().order_by('username')
@@ -1802,6 +1804,7 @@ def ai_debug(request):
                         ).first()
                         model = integration.ai_model if integration else None
                         
+                        reply_id = uuid.uuid4().hex
                         final_text = None
                         pending_images = []
                         transferred = False
@@ -1830,6 +1833,21 @@ def ai_debug(request):
                                     tool_start = time.time()
                                     result = execute_tool(fn_name, fn_args, selected_conversation.user, selected_conversation)
                                     tool_end = time.time()
+                                    
+                                    # Log to ToolCallLog
+                                    try:
+                                        ToolCallLog.objects.create(
+                                            conversation=selected_conversation,
+                                            user=selected_conversation.user,
+                                            reply_id=reply_id,
+                                            iteration=iteration,
+                                            tool_name=fn_name,
+                                            arguments=fn_args,
+                                            result_summary=str(result).strip()[:500] if result else "",
+                                            execution_time_ms=int((tool_end - tool_start) * 1000),
+                                        )
+                                    except Exception:
+                                        pass
                                     
                                     debug_info['tool_calls'].append({
                                         'name': fn_name,
@@ -1894,9 +1912,13 @@ def ai_debug(request):
         conversations = Conversation.objects.filter(user=selected_user).order_by('-updated_at')
     
     # Build system prompt and history for display
+    tool_call_logs = []
     if selected_conversation:
         system_prompt = build_system_prompt(selected_conversation.user, selected_conversation)
         conversation_history = get_conversation_history(selected_conversation, limit=50)
+        tool_call_logs = ToolCallLog.objects.filter(
+            conversation=selected_conversation
+        ).order_by("-timestamp")[:100]
     
     context = {
         'users': users,
@@ -1906,6 +1928,7 @@ def ai_debug(request):
         'system_prompt': system_prompt,
         'conversation_history': conversation_history,
         'debug_info': debug_info,
+        'tool_call_logs': tool_call_logs,
     }
     
     return render(request, 'back/ai_debug.html', context)

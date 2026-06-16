@@ -221,11 +221,15 @@ class ConversationAdmin(admin.ModelAdmin):
                 pass
 
         # ── Load selected conversation ────────────────────────────────────
+        tool_call_logs = []
         if conv_id and selected_user:
             try:
                 selected_conv = Conversation.objects.get(pk=conv_id, user=selected_user)
                 conv_history = list(
                     Message.objects.filter(conversation=selected_conv).order_by("timestamp")
+                )
+                tool_call_logs = list(
+                    ToolCallLog.objects.filter(conversation=selected_conv).order_by("-timestamp")[:100]
                 )
             except Conversation.DoesNotExist:
                 pass
@@ -363,6 +367,7 @@ class ConversationAdmin(admin.ModelAdmin):
             }
 
         context = {
+            "tool_call_logs": tool_call_logs,
             **self.admin_site.each_context(request),
             "title": "AI Audit & Debug",
             "opts": Conversation._meta,
@@ -475,14 +480,26 @@ class SupportTicketAdmin(admin.ModelAdmin):
 
 @admin.register(ToolCallLog)
 class ToolCallLogAdmin(admin.ModelAdmin):
-    list_display = ["tool_name", "conversation_id", "reply_id", "iteration", "execution_time_ms", "timestamp"]
-    list_filter = ["tool_name", "timestamp"]
-    search_fields = ["tool_name", "reply_id", "result_summary"]
+    list_display = ["tool_name", "conversation_link", "reply_id", "iteration", "execution_time_ms", "timestamp"]
+    list_filter = ["tool_name", "timestamp", "conversation__user"]
+    search_fields = ["tool_name", "reply_id", "result_summary", "conversation__customer_id"]
     readonly_fields = [f.name for f in ToolCallLog._meta.fields]
+    list_select_related = ("conversation", "user")
+    raw_id_fields = ("conversation", "user")
 
     def has_add_permission(self, request):
         return False
 
     def has_change_permission(self, request, obj=None):
         return False
+
+    def conversation_link(self, obj):
+        from django.utils.html import format_html
+        return format_html(
+            '<a href="/admin/back/conversation/{}/change/">{} ({})</a>',
+            obj.conversation_id,
+            obj.conversation.customer_id[:20] if obj.conversation and obj.conversation.customer_id else "?",
+            obj.conversation.platform if obj.conversation else "?",
+        )
+    conversation_link.short_description = "Conversation"
 
