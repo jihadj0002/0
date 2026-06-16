@@ -53,7 +53,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
         "name": "send_images",
-        "description": "Send product images to the customer. Returns name, price, stock, SKU along with images — describe the product from returned data. Multiple PIDs via pids=[...] → scrollable carousel (1 image per card, buttons include product name). Single PID via pid=... → all product images sent individually one by one.",
+        "description": "Send product images to the customer. Returns name and price. For a single PID, all product images are sent one-by-one. For multiple PIDs via pids=[...], a scrollable carousel is shown. Mention name and price briefly in your reply after sending.",
             "parameters": {
                 "type": "object",
                 "properties": {

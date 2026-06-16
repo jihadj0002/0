@@ -234,7 +234,7 @@ def run(conversation, incoming_message):
                                 for p in products
                             ],
                             "products_count": len(products),
-                            "status": "products sent as a scrollable carousel — do NOT list product details in your text reply",
+                            "status": "products sent as a scrollable carousel — briefly mention names and prices in your reply",
                         }
                     else:
                         for p in products:

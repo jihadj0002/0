@@ -347,25 +347,37 @@ details[open] summary{color:var(--blue)}
       {% elif not tool_call_logs %}
         <div class="no-data">No tool calls logged for this conversation yet.</div>
       {% else %}
+        {% regroup tool_call_logs by reply_id as pipeline_runs %}
         <div style="margin-bottom:12px;font-size:12px;color:#666">
-          {{ tool_call_logs|length }} tool call(s) · <strong>{{ selected_conv.customer_name|default:selected_conv.customer_id }}</strong> · {{ selected_conv.platform }}
+          {{ tool_call_logs|length }} tool call(s) in {{ pipeline_runs|length }} pipeline run(s)
+          · <strong>{{ selected_conv.customer_name|default:selected_conv.customer_id }}</strong> · {{ selected_conv.platform }}
         </div>
-        {% for tcl in tool_call_logs %}
-        <div class="iteration" style="margin-bottom:8px">
-          <div class="iter-header">
-            <span class="tool-name" style="font-size:13px">🔧 {{ tcl.tool_name }}</span>
-            <span style="font-size:11px;color:#666;margin-left:12px">
-              iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
-              · <code style="font-size:10px">{{ tcl.reply_id|truncatechars:16 }}</code>
-            </span>
-            <span style="font-size:11px;color:#666;margin-left:auto">{{ tcl.timestamp|date:"M d H:i:s" }}</span>
+        {% for run in pipeline_runs %}
+        <div style="margin-bottom:16px;border:2px solid var(--blue);border-radius:8px;overflow:hidden">
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--blue);color:#fff;font-size:13px;font-weight:600">
+            <span>▶ Pipeline Run</span>
+            <code style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:4px;font-size:11px">{{ run.grouper|truncatechars:20 }}</code>
+            <span style="font-size:11px;opacity:0.8;margin-left:auto">{{ run.list|length }} tool call(s)</span>
           </div>
-          <div class="iter-body" style="padding:10px 14px">
-            <div class="tool-label">Arguments</div>
-            <div class="code-block" style="max-height:120px;margin-bottom:8px">{{ tcl.arguments }}</div>
-            <div class="tool-label">Result</div>
-            <div class="code-block" style="max-height:80px">{{ tcl.result_summary|default:"—" }}</div>
+          {% for tcl in run.list %}
+          <div class="iteration" style="margin:6px 8px;border-color:#e2e8f0">
+            <div class="iter-header" style="background:#f8fafc;padding:6px 12px">
+              <span class="tool-name" style="font-size:13px;color:{% if tcl.tool_name == 'search_products' %}#2563eb{% elif tcl.tool_name == 'send_images' %}#7c3aed{% elif tcl.tool_name == 'create_order' %}#059669{% else %}#92400e{% endif %}">
+                🔧 {{ tcl.tool_name }}
+              </span>
+              <span style="font-size:11px;color:#666;margin-left:12px">
+                iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
+              </span>
+              <span style="font-size:11px;color:#666;margin-left:auto">{{ tcl.timestamp|date:"H:i:s" }}</span>
+            </div>
+            <div class="iter-body" style="padding:8px 12px">
+              <div class="tool-label" style="font-size:10px">Arguments</div>
+              <div class="code-block" style="max-height:100px;margin-bottom:6px;font-size:11px">{{ tcl.arguments }}</div>
+              <div class="tool-label" style="font-size:10px">Result</div>
+              <div class="code-block" style="max-height:70px;font-size:11px">{{ tcl.result_summary|default:"—" }}</div>
+            </div>
           </div>
+          {% endfor %}
         </div>
         {% endfor %}
       {% endif %}

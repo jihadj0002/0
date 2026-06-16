@@ -229,7 +229,7 @@ class ConversationAdmin(admin.ModelAdmin):
                     Message.objects.filter(conversation=selected_conv).order_by("timestamp")
                 )
                 tool_call_logs = list(
-                    ToolCallLog.objects.filter(conversation=selected_conv).order_by("-timestamp")[:100]
+                    ToolCallLog.objects.filter(conversation=selected_conv).order_by("reply_id", "iteration", "timestamp")[:200]
                 )
             except Conversation.DoesNotExist:
                 pass
