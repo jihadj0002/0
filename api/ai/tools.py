@@ -177,23 +177,105 @@ TOOL_DEFINITIONS = [
 # Tool implementations
 # ---------------------------------------------------------------------------
 
-def _search_result_instruction(total):
-    """Return a tailored _instruction based on how many products were found."""
+def _search_result_instruction(total, query=""):
+    """Return a tailored _instruction based on how many products were found.
+
+    The customer's literal request is embedded so the model can reject
+    keyword-matched-but-unrelated candidates (a 'dress' is NOT 'dress shoes').
+    """
+    asked = f' for "{query}"' if query else ""
     prefix = (
-        "Verify these products match what the customer asked by checking their names. "
-        "If NONE match, call search_products again with different keywords.\n"
+        f'These are catalog CANDIDATES from a keyword search{asked} — some may be unrelated. '
+        "Reply ONLY about items whose NAME is genuinely what the customer asked for "
+        "(a 'dress' request is NOT satisfied by 'dress shoes'; a 'bathtub' is NOT a 'mosquito net'). "
+        "If none genuinely match, tell the customer it's currently unavailable and do NOT list "
+        "unrelated items — do not invent a match.\n"
     )
     if total <= 1:
         return prefix + (
-            "Describe the product briefly in text. "
-            "Only send images if the customer asks."
+            "If this matches, send_images(pid=...) so the customer sees it, "
+            "and mention the name + price in one short line."
         )
     return prefix + (
-        "If customer is browsing broadly, you may show these via "
-        "send_images(pids=[...]) as a carousel. If customer asked about "
-        "a specific item, describe it in text. "
+        "If several genuinely match and the customer is browsing, show them with "
+        "send_images(pids=[...]) as a carousel and give a short text. "
+        "If the customer asked about one specific item, focus on that one. "
         "Do NOT search for each product individually."
     )
+
+
+# Generic English + transliterated-Bengali filler words that carry no product
+# meaning. Used to keep keyword fan-out and relevance scoring focused on the
+# words that actually describe the product the customer wants.
+_STOPWORDS = frozenset({
+    "a", "an", "the", "of", "for", "and", "or", "to", "is", "are", "was", "with",
+    "my", "me", "i", "we", "this", "that", "these", "those", "it", "do", "does",
+    "you", "your", "our", "please", "pls", "show", "need", "want", "looking",
+    "have", "has", "had", "any", "some", "all", "new", "get", "give", "send",
+    # transliterated Bengali fillers / connectors (not product words)
+    "ache", "ase", "achi", "hobe", "hbe", "ki", "kichu", "ektu", "ata", "eita",
+    "eta", "ei", "der", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
+    "koto", "dam", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
+})
+
+
+# Common descriptor words that modify a product but are not the product TYPE.
+# They appear across many unrelated items (a "mosquito net" and a "bathtub" are
+# both "foldable" and "baby"), so a match on these alone is not a real match —
+# we require a match on a non-modifier (head/type) token when one exists.
+_MODIFIERS = frozenset({
+    "premium", "side", "large", "small", "medium", "big", "mini", "set", "pack",
+    "piece", "pieces", "pcs", "new", "foldable", "portable", "cartoon", "fancy",
+    "winter", "summer", "baby", "kids", "kid", "girl", "girls", "boy", "boys",
+    "men", "women", "woman", "man", "year", "years", "month", "months", "size",
+    "color", "colour", "style", "fashion", "cute", "soft", "organic",
+    "red", "blue", "pink", "white", "black", "green", "yellow", "purple",
+    "orange", "brown", "grey", "gray", "wool", "leather", "cotton",
+})
+
+
+def _content_tokens(text):
+    """Tokenize text into meaningful lowercase tokens (no stopwords/pure digits)."""
+    toks = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
+
+
+def _relevance_score(query_tokens, name):
+    """Count how many query content-tokens appear in a product name (token-level)."""
+    name_tokens = set(_content_tokens(name))
+    if not name_tokens or not query_tokens:
+        return 0
+    score = 0
+    for q in query_tokens:
+        if q in name_tokens or any(q in nt or nt in q for nt in name_tokens):
+            score += 1
+    return score
+
+
+def _rank_and_filter(results, query):
+    """Sort results by relevance to the original query and drop zero-overlap junk.
+
+    Keyword fan-out (especially the external word-by-word search) surfaces items
+    that share no word with the request. We drop those outright; remaining items
+    are ranked best-first. Final semantic judgement (e.g. 'dress shoes' is not a
+    'dress') is left to the model, guided by _search_result_instruction.
+    """
+    query_tokens = _content_tokens(query)
+    if not query_tokens:
+        return results
+
+    # A real match must hit a non-modifier (head/type) token when the query has
+    # one — so "bathtub" is not matched by "foldable baby mosquito net", and a
+    # "dress" is not matched by a "winter girl cap". If the query is ALL
+    # modifiers (e.g. just "baby"), fall back to matching any content token.
+    head_tokens = [t for t in query_tokens if t not in _MODIFIERS] or query_tokens
+
+    matched = [r for r in results if _relevance_score(head_tokens, r.get("name", "")) > 0]
+    if not matched:
+        return []
+    # Rank by overall token overlap (modifiers included) so the closest wins.
+    matched.sort(key=lambda r: _relevance_score(query_tokens, r.get("name", "")), reverse=True)
+    return matched
 
 
 def _image_url(path):
@@ -367,9 +449,10 @@ def _generate_search_queries(original):
             seen.add(last_two)
             yield last_two
 
-    # 5. Each individual word
+    # 5. Each individual MEANINGFUL word (skip stopwords/fillers so we don't
+    #    fan out to terms like 'girl' or 'baby' that surface unrelated products).
     for w in words:
-        if w and w not in seen:
+        if w and w not in seen and w.lower() not in _STOPWORDS and len(w) >= 3:
             seen.add(w)
             yield w
 
@@ -444,32 +527,27 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     logger.exception("External search failed for variation=%s", variation)
 
             all_results = _filter_by_budget(all_results, min_price, max_price)
-            # Sort by relevance: products whose name contains exact query words come first
-            query_words = set(query.lower().split())
-            all_results.sort(
-                key=lambda r: sum(
-                    1 for w in query_words if w in (r.get("name", "").lower().split())
-                ),
-                reverse=True,
-            )
-            all_results = all_results[:limit]
+            # Rank by relevance to the ORIGINAL query and drop zero-overlap junk
+            # (the word-by-word fan-out otherwise surfaces unrelated products).
+            all_results = _rank_and_filter(all_results, query)[:limit]
             if all_results:
                 _focus_products(conversation, all_results[:FOCUS_MAX])
                 out = {"products": all_results, "total": len(all_results)}
-                # If the best result matches NONE of the query words, the results
-                # are clearly wrong — tell the LLM to try different keywords.
-                best_score = sum(
-                    1 for w in query_words if w in (all_results[0].get("name", "").lower().split())
-                ) if all_results else 0
-                if query_words and best_score == 0:
-                    out["_instruction"] = (
-                        "These products don't match your query. Try searching AGAIN "
-                        "with different keywords."
-                    )
-                else:
-                    out["_instruction"] = _search_result_instruction(len(all_results))
+                out["_instruction"] = _search_result_instruction(len(all_results), query)
                 return out
-            # External search returned nothing — fall through to local DB
+            # Nothing matched the query — tell the model so it can say unavailable
+            # or try a genuinely different keyword (don't fall through to junk).
+            if query and query.strip():
+                return {
+                    "products": [],
+                    "total": 0,
+                    "_instruction": (
+                        f'No catalog items matched "{query}". Either try ONE more search with a '
+                        "different/simpler keyword or synonym, or tell the customer it's currently "
+                        "unavailable. Do NOT present unrelated products."
+                    ),
+                }
+            # Empty query — fall through to local DB / featured handling.
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
 
@@ -540,14 +618,24 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 if len(products_list) >= limit:
                     break
 
-    # Focus on this search's results so the next context lists the recent products
-    if products_list and conversation:
-        _focus_products(conversation, [_product_row(p) for p in products_list[:FOCUS_MAX]])
-
     results = [_product_row(p) for p in products_list]
+    # Rank by relevance and drop zero-overlap junk (skip for generic/empty
+    # queries, where we intentionally show featured/all products).
+    if not generic:
+        results = _rank_and_filter(results, query)
+
+    if results and conversation:
+        _focus_products(conversation, results[:FOCUS_MAX])
+
     out = {"products": results, "total": len(results)}
-    if len(results) > 0:
-        out["_instruction"] = _search_result_instruction(len(results))
+    if results:
+        out["_instruction"] = _search_result_instruction(len(results), query)
+    elif not generic and query and query.strip():
+        out["_instruction"] = (
+            f'No catalog items matched "{query}". Either try ONE more search with a '
+            "different/simpler keyword or synonym, or tell the customer it's currently "
+            "unavailable. Do NOT present unrelated products."
+        )
     return out
 
 

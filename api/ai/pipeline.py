@@ -23,10 +23,29 @@ def _strip_image_urls(text):
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
+
+# Detect when a reply *claims* to send/share photos — used to catch the common
+# failure where the model says "ছবি পাঠাচ্ছি" / "sending the images" without ever
+# calling send_images. Requires both an image noun and a sending cue.
+_IMG_NOUN_RE = re.compile(r"(ছবি|chh?obi|image|photo|picture|\bpic\b)", re.IGNORECASE)
+_SEND_CUE_RE = re.compile(
+    r"(পাঠা|দিচ্ছি|দিলাম|পাঠালাম|পাঠাচ্ছি|শেয়ার|patha|dicchi|dilam|"
+    r"send|sending|share|sharing|attach|here (are|is))",
+    re.IGNORECASE,
+)
+
+
+def _promises_images(text):
+    """True if the reply text implies images are being sent."""
+    if not text:
+        return False
+    return bool(_IMG_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
+
+
 from .context import build_system_prompt, get_conversation_history
 from .providers import call_llm
 from .sender import send_reply
-from .tools import TOOL_DEFINITIONS, execute_tool
+from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +192,7 @@ def run(conversation, incoming_message):
     pending_images = []
     product_cards = []
     transferred = False
+    image_promise_corrected = False
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         try:
@@ -185,7 +205,28 @@ def run(conversation, incoming_message):
 
         # No tool calls → LLM is done
         if not llm_msg.tool_calls:
-            final_text = llm_msg.content or ""
+            candidate = llm_msg.content or ""
+            # Safety net for the "promised images but never sent them" failure:
+            # if the reply claims to send photos but send_images was never called
+            # (no images/cards collected) and we have focused products to show,
+            # force ONE corrective pass to either actually send or drop the claim.
+            if (not image_promise_corrected
+                    and _promises_images(candidate)
+                    and not pending_images and not product_cards
+                    and parse_focus_products(conversation.current_product)):
+                image_promise_corrected = True
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "You told the customer you would send photos but did NOT call "
+                        "send_images. Either call send_images now with the correct product "
+                        "pid(s) from the focused products, or resend your reply WITHOUT "
+                        "mentioning photos. Never claim to send images without the tool."
+                    ),
+                })
+                continue
+            final_text = candidate
             break
 
         # Append assistant turn (with tool_calls) so the thread stays coherent

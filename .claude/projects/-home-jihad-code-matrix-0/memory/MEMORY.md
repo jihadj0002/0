@@ -1,0 +1,1 @@
+- [Dev shell hits prod Postgres](dev-shell-hits-prod-postgres.md) — manage.py here reads LIVE production data; user `jihad` is the demo account

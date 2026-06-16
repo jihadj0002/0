@@ -40,6 +40,19 @@ def _whatsapp(conversation, integration, text, image_urls, product_cards=None):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     to = conversation.customer_id
 
+    # WhatsApp has no card carousel — send each product's first image with a
+    # name + price caption as a fallback.
+    for card in (product_cards or [])[:5]:
+        images = card.get("images") or []
+        if not images:
+            continue
+        _post(url, headers, {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "image",
+            "image": {"link": images[0], "caption": _card_caption(card)},
+        })
+
     for img_url in (image_urls or [])[:5]:
         _post(url, headers, {
             "messaging_product": "whatsapp",
@@ -116,11 +129,28 @@ def _telegram(conversation, integration, text, image_urls, product_cards=None):
     chat_id = conversation.customer_id
     base = f"https://api.telegram.org/bot{token}"
 
+    # Telegram has no card carousel — send each product's first image with a
+    # name + price caption as a fallback.
+    for card in (product_cards or [])[:5]:
+        images = card.get("images") or []
+        if not images:
+            continue
+        _post(f"{base}/sendPhoto", {}, {
+            "chat_id": chat_id, "photo": images[0], "caption": _card_caption(card),
+        })
+
     for img_url in (image_urls or [])[:5]:
         _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
 
     if text:
         _post(f"{base}/sendMessage", {}, {"chat_id": chat_id, "text": text})
+
+
+def _card_caption(card):
+    """Short 'Name — ৳price' caption for platforms without a card carousel."""
+    name = (card.get("name") or "Product").strip()
+    price = card.get("discounted_price") or card.get("price")
+    return f"{name} — ৳{price}" if price else name
 
 
 def _post(url, headers, payload):

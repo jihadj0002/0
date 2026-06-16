@@ -73,11 +73,12 @@ All signals are wired in each app's `apps.py → ready()`.
 | File | Signal | Effect |
 |---|---|---|
 | `back/signals.py` | `post_save(User)` | Creates `UserProfile` |
-| `back/signals.py` | `post_save(Integration)` | Syncs `is_enabled` to all related `Conversation` rows |
-| `back/signals.py` | `post_save(Message)` | Updates conversation message counters + last-message preview |
-| `back/signals.py` | `post_save(Message)` dispatch_uid=`trigger_ai_pipeline` | If customer message + AI enabled → runs `api.ai.pipeline.run()` synchronously |
-| `context/signals.py` | `post_save(User)` | `get_or_create` AgentIdentity, StoreConfig, BehaviorRules |
-| `billing/signals.py` | `post_save(User)` | `get_or_create` UserBalance on free plan |
+| `back/signals.py` | `post_save(Message)` | Updates conversation message counters (`bot_sent_count`, `customer_sent_count`, etc.) |
+| `context/signals.py` | `post_save(User)` dispatch_uid=`context_create_defaults` | `get_or_create` AgentIdentity, StoreConfig, BehaviorRules |
+| `context/signals.py` | `post_save(BehaviorRules)` dispatch_uid=`rag_process_both` | If Q&A / knowledge-base text changed → re-chunk + re-embed RAG sources in a background thread (see RAG below) |
+| `billing/signals.py` | `post_save(User)` dispatch_uid=`billing_create_user_balance` | `get_or_create` UserBalance on free plan |
+
+> **Note:** The AI pipeline is **not** triggered by a `post_save(Message)` signal. It is driven by a 5-second batch timer in `api/webhooks.py` (see Webhook Intake). There is no `post_save(Integration)` signal syncing `is_enabled` to conversations.
 
 ### AI Pipeline (`api/ai/`)
 
@@ -85,30 +86,47 @@ All signals are wired in each app's `apps.py → ready()`.
 pipeline.py   — entry point: run(conversation, message) → build prompt → LLM loop → send reply → deduct credits
 context.py    — assembles system prompt from AgentIdentity + StoreConfig + BehaviorRules + last 20 messages
 providers.py  — thin OpenRouter wrapper (openai SDK pointed at https://openrouter.ai/api/v1); returns (msg, token_usage)
-tools.py      — TOOL_DEFINITIONS (7 schemas) + execute_tool() dispatcher
+tools.py      — TOOL_DEFINITIONS (8 schemas) + execute_tool() dispatcher
 sender.py     — send_reply(conversation, text, image_urls) → dispatches by platform via Graph API / Telegram Bot API
+media.py      — media (image/audio) handling for the pipeline
 ```
 
-**The 7 tools:**
+**The 8 tools:**
 
 | Tool | Purpose |
 |---|---|
-| `search_products` | Search catalog by name/description; prioritises featured products |
+| `search_products` | Search catalog by name/description; prioritises featured products (supports multi-query) |
 | `get_product_details` | Full product info + image URLs by PID |
 | `send_images` | Retrieve and send up to 5 product images |
 | `create_order` | Create a pending order after collecting customer details |
 | `get_order_status` | Look up an existing order by OID |
 | `update_customer` | Save/update customer contact fields on the Conversation |
-| `transfer_chat` | Disable AI and transfer session to a human agent |
+| `create_ticket` | Open a `SupportTicket` (escalation / hand-off to a human) |
+| `search_knowledge_base` | RAG lookup over the user's embedded knowledge base / Q&A (see RAG below) |
 
 Key invariants:
-- Max **5 tool iterations** per reply (`MAX_TOOL_ITERATIONS = 5`)
+- Max **7 tool iterations** per reply (`MAX_TOOL_ITERATIONS = 7`)
 - Every LLM call is logged to `UsageLog` (in `billing/`) with a shared `reply_id` (UUID hex)
 - `deduct_for_reply(user, reply_id)` is called after `send_reply` completes — never before
 
+### RAG / Knowledge Base (`context/`)
+
+Per-user retrieval-augmented context, separate from product search:
+
+```
+chunking.py    — split BehaviorRules Q&A + knowledge-base text into chunks
+embeddings.py  — embed chunks via OpenRouter (text-embedding-3-small)
+search.py      — cosine-similarity search over RAGChunk rows
+models.py      — RAGChunk: embedding stored as a JSONField list of floats (no pgvector)
+```
+
+- Re-embedding is triggered by the `post_save(BehaviorRules)` signal, in a background thread, only when the source text hash changes (`_RAG_CONTENT_CACHE`). Stale chunks are deactivated (`is_active=False`) then replaced via `bulk_create`.
+- Queried at runtime by the `search_knowledge_base` tool.
+
 ### Webhook Intake (`api/webhooks.py`)
 
-- `ThreadPoolExecutor(max_workers=20)` — webhook views return `200 OK` immediately; all DB work runs in a thread
+- `ThreadPoolExecutor(max_workers=50)` — webhook views return `200 OK` immediately; all DB work runs in a thread
+- **5-second batch timer**: incoming customer messages are written to `MessageBatch` rows; a per-conversation `threading.Timer(5.0, …)` is (re)started on each message so rapid bursts collapse into one pipeline run. `_fire_batch_pipeline` consolidates unprocessed batches into one `combined_text`, then calls `api.ai.pipeline.run()`. If a run is already in flight for that conversation, the invocation skips and the unprocessed batches wait. This — not a signal — is how the AI pipeline is launched.
 - Mid-based idempotency: if a `Message` with the same `mid` already exists, the payload is dropped (Meta retries on non-200)
 - WhatsApp media download is two-step: get media URL from Graph API with Bearer token, then download binary with Bearer token
 - Unified message format from `api/utils/parsers.py` → `{platform, customer_id, customer_name, message_id, type, text, attachments, raw}`
@@ -136,7 +154,8 @@ Key invariants:
 - **Integration** — one per platform per user; holds `access_token`, `verify_token`, `app_secret`, `ai_model`, `is_enabled`
 - **Conversation** — unique on `(user, platform, customer_id)`; tracks `is_ai_enabled`, sentiment, intent, message counters
 - **Message** — `sender` choices: `customer` / `bot` / `agent`; stores `raw_payload` (JSONField) for debugging
-- **MessageBatch** — temporary holding table for incoming messages used by the batching/deduplication logic
+- **MessageBatch** — holding table for incoming messages consumed by the 5-second batch timer in `api/webhooks.py`
+- **SupportTicket** — escalation record created by the `create_ticket` tool
 - **Product / Package / PackageItem** — catalog; package pricing = base ± item `price_delta`
 - **Sale / OrderItem** — `completed`/`refunded` orders are immutable (enforced in `save()`); `oid` prefixed with `ord_`
 
