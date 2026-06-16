@@ -286,7 +286,7 @@ def _clear_focus_product(conversation):
 
 def _external_row(r):
     row = {
-        "pid": r.get("sku") or r["external_id"],
+        "pid": r["external_id"],
         "name": r["name"],
         "price": r["price"],
         "discounted_price": r.get("discounted_price"),
@@ -403,8 +403,8 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     _focus_products(conversation, results[:FOCUS_MAX])
                     out = {"products": results, "total": len(results)}
                     out["_instruction"] = (
-                        "Do NOT list product names, prices, or descriptions in your text reply. "
-                        "Use send_images(pids=[...]) to show them as a carousel."
+                        "Describe the products briefly in text. "
+                        "Only send images if the customer specifically asks for photos."
                     )
                     return out
 
@@ -433,8 +433,8 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 _focus_products(conversation, all_results[:FOCUS_MAX])
                 out = {"products": all_results, "total": len(all_results)}
                 out["_instruction"] = (
-                    "Do NOT list product names, prices, or descriptions in your text reply. "
-                    "Use send_images(pids=[...]) to show them as a carousel."
+                    "Describe the products briefly in text. "
+                    "Only send images if the customer specifically asks for photos."
                 )
                 return out
             # External search returned nothing — fall through to local DB
@@ -516,8 +516,8 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
     out = {"products": results, "total": len(results)}
     if len(results) > 0:
         out["_instruction"] = (
-            "Do NOT list product names, prices, or descriptions in your text reply. "
-            "Use send_images(pids=[...]) to show them as a carousel."
+            "Describe the products briefly in text. "
+            "Only send images if the customer specifically asks for photos."
         )
     return out
 
