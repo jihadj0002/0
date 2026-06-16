@@ -42,6 +42,8 @@ Thumbs.db
 .vscode/
 .idea/
 
+.claude
+
 # Node / front-end (in case you use a frontend)
 node_modules/
 npm-debug.log

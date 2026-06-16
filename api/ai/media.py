@@ -34,7 +34,7 @@ def analyze_image_structured(image_url: str, user=None, reply_id=None) -> dict:
     and a natural-language description. Call this once — do NOT also call
     analyze_image() on the same image.
 
-    Prioritises scanning: SKU/PID → product_name → type → brand → capacity → color.
+    Prioritises scanning: SKU/PID → product_name → type → brand → capacity → color → description.
 
     Returns:
         {
@@ -44,7 +44,7 @@ def analyze_image_structured(image_url: str, user=None, reply_id=None) -> dict:
             "brand": str,        # brand name if visible
             "capacity": str,     # size, volume, weight, dimensions
             "color": str,        # colour(s)
-            "description": str,  # one-sentence summary
+            "description": str,  # Product summary within a few sentences, for human reading. Include all visible details and text.
         }
     """
     try:
