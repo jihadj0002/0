@@ -177,6 +177,21 @@ TOOL_DEFINITIONS = [
 # Tool implementations
 # ---------------------------------------------------------------------------
 
+def _search_result_instruction(total):
+    """Return a tailored _instruction based on how many products were found."""
+    if total <= 1:
+        return (
+            "Describe the product briefly in text. "
+            "Only send images if the customer asks."
+        )
+    return (
+        "If the customer is browsing broadly, you may show these products "
+        "via send_images(pids=[...]) as a carousel and give a short "
+        "confirmation text. If the customer asked about a specific item, "
+        "just describe it in text."
+    )
+
+
 def _image_url(path):
     try:
         return default_storage.url(str(path))
@@ -402,10 +417,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 if results:
                     _focus_products(conversation, results[:FOCUS_MAX])
                     out = {"products": results, "total": len(results)}
-                    out["_instruction"] = (
-                        "Describe the products briefly in text. "
-                        "Only send images if the customer specifically asks for photos."
-                    )
+                    out["_instruction"] = _search_result_instruction(len(results))
                     return out
 
             # Multi-strategy: try successive query variations
@@ -432,10 +444,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
             if all_results:
                 _focus_products(conversation, all_results[:FOCUS_MAX])
                 out = {"products": all_results, "total": len(all_results)}
-                out["_instruction"] = (
-                    "Describe the products briefly in text. "
-                    "Only send images if the customer specifically asks for photos."
-                )
+                out["_instruction"] = _search_result_instruction(len(all_results))
                 return out
             # External search returned nothing — fall through to local DB
     except Exception:
@@ -515,10 +524,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
     results = [_product_row(p) for p in products_list]
     out = {"products": results, "total": len(results)}
     if len(results) > 0:
-        out["_instruction"] = (
-            "Describe the products briefly in text. "
-            "Only send images if the customer specifically asks for photos."
-        )
+        out["_instruction"] = _search_result_instruction(len(results))
     return out
 
 
