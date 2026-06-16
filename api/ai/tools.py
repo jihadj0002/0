@@ -22,7 +22,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Search products by SKU, partial SKU, name, or keyword. You can optionally specify min_price and/or max_price to narrow results by budget. The tool automatically retries with different search strategies (stripped text, individual words) if the first attempt finds nothing. Call this before quoting any price.",
+            "description": "Search products by SKU, name, or keyword. You can optionally specify min_price and/or max_price to narrow results by budget. Try calling this MULTIPLE times with different keywords (try English, synonyms, simpler terms) until you find what the customer wants. Call this before quoting any price.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -188,7 +188,8 @@ def _search_result_instruction(total):
         "If the customer is browsing broadly, you may show these products "
         "via send_images(pids=[...]) as a carousel and give a short "
         "confirmation text. If the customer asked about a specific item, "
-        "just describe it in text."
+        "just describe it in text. "
+        "You already have the results — do NOT search for each product individually."
     )
 
 
@@ -420,13 +421,13 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     out["_instruction"] = _search_result_instruction(len(results))
                     return out
 
-            # Multi-strategy: try successive query variations
+            # Multi-strategy: try ALL successive query variations (don't break on
+            # first batch — the first variation can return irrelevant results
+            # while individual words match perfectly). Dedup by external_id.
             all_results = []
             seen_ids = set()
             for variation in _generate_search_queries(query):
-                if len(all_results) >= limit:
-                    break
-                if len(all_results) >= limit and len(seen_ids) >= max_external_attempts:
+                if len(seen_ids) >= max_external_attempts * limit:
                     break
                 try:
                     rows = provider.search(variation, limit)
@@ -440,6 +441,14 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     logger.exception("External search failed for variation=%s", variation)
 
             all_results = _filter_by_budget(all_results, min_price, max_price)
+            # Sort by relevance: products whose name contains exact query words come first
+            query_words = set(query.lower().split())
+            all_results.sort(
+                key=lambda r: sum(
+                    1 for w in query_words if w in (r.get("name", "").lower().split())
+                ),
+                reverse=True,
+            )
             all_results = all_results[:limit]
             if all_results:
                 _focus_products(conversation, all_results[:FOCUS_MAX])

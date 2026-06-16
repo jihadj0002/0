@@ -27,7 +27,10 @@ def build_system_prompt(user, conversation):
             f"Always respond in the customer's detected language, defaulting to {identity.language}."
         )
 
-    # --- Core task rules (placed EARLY so they survive truncation) ---
+    if rules and rules.custom_instructions:
+        parts.append(f"## Custom Instructions (user-defined)\n{rules.custom_instructions}")
+
+    # --- Core task rules (these override custom instructions above) ---
     tone = identity.tone if identity else "friendly"
     style = identity.style if identity else "concise"
     parts.append(
@@ -39,26 +42,47 @@ def build_system_prompt(user, conversation):
         "Instead say: আছে, পাবেন, available.\n"
         "- Never sound instructional or like a helpdesk bot.\n"
         "- Only output reply text — no URLs, no JSON, no code fences.\n"
+        "- Never use numbered lists (1. 2. 3.) in your replies. Speak naturally.\n"
+        "- When showing multiple products: name + price in a flowing sentence, "
+        "or use send_images(pids=[...]) as a carousel.\n"
+        "- When you call send_images, your text reply must be very short — "
+        "just confirm what was sent ('এই প্রোডাক্টগুলোর ছবি পাঠালাম'), "
+        "no product lists.\n"
         "- When you find a product: mention name + price if asked, then continue naturally. "
         "Vary your responses — don't ask about ordering every time.\n"
-        "- When customer asks for photo: send_images(pid=...) for one product "
-        "(shows all its images individually).\n"
-        "- For multiple options: send_images(pids=[...]) for a scrollable carousel "
-        "of different products.\n"
         "- Never ask 'do you want to order?' more than once every several exchanges.\n"
+        "- Acknowledge 'Hello', 'thanks', 'ok', 'ha' — a quick response keeps "
+        "the flow natural.\n"
+        "- If the customer asks the same question again ('Price?', 'details?'), "
+        "answer concisely — don't re-list everything.\n"
+        "- If the customer sends an image AND text, the text is usually the main "
+        "question. Address the text first, then the image.\n"
+        "- When the customer asks about delivery, payment, or store policies: "
+        "answer directly and only that question. Do NOT collect their name, "
+        "address, or phone unless they've explicitly said they want to order.\n"
+        "- If search_products returns nothing or irrelevant results: try AGAIN "
+        "with different keywords. DO NOT give up after one attempt.\n"
     )
 
     # --- Product discovery flow ---
     parts.append(
         "## PRODUCT DISCOVERY (follow this order)\n"
         "Customer sends image or asks about a product → call search_products FIRST.\n"
-        "  - If the first search doesn't find the exact match, "
-        "call search_products again with different queries "
-        "(try SKU, then name, then brand+type, then individual keywords).\n"
-        "  - You may search MULTIPLE times to find the best match.\n"
-        "  - Only ask the customer for clarification if all searches return nothing.\n"
-        "Translate Bengali queries to English before calling tool. "
-        "Brand names stay unchanged.\n"
+        "1. Translate Bengali queries to English BEFORE calling search_products. "
+        "Example: 'moshari' → translate to 'mosquito net' and search that. "
+        "Try BOTH the original Bengali term and the English translation "
+        "in separate searches if you're unsure. Brand names stay unchanged.\n"
+        "2. If search_products returns results: check if the product NAMES "
+        "match what the customer actually asked for. "
+        "If results are irrelevant, search AGAIN with different keywords. "
+        "NEVER present products whose names don't match the customer's request.\n"
+        "3. Try MULTIPLE search queries with different keywords. "
+        "Examples: try single words ('skirt', 'dress', 'frock') instead of "
+        "the full query; try synonyms; try simpler terms. "
+        "Keep searching until you find the right product or exhaust "
+        "reasonable options.\n"
+        "4. Only ask the customer for clarification if ALL searches return "
+        "nothing relevant.\n"
     )
     if external_catalog:
         parts.append(
@@ -71,6 +95,9 @@ def build_system_prompt(user, conversation):
         )
     parts.append(
         "- NEVER state a price or name you didn't just get from a tool.\n"
+        "- If search results don't include any product relevant to the "
+        "customer's query → say it's out of stock. Do NOT invent product "
+        "names, prices, or descriptions.\n"
         "- If product has variations (size/color), show options before ordering.\n"
         "- If product not found → say out of stock (not 'not found').\n"
         "- Use get_order_status for existing orders.\n"
@@ -117,9 +144,6 @@ def build_system_prompt(user, conversation):
         "- Collect customer name, phone, delivery address before calling create_order.\n"
         "- Confirm items aloud before submitting.\n"
     )
-
-    if rules.custom_instructions:
-            parts.append(f"Custom instructions: {rules.custom_instructions}")
 
     # --- Store info ---
     if store:
@@ -220,7 +244,7 @@ def _render_focus_products(focus_list, currency):
     primary = focus_list[0]
     p_pid = primary.get("pid", "")
     p_name = primary.get("name") or ""
-    header = f"1. {p_name} (PID: {p_pid})" if p_name else f"1. PID: {p_pid}"
+    header = f"- {p_name} (PID: {p_pid})" if p_name else f"- PID: {p_pid}"
     if primary.get("sku"):
         header += f"  SKU: {primary['sku']}"
     lines.append(header)
@@ -240,12 +264,12 @@ def _render_focus_products(focus_list, currency):
             f"(variation_id={v.get('variation_id')}){stock_note}"
         )
 
-    for i, f in enumerate(focus_list[1:], start=2):
+    for f in focus_list[1:]:
         name = f.get("name") or ""
         label = f"{name} (PID: {f.get('pid')})" if name else f"PID: {f.get('pid')}"
         price = f"{f['price']} {currency}" if f.get("price") is not None else ""
         stock_note = "" if f.get("in_stock", True) else " — out of stock"
-        lines.append(f"{i}. {label}" + (f" — {price}" if price else "") + stock_note)
+        lines.append(f"- {label}" + (f" — {price}" if price else "") + stock_note)
 
     lines.append(
         "All data above is COMPLETE — you already have name, price, stock, "
