@@ -43,13 +43,117 @@ def _promises_images(text):
 
 
 from .context import build_system_prompt, get_conversation_history
+from .planner import plan_search
 from .providers import call_llm
 from .sender import send_reply
 from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
+from .verifier import verify_results
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 7
+
+
+def _split_text_messages(text):
+    if not text:
+        return []
+    parts = [p.strip() for p in text.split("\n\n") if p.strip()]
+    return parts if len(parts) > 1 else [text]
+
+
+def _log_planner(user, reply_id, usage, call_type="planner"):
+    _log(user, reply_id, usage, call_type=call_type)
+
+
+def _plan_and_search(user, conversation, customer_text, reply_id):
+    plan, usage = plan_search(user, conversation, customer_text)
+    _log_planner(user, reply_id, usage, call_type="planner")
+
+    if not isinstance(plan, dict) or plan.get("intent") != "find_product":
+        return plan, [], None
+
+    max_retries = int(plan.get("max_retries", 3) or 3)
+    previous_queries = []
+    final_results = []
+    final_verify = None
+
+    for attempt in range(max_retries):
+        queries = plan.get("search_queries") or []
+        if not queries:
+            break
+
+        results = []
+        products = []
+        for q in queries:
+            if q in previous_queries:
+                continue
+            previous_queries.append(q)
+            fn_args = {"query": q, "limit": 5}
+            t0 = time.time()
+            result = execute_tool("search_products", fn_args, user, conversation)
+            elapsed = int((time.time() - t0) * 1000)
+            results.append({"query": q, "result": result})
+            products.extend(result.get("products", []) if isinstance(result, dict) else [])
+
+            try:
+                ToolCallLog.objects.create(
+                    conversation=conversation,
+                    user=user,
+                    reply_id=reply_id,
+                    iteration=-1,
+                    tool_name="search_products",
+                    arguments=fn_args,
+                    result_summary=_summarize_tool_result("search_products", result),
+                    execution_time_ms=elapsed,
+                )
+            except Exception as exc:
+                logger.warning("ToolCallLog write failed (planner search): %s", exc)
+
+        final_results = results
+        final_verify = verify_results(plan, products)
+        if final_verify.get("is_valid"):
+            break
+
+        retry_reason = final_verify.get("reason") or "No relevant matches"
+        plan, usage = plan_search(
+            user,
+            conversation,
+            customer_text,
+            retry_reason=retry_reason,
+            previous_queries=previous_queries,
+        )
+        _log_planner(user, reply_id, usage, call_type=f"planner_retry_{attempt + 1}")
+
+    return plan, final_results, final_verify
+
+
+def _planner_context(plan, results, verify):
+    if not plan:
+        return ""
+    lines = ["## Planner"]
+    intent = plan.get("intent", "find_product")
+    lines.append(f"Intent: {intent}")
+    queries = plan.get("search_queries") or []
+    if queries:
+        lines.append("Planned queries: " + ", ".join(queries))
+    if results:
+        for r in results:
+            q = r.get("query")
+            res = r.get("result", {})
+            products = res.get("products", []) if isinstance(res, dict) else []
+            names = [p.get("name", p.get("pid", "?")) for p in products[:5]]
+            lines.append(f"Search '{q}' → {len(products)} results: {', '.join(names)}")
+    if verify:
+        lines.append(f"Verification: {verify.get('reason', 'n/a')}")
+        best = verify.get("best_candidates") or []
+        if best:
+            lines.append("Verified candidates:")
+            for p in best[:5]:
+                name = p.get("name", "")
+                pid = p.get("pid", "")
+                price = p.get("price") or p.get("discounted_price") or ""
+                lines.append(f"- {name} (PID: {pid}) {price}")
+    return "\n".join(lines)
 
 
 def _summarize_tool_result(tool_name, result):
@@ -186,7 +290,10 @@ def run(conversation, incoming_message):
     if not history or history[-1].get("content") != customer_text or history[-1].get("role") != "user":
         history.append({"role": "user", "content": customer_text})
 
-    messages = [{"role": "system", "content": system_prompt}] + history
+    plan, plan_results, plan_verify = _plan_and_search(user, conversation, customer_text, reply_id)
+    planner_notes = _planner_context(plan, plan_results, plan_verify)
+    system_content = system_prompt + ("\n\n" + planner_notes if planner_notes else "")
+    messages = [{"role": "system", "content": system_content}] + history
 
     final_text = None
     pending_images = []
@@ -268,6 +375,11 @@ def run(conversation, incoming_message):
                 if products:
                     if len(products) > 1:
                         product_cards.extend(products)
+                        if conversation.platform in ("whatsapp", "telegram"):
+                            for p in products:
+                                imgs = p.get("images") or []
+                                if imgs:
+                                    pending_images.append(imgs[0])
                         tool_content = {
                             "products": [
                                 {"pid": p.get("pid"), "name": p.get("name"),
@@ -349,8 +461,12 @@ def run(conversation, incoming_message):
 
     # Send via platform — pass product_cards only for multi-product carousel;
     # single-product images are sent individually (avoids duplicate image messages).
-    send_reply(conversation, final_text, image_urls=unique_images or None,
-               product_cards=product_cards if len(product_cards) > 1 else None)
+    send_reply(
+        conversation,
+        _split_text_messages(final_text),
+        image_urls=unique_images or None,
+        product_cards=product_cards if len(product_cards) > 1 else None,
+    )
 
     # Deduct credits after reply is confirmed sent
     try:

@@ -9,6 +9,15 @@ logger = logging.getLogger(__name__)
 GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
 
 
+def _normalize_texts(text):
+    if text is None:
+        return []
+    if isinstance(text, (list, tuple)):
+        return [t for t in (str(x).strip() for x in text) if t]
+    text = str(text).strip()
+    return [text] if text else []
+
+
 def send_reply(conversation, text, image_urls=None, product_cards=None):
     """Dispatch a reply (text + images + product cards) to the customer."""
     platform = conversation.platform
@@ -18,12 +27,13 @@ def send_reply(conversation, text, image_urls=None, product_cards=None):
             logger.warning("No active integration for user=%s platform=%s", conversation.user_id, platform)
             return
 
+        texts = _normalize_texts(text)
         if platform == "whatsapp":
-            _whatsapp(conversation, integration, text, image_urls, product_cards)
+            _whatsapp(conversation, integration, texts, image_urls, product_cards)
         elif platform in ("messenger", "instagram"):
-            _messenger(conversation, integration, text, image_urls, product_cards)
+            _messenger(conversation, integration, texts, image_urls, product_cards)
         elif platform == "telegram":
-            _telegram(conversation, integration, text, image_urls, product_cards)
+            _telegram(conversation, integration, texts, image_urls, product_cards)
 
     except Exception:
         logger.exception("send_reply failed conv=%s platform=%s", conversation.pk, platform)
@@ -33,7 +43,7 @@ def send_reply(conversation, text, image_urls=None, product_cards=None):
 # Platform senders
 # ---------------------------------------------------------------------------
 
-def _whatsapp(conversation, integration, text, image_urls, product_cards=None):
+def _whatsapp(conversation, integration, texts, image_urls, product_cards=None):
     phone_number_id = integration.integration_id
     token = integration.access_token
     url = f"{GRAPH_API_BASE}/{phone_number_id}/messages"
@@ -61,7 +71,7 @@ def _whatsapp(conversation, integration, text, image_urls, product_cards=None):
             "image": {"link": img_url},
         })
 
-    if text:
+    for text in texts:
         _post(url, headers, {
             "messaging_product": "whatsapp",
             "to": to,
@@ -70,7 +80,7 @@ def _whatsapp(conversation, integration, text, image_urls, product_cards=None):
         })
 
 
-def _messenger(conversation, integration, text, image_urls, product_cards=None):
+def _messenger(conversation, integration, texts, image_urls, product_cards=None):
     token = integration.access_token
     url = f"{GRAPH_API_BASE}/me/messages"
     headers = {"Authorization": f"Bearer {token}"}
@@ -120,11 +130,11 @@ def _messenger(conversation, integration, text, image_urls, product_cards=None):
             "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
         })
 
-    if text:
+    for text in texts:
         _post(url, headers, {"recipient": recipient, "message": {"text": text}})
 
 
-def _telegram(conversation, integration, text, image_urls, product_cards=None):
+def _telegram(conversation, integration, texts, image_urls, product_cards=None):
     token = integration.access_token
     chat_id = conversation.customer_id
     base = f"https://api.telegram.org/bot{token}"
@@ -142,7 +152,7 @@ def _telegram(conversation, integration, text, image_urls, product_cards=None):
     for img_url in (image_urls or [])[:5]:
         _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
 
-    if text:
+    for text in texts:
         _post(f"{base}/sendMessage", {}, {"chat_id": chat_id, "text": text})
 
 

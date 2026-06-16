@@ -45,6 +45,7 @@ def build_system_prompt(user, conversation):
         "- Never sound instructional or like a helpdesk bot.\n"
         "- Only output reply text — no URLs, no JSON, no code fences.\n"
         "- Never use numbered lists (1. 2. 3.) in your replies. Speak naturally.\n"
+        "- If you want to send multiple short messages, separate them with a blank line.\n"
         "- When you find a product: mention name + price if asked, then continue naturally. "
         "Vary your responses — don't ask about ordering every time.\n"
         "- Never ask 'do you want to order?' more than once every several exchanges.\n"
@@ -61,21 +62,17 @@ def build_system_prompt(user, conversation):
 
     # --- Product discovery flow ---
     parts.append(
-        "## PRODUCT DISCOVERY (follow this order)\n"
-        "Call search_products the moment a customer asks about a product. Search 2–3 "
-        "times with DIFFERENT keywords before saying anything is unavailable.\n"
-        "1. If the customer sent a photo, search by SKU if visible, then product name if readable, then brand+type, then key words. For Bengali text, translate to English and search both original + translated keywords ('moshari'→'mosquito net', "
-        
-        "2. Translate Bengali to English first ('moshari'→'mosquito net', "
-        "'jama'→'dress'/'frock'); try original + translation. Brand names unchanged.\n"
-        "3. Vary keywords across searches: shorter terms (drop extra words), and "
-        "synonyms ('dress'→'frock','party dress','skirt'; 'shirt'→'t-shirt','top'). "
-        "Don't just repeat the same query.\n"
-        "4. CHECK NAMES against the request. A 'dress' is NOT 'dress shoes'; a "
-        "'bathtub' is NOT a 'mosquito net'. Present ONLY genuine matches.\n"
-        "5. If no genuine match after 2–3 tries, say it's out of stock — do NOT list "
-        "unrelated items, and do NOT invent products. Ask for clarification only "
-        "after repeated failed searches.\n"
+        "## WORKFLOW (MUST follow for product requests)\n"
+        "STEP 1 — IDENTIFY: extract 1–3 core product keywords. If Bengali, translate to English.\n"
+        "STEP 2 — PLAN: decide 2–3 search queries BEFORE calling tools. Use short keywords.\n"
+        "STEP 3 — SEARCH: call search_products at least 2 times with different queries.\n"
+        "STEP 4 — VERIFY: check product NAMES match the request. If none match, search again.\n"
+        "STEP 5 — RESPOND: only show genuine matches; otherwise say out of stock.\n"
+        "Examples:\n"
+        "- 'moshari' → search 'mosquito net' (also try original Bengali)\n"
+        "- 'birthday dress 1 year girl' → try 'birthday dress', 'party dress', 'frock'\n"
+        "- 'dress' → try 'frock', 'party dress', 'skirt'\n"
+        "NEVER present unrelated items (dress shoes != dress).\n"
     )
     if external_catalog:
         parts.append(
