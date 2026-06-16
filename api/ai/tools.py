@@ -179,17 +179,20 @@ TOOL_DEFINITIONS = [
 
 def _search_result_instruction(total):
     """Return a tailored _instruction based on how many products were found."""
+    prefix = (
+        "Verify these products match what the customer asked by checking their names. "
+        "If NONE match, call search_products again with different keywords.\n"
+    )
     if total <= 1:
-        return (
+        return prefix + (
             "Describe the product briefly in text. "
             "Only send images if the customer asks."
         )
-    return (
-        "If the customer is browsing broadly, you may show these products "
-        "via send_images(pids=[...]) as a carousel and give a short "
-        "confirmation text. If the customer asked about a specific item, "
-        "just describe it in text. "
-        "You already have the results — do NOT search for each product individually."
+    return prefix + (
+        "If customer is browsing broadly, you may show these via "
+        "send_images(pids=[...]) as a carousel. If customer asked about "
+        "a specific item, describe it in text. "
+        "Do NOT search for each product individually."
     )
 
 
@@ -453,7 +456,18 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
             if all_results:
                 _focus_products(conversation, all_results[:FOCUS_MAX])
                 out = {"products": all_results, "total": len(all_results)}
-                out["_instruction"] = _search_result_instruction(len(all_results))
+                # If the best result matches NONE of the query words, the results
+                # are clearly wrong — tell the LLM to try different keywords.
+                best_score = sum(
+                    1 for w in query_words if w in (all_results[0].get("name", "").lower().split())
+                ) if all_results else 0
+                if query_words and best_score == 0:
+                    out["_instruction"] = (
+                        "These products don't match your query. Try searching AGAIN "
+                        "with different keywords."
+                    )
+                else:
+                    out["_instruction"] = _search_result_instruction(len(all_results))
                 return out
             # External search returned nothing — fall through to local DB
     except Exception:
