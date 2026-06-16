@@ -213,7 +213,7 @@ def _image_url(path):
 # SelectProductView and older rows keep working.
 # ---------------------------------------------------------------------------
 
-FOCUS_MAX = 15
+FOCUS_MAX = 5
 
 
 def parse_focus_products(value):
