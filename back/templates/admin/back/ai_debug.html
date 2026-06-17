@@ -262,10 +262,11 @@ details[open] summary{color:var(--blue)}
             </div>
             <div class="iter-body">
               {% for tc in iter.tool_calls %}
-              <div class="tool-call">
-                <div class="tool-call-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+              <div class="tool-call" style="border-color:{% if tc.is_error %}#fca5a5{% else %}#fde68a{% endif %}">
+                <div class="tool-call-header" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'" style="background:{% if tc.is_error %}#fee2e2{% else %}#fef9c3{% endif %};border-bottom-color:{% if tc.is_error %}#fca5a5{% else %}#fde68a{% endif %}">
                   <span>🔧</span>
                   <span class="tool-name">{{ tc.name }}</span>
+                  {% if tc.is_error %}<span style="font-size:11px;color:#b91c1c;margin-left:8px">ERROR</span>{% endif %}
                   <span style="font-size:11px;color:#92400e;margin-left:auto">click to expand ▾</span>
                 </div>
                 <div class="tool-call-body" style="display:none">
@@ -347,7 +348,21 @@ details[open] summary{color:var(--blue)}
       {% elif not tool_call_logs %}
         <div class="no-data">No tool calls logged for this conversation yet.</div>
       {% else %}
-        {% regroup tool_call_logs by reply_id as pipeline_runs %}
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+          <div style="min-width:180px">
+            <label style="font-size:11px;color:#666;display:block">Tool name</label>
+            <input type="text" name="tool_name" value="{{ tool_filter }}" placeholder="search_products" style="width:180px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+          </div>
+          <div style="min-width:200px">
+            <label style="font-size:11px;color:#666;display:block">Reply ID</label>
+            <input type="text" name="reply_id" value="{{ reply_filter }}" placeholder="reply_id..." style="width:200px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+          </div>
+          <label style="font-size:12px;color:#333;display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <input type="checkbox" name="error_only" value="1" {% if error_only %}checked{% endif %}>
+            Errors only
+          </label>
+          <button type="submit" class="run-btn" style="padding:6px 14px;font-size:12px">Apply Filters</button>
+        </div>
         <div style="margin-bottom:12px;font-size:12px;color:#666">
           {{ tool_call_logs|length }} tool call(s) in {{ pipeline_runs|length }} pipeline run(s)
           · <strong>{{ selected_conv.customer_name|default:selected_conv.customer_id }}</strong> · {{ selected_conv.platform }}
@@ -356,25 +371,35 @@ details[open] summary{color:var(--blue)}
         <div style="margin-bottom:16px;border:2px solid var(--blue);border-radius:8px;overflow:hidden">
           <div style="display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--blue);color:#fff;font-size:13px;font-weight:600">
             <span>▶ Pipeline Run</span>
-            <code style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:4px;font-size:11px">{{ run.grouper|truncatechars:20 }}</code>
-            <span style="font-size:11px;opacity:0.8;margin-left:auto">{{ run.list|length }} tool call(s)</span>
+            <code style="background:rgba(255,255,255,0.2);padding:2px 8px;border-radius:4px;font-size:11px">{{ run.reply_id|truncatechars:20 }}</code>
+            <span style="font-size:11px;opacity:0.8;margin-left:auto">{{ run.tool_calls|length }} tool call(s)</span>
           </div>
-          {% for tcl in run.list %}
+          <div style="padding:8px 14px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#555">
+            <span><strong>Tokens:</strong> {{ run.usage_input }} in / {{ run.usage_output }} out</span>
+            {% if run.models %}<span><strong>Model:</strong> {{ run.models|join:", "|truncatechars:40 }}</span>{% endif %}
+            {% if run.credit_cost is not None %}<span><strong>Cost:</strong> {{ run.credit_cost|floatformat:4 }} credits</span>{% endif %}
+          </div>
+          {% for tcl in run.tool_calls %}
           <div class="iteration" style="margin:6px 8px;border-color:#e2e8f0">
             <div class="iter-header" style="background:#f8fafc;padding:6px 12px">
-              <span class="tool-name" style="font-size:13px;color:{% if tcl.tool_name == 'search_products' %}#2563eb{% elif tcl.tool_name == 'send_images' %}#7c3aed{% elif tcl.tool_name == 'create_order' %}#059669{% else %}#92400e{% endif %}">
-                🔧 {{ tcl.tool_name }}
+              <span class="tool-name" style="font-size:13px;color:{% if tcl.tool_name == 'think' %}#0ea5e9{% elif tcl.tool_name == 'search_products' %}#2563eb{% elif tcl.tool_name == 'send_images' %}#7c3aed{% elif tcl.tool_name == 'create_order' %}#059669{% else %}#92400e{% endif %}">
+                {% if tcl.tool_name == 'think' %}💭{% else %}🔧{% endif %} {{ tcl.tool_name }}
               </span>
               <span style="font-size:11px;color:#666;margin-left:12px">
                 iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
               </span>
               <span style="font-size:11px;color:#666;margin-left:auto">{{ tcl.timestamp|date:"H:i:s" }}</span>
+              {% if tcl.is_error %}<span style="font-size:11px;color:#b91c1c;margin-left:10px">ERROR</span>{% endif %}
             </div>
             <div class="iter-body" style="padding:8px 12px">
-              <div class="tool-label" style="font-size:10px">Arguments</div>
-              <div class="code-block" style="max-height:100px;margin-bottom:6px;font-size:11px">{{ tcl.arguments }}</div>
-              <div class="tool-label" style="font-size:10px">Result</div>
-              <div class="code-block" style="max-height:70px;font-size:11px">{{ tcl.result_summary|default:"—" }}</div>
+              <div style="font-size:12px;color:#333;margin-bottom:6px"><strong>Summary:</strong> {{ tcl.result_summary|default:"—" }}</div>
+              <details>
+                <summary>Show arguments &amp; output</summary>
+                <div class="tool-label" style="font-size:10px;margin-top:6px">Arguments</div>
+                <div class="code-block" style="max-height:140px;margin-bottom:6px;font-size:11px">{{ tcl.arguments }}</div>
+                <div class="tool-label" style="font-size:10px">Output (summary only)</div>
+                <div class="code-block" style="max-height:100px;font-size:11px">{{ tcl.result_summary|default:"—" }}</div>
+              </details>
             </div>
           </div>
           {% endfor %}

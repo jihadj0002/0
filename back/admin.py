@@ -169,6 +169,7 @@ class ConversationAdmin(admin.ModelAdmin):
         from api.ai.providers import call_llm
         from api.ai.tools import TOOL_DEFINITIONS, execute_tool
         from billing.models import CreditTransaction, ModelPricing, UsageSummary, UserBalance
+        from collections import defaultdict
 
         users = User.objects.filter(is_active=True).order_by("username")
 
@@ -186,6 +187,9 @@ class ConversationAdmin(admin.ModelAdmin):
         user_id = request.POST.get("user_id") or request.GET.get("user_id")
         conv_id = request.POST.get("conv_id") or request.GET.get("conv_id")
         message_text = request.POST.get("message", "")
+        tool_filter = request.POST.get("tool_name") or request.GET.get("tool_name") or ""
+        reply_filter = request.POST.get("reply_id") or request.GET.get("reply_id") or ""
+        error_only = (request.POST.get("error_only") or request.GET.get("error_only")) == "1"
 
         # ── Load selected user ────────────────────────────────────────────
         if user_id:
@@ -222,15 +226,66 @@ class ConversationAdmin(admin.ModelAdmin):
 
         # ── Load selected conversation ────────────────────────────────────
         tool_call_logs = []
+        pipeline_runs = []
         if conv_id and selected_user:
             try:
                 selected_conv = Conversation.objects.get(pk=conv_id, user=selected_user)
                 conv_history = list(
                     Message.objects.filter(conversation=selected_conv).order_by("timestamp")
                 )
+                tool_qs = ToolCallLog.objects.filter(conversation=selected_conv)
+                if tool_filter:
+                    tool_qs = tool_qs.filter(tool_name=tool_filter)
+                if reply_filter:
+                    tool_qs = tool_qs.filter(reply_id__icontains=reply_filter)
+                if error_only:
+                    tool_qs = tool_qs.filter(result_summary__icontains="error")
+
                 tool_call_logs = list(
-                    ToolCallLog.objects.filter(conversation=selected_conv).order_by("reply_id", "iteration", "timestamp")[:200]
+                    tool_qs.order_by("reply_id", "iteration", "timestamp")[:300]
                 )
+
+                reply_ids = sorted({t.reply_id for t in tool_call_logs if t.reply_id})
+                usage_by_reply = defaultdict(lambda: {"input": 0, "output": 0, "models": set()})
+                if reply_ids:
+                    for ul in UsageLog.objects.filter(user=selected_user, reply_id__in=reply_ids):
+                        usage_by_reply[ul.reply_id]["input"] += ul.input_tokens or 0
+                        usage_by_reply[ul.reply_id]["output"] += ul.output_tokens or 0
+                        if ul.model:
+                            usage_by_reply[ul.reply_id]["models"].add(ul.model)
+
+                credit_by_reply = {}
+                if reply_ids:
+                    for tx in CreditTransaction.objects.filter(
+                        user=selected_user,
+                        reply_id__in=reply_ids,
+                        transaction_type="deduction",
+                    ):
+                        credit_by_reply[tx.reply_id] = tx.amount
+
+                runs_map = defaultdict(list)
+                for t in tool_call_logs:
+                    runs_map[t.reply_id].append({
+                        "tool_name": t.tool_name,
+                        "iteration": t.iteration,
+                        "timestamp": t.timestamp,
+                        "execution_time_ms": t.execution_time_ms,
+                        "arguments": t.arguments,
+                        "result_summary": t.result_summary,
+                        "is_error": "error" in (t.result_summary or "").lower(),
+                    })
+
+                pipeline_runs = []
+                for rid, items in runs_map.items():
+                    usage = usage_by_reply.get(rid, {"input": 0, "output": 0, "models": set()})
+                    pipeline_runs.append({
+                        "reply_id": rid,
+                        "tool_calls": items,
+                        "usage_input": usage["input"],
+                        "usage_output": usage["output"],
+                        "models": sorted(usage["models"]),
+                        "credit_cost": credit_by_reply.get(rid),
+                    })
             except Conversation.DoesNotExist:
                 pass
 
@@ -310,6 +365,7 @@ class ConversationAdmin(admin.ModelAdmin):
                             fn_args = {}
 
                         tc_result = execute_tool(fn_name, fn_args, selected_user, selected_conv)
+                        is_error = isinstance(tc_result, dict) and bool(tc_result.get("error"))
 
                         if fn_name == "send_images" and isinstance(tc_result, dict):
                             pending_images.extend(tc_result.get("images", []))
@@ -318,6 +374,7 @@ class ConversationAdmin(admin.ModelAdmin):
                             "name": fn_name,
                             "args_json": json.dumps(fn_args, indent=2, ensure_ascii=False),
                             "result_json": json.dumps(tc_result, indent=2, ensure_ascii=False, default=str),
+                            "is_error": is_error,
                         })
 
                         messages_list.append({
@@ -382,7 +439,11 @@ class ConversationAdmin(admin.ModelAdmin):
             "pipeline_result": pipeline_result,
             "message_text": message_text,
             "active_tab": active_tab,
-            "tool_count": 7,
+            "tool_count": 8,
+            "pipeline_runs": pipeline_runs,
+            "tool_filter": tool_filter,
+            "reply_filter": reply_filter,
+            "error_only": error_only,
         }
         return render(request, "admin/back/ai_debug.html", context)
 
@@ -502,4 +563,3 @@ class ToolCallLogAdmin(admin.ModelAdmin):
             obj.conversation.platform if obj.conversation else "?",
         )
     conversation_link.short_description = "Conversation"
-
