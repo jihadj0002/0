@@ -314,7 +314,7 @@
     <div class="debug-panel">
       <h3>System Prompt</h3>
       {% if system_prompt %}
-        <div class="system-prompt">
+        <div class="system-prompt" id="systemPromptBox">
           {{ system_prompt|linebreaks }}
         </div>
         <form method="post" style="margin-top:12px;">
@@ -323,7 +323,7 @@
           <button type="submit" class="btn-save btn-sm">Regenerate Prompt</button>
         </form>
       {% else %}
-        <div class="empty-state">Select a conversation to view system prompt</div>
+        <div class="empty-state" id="systemPromptEmpty">Select a conversation to view system prompt</div>
       {% endif %}
     </div>
   </div>
@@ -340,7 +340,7 @@
         </div>
       {% endif %}
 
-      <div class="chat-messages">
+      <div class="chat-messages" id="chatMessages">
         {% if conversation_history %}
           {% for msg in conversation_history %}
             <div class="chat-message">
@@ -418,8 +418,33 @@
       {% endif %}
     </div>
 
-    <!-- Historical Tool Call Logs -->
+    <!-- Manual Tool Runner -->
     <div class="debug-panel">
+      <h3>Manual Tool Runner</h3>
+      {% if selected_conversation %}
+        <div class="form-group">
+          <label for="tool-select">Tool</label>
+          <select id="tool-select" class="form-select">
+            {% for tool_name in tool_names %}
+              <option value="{{ tool_name }}">{{ tool_name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="tool-args">Arguments (JSON)</label>
+          <textarea id="tool-args" placeholder='{"query": "nan 2"}'></textarea>
+        </div>
+        <div class="form-group">
+          <button type="button" class="btn-save" onclick="runManualTool()">Run Tool</button>
+        </div>
+        <div id="toolRunnerOutput" class="tool-call-result" style="display:none"></div>
+      {% else %}
+        <div class="empty-state">Select a conversation to run tools.</div>
+      {% endif %}
+    </div>
+
+    <!-- Historical Tool Call Logs -->
+    <div class="debug-panel" id="toolHistoryPanel">
       <h3>Tool Call History</h3>
       {% if tool_call_logs %}
         <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
@@ -483,55 +508,192 @@
 
 {% block extra_js %}
 <script>
+  function getCookie(name) {
+    const value = `; ${document.cookie}`;
+    const parts = value.split(`; ${name}=`);
+    if (parts.length === 2) return parts.pop().split(';').shift();
+    return '';
+  }
+
+  async function fetchConversations(userId) {
+    if (!userId) return;
+    const res = await fetch(`/db/ai-debug/conversations?user_id=${encodeURIComponent(userId)}`);
+    const data = await res.json();
+    const select = document.getElementById('conversation-select');
+    if (!select) return;
+    select.innerHTML = '<option value="">-- Select Conversation --</option>';
+    (data.conversations || []).forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = `${c.label} (${c.platform})`;
+      select.appendChild(opt);
+    });
+  }
+
+  function renderConversationHistory(history) {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    if (!history || !history.length) {
+      container.innerHTML = '<div class="empty-state">No messages available.</div>';
+      return;
+    }
+    container.innerHTML = '';
+    history.forEach(msg => {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'chat-message';
+      const sender = document.createElement('div');
+      sender.className = `sender ${msg.role === 'assistant' ? 'bot' : msg.role === 'user' ? 'customer' : 'agent'}`;
+      sender.textContent = msg.role === 'assistant' ? 'Bot' : msg.role === 'user' ? 'Customer' : 'Agent';
+      const text = document.createElement('div');
+      text.className = `text ${msg.role === 'assistant' ? 'bot' : msg.role === 'user' ? 'customer' : 'agent'}`;
+      text.textContent = msg.content || '';
+      wrapper.appendChild(sender);
+      wrapper.appendChild(text);
+      container.appendChild(wrapper);
+    });
+  }
+
+  function renderToolHistory(runs) {
+    const panel = document.getElementById('toolHistoryPanel');
+    if (!panel) return;
+    const header = panel.querySelector('h3');
+    panel.innerHTML = '';
+    if (header) panel.appendChild(header);
+
+    if (!runs || !runs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'No tool call logs recorded yet for this conversation.';
+      panel.appendChild(empty);
+      return;
+    }
+
+    runs.forEach(run => {
+      const runBox = document.createElement('div');
+      runBox.className = 'tool-call';
+      runBox.style.borderColor = '#93c5fd';
+
+      const runHeader = document.createElement('div');
+      runHeader.className = 'tool-call-header';
+      runHeader.innerHTML = `<div class="tool-call-name">Run ${run.reply_id.slice(0, 18)}</div>` +
+        `<div class="tool-call-time">${run.tool_calls.length} calls · ${run.usage_input} in / ${run.usage_output} out` +
+        `${run.credit_cost != null ? ' · ' + Number(run.credit_cost).toFixed(4) + ' credits' : ''}</div>`;
+      runBox.appendChild(runHeader);
+
+      run.tool_calls.forEach(tc => {
+        const tbox = document.createElement('div');
+        tbox.className = 'tool-call';
+        tbox.style.margin = '10px 0';
+        tbox.style.borderColor = tc.is_error ? '#fca5a5' : '#e2e8f0';
+
+        const thead = document.createElement('div');
+        thead.className = 'tool-call-header';
+        thead.style.background = tc.is_error ? '#fee2e2' : '#fef9c3';
+        thead.style.borderBottom = `1px solid ${tc.is_error ? '#fca5a5' : '#fde68a'}`;
+        thead.style.cursor = 'pointer';
+        thead.onclick = () => {
+          tbody.style.display = tbody.style.display === 'none' ? 'block' : 'none';
+        };
+        thead.innerHTML = `${tc.tool_name === 'think' ? '💭' : '🔧'} <span style="font-weight:700;font-size:13px;color:#92400e">${tc.tool_name}</span>` +
+          `${tc.is_error ? '<span style="font-size:11px;color:#b91c1c;margin-left:6px">ERROR</span>' : ''}` +
+          `<span style="font-size:11px;color:#666;margin-left:auto">iter ${tc.iteration} · ${tc.execution_time_ms}ms</span>`;
+
+        const tbody = document.createElement('div');
+        tbody.className = 'tool-call-body';
+        tbody.style.display = 'none';
+        tbody.style.padding = '10px 12px';
+        tbody.innerHTML = `<div style="font-size:12px;color:#333;margin-bottom:6px"><strong>Summary:</strong> ${tc.result_summary || '—'}</div>` +
+          `<details><summary>Show arguments</summary><pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto">${JSON.stringify(tc.arguments, null, 2)}</pre></details>` +
+          `<div style="font-size:10px;color:#999;margin-top:6px;text-align:right">${tc.timestamp.replace('T',' ').slice(0,19)} · <code>${run.reply_id.slice(0,16)}</code></div>`;
+
+        tbox.appendChild(thead);
+        tbox.appendChild(tbody);
+        runBox.appendChild(tbox);
+      });
+
+      panel.appendChild(runBox);
+    });
+  }
+
+  async function fetchContext(conversationId) {
+    if (!conversationId) return;
+    const toolName = document.querySelector('input[name="tool_name"]')?.value || '';
+    const replyId = document.querySelector('input[name="reply_id"]')?.value || '';
+    const errorOnly = document.querySelector('input[name="error_only"]')?.checked ? '1' : '0';
+    const url = `/db/ai-debug/context?conversation_id=${encodeURIComponent(conversationId)}&tool_name=${encodeURIComponent(toolName)}&reply_id=${encodeURIComponent(replyId)}&error_only=${errorOnly}`;
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (data.system_prompt) {
+      const box = document.getElementById('systemPromptBox');
+      if (box) box.textContent = data.system_prompt;
+    }
+    renderConversationHistory(data.conversation_history || []);
+    renderToolHistory(data.pipeline_runs || []);
+  }
+
+  async function runManualTool() {
+    const convId = document.getElementById('conversation-select')?.value;
+    const toolName = document.getElementById('tool-select')?.value;
+    const toolArgs = document.getElementById('tool-args')?.value || '{}';
+    const output = document.getElementById('toolRunnerOutput');
+    if (!convId || !toolName || !output) return;
+
+    output.style.display = 'block';
+    output.textContent = 'Running...';
+
+    const res = await fetch('/db/ai-debug/run-tool', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': getCookie('csrftoken')
+      },
+      body: JSON.stringify({
+        conversation_id: convId,
+        tool_name: toolName,
+        tool_args: toolArgs
+      })
+    });
+    const data = await res.json();
+    if (data.error) {
+      output.style.color = '#b91c1c';
+      output.textContent = data.error;
+      return;
+    }
+    output.style.color = '#065f46';
+    output.textContent = JSON.stringify(data, null, 2);
+  }
+
   document.addEventListener('DOMContentLoaded', function() {
-    // Auto-select first user on load if none selected
     const userSelect = document.getElementById('user-select');
+    const conversationSelect = document.getElementById('conversation-select');
+
     if (userSelect && !userSelect.value) {
       const firstOption = userSelect.querySelector('option');
       if (firstOption && firstOption.value !== '') {
         userSelect.value = firstOption.value;
-        // Trigger change to load conversations
-        const event = new Event('change');
-        userSelect.dispatchEvent(event);
+        fetchConversations(userSelect.value);
       }
     }
 
-    // Handle user selection change to load conversations
     if (userSelect) {
       userSelect.addEventListener('change', function() {
         if (this.value) {
-          document.getElementById('action-input').value = 'select_user';
-          document.getElementById('user-conversation-form').submit();
+          fetchConversations(this.value);
         }
       });
     }
-    
-    // Handle conversation selection change
-    const conversationSelect = document.getElementById('conversation-select');
+
     if (conversationSelect) {
       conversationSelect.addEventListener('change', function() {
         if (this.value) {
-          document.getElementById('action-input').value = 'select_conversation';
-          document.getElementById('user-conversation-form').submit();
+          fetchContext(this.value);
         }
       });
     }
 
-    // Initialize conversation select if we have a selected conversation
-    const conversationSelect = document.getElementById('conversation-select');
-    if (conversationSelect) {
-      {% if selected_conversation %}
-      conversationSelect.value = {{ selected_conversation.id }};
-      {% endif %}
-    }
-
-    // Auto-focus message textarea when conversation is selected
     {% if selected_conversation %}
-    document.addEventListener('DOMContentLoaded', function() {
-      setTimeout(function() {
-        document.getElementById('message-text')?.focus();
-      }, 100);
-    });
+    fetchContext({{ selected_conversation.id }});
     {% endif %}
   });
 </script>

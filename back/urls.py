@@ -72,4 +72,7 @@ urlpatterns = [
     path("tickets/resolve", views.ajax_ticket_resolve, name="ajax_ticket_resolve"),
     path("tickets/reopen", views.ajax_ticket_reopen, name="ajax_ticket_reopen"),
     path("ai-debug/", views.ai_debug, name="ai_debug"),
+    path("ai-debug/conversations", views.ai_debug_conversations, name="ai_debug_conversations"),
+    path("ai-debug/context", views.ai_debug_context, name="ai_debug_context"),
+    path("ai-debug/run-tool", views.ai_debug_run_tool, name="ai_debug_run_tool"),
 ]

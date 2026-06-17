@@ -1984,6 +1984,7 @@ def ai_debug(request):
         'conversation_history': conversation_history,
         'debug_info': debug_info,
         'tool_call_logs': tool_call_logs,
+        'tool_names': [t.get("function", {}).get("name") for t in TOOL_DEFINITIONS],
         'pipeline_runs': pipeline_runs,
         'tool_filter': tool_filter,
         'reply_filter': reply_filter,
@@ -1991,3 +1992,157 @@ def ai_debug(request):
     }
     
     return render(request, 'back/ai_debug.html', context)
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+def ai_debug_conversations(request):
+    user_id = request.GET.get("user_id")
+    if not user_id:
+        return JsonResponse({"conversations": []})
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return JsonResponse({"conversations": []})
+
+    conversations = Conversation.objects.filter(user=user).order_by("-updated_at")[:60]
+    data = []
+    for c in conversations:
+        label = c.customer_name or c.customer_id
+        data.append({
+            "id": c.id,
+            "label": label,
+            "platform": c.platform,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+        })
+    return JsonResponse({"conversations": data})
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+def ai_debug_context(request):
+    from back.models import ToolCallLog, UsageLog
+    from billing.models import CreditTransaction
+    from collections import defaultdict
+
+    conv_id = request.GET.get("conversation_id")
+    if not conv_id:
+        return JsonResponse({"error": "conversation_id required"}, status=400)
+
+    try:
+        conversation = Conversation.objects.get(pk=conv_id)
+    except Conversation.DoesNotExist:
+        return JsonResponse({"error": "conversation not found"}, status=404)
+
+    tool_filter = request.GET.get("tool_name") or ""
+    reply_filter = request.GET.get("reply_id") or ""
+    error_only = request.GET.get("error_only") == "1"
+
+    system_prompt = build_system_prompt(conversation.user, conversation)
+    conversation_history = get_conversation_history(conversation, limit=50)
+
+    tool_qs = ToolCallLog.objects.filter(conversation=conversation)
+    if tool_filter:
+        tool_qs = tool_qs.filter(tool_name=tool_filter)
+    if reply_filter:
+        tool_qs = tool_qs.filter(reply_id__icontains=reply_filter)
+    if error_only:
+        tool_qs = tool_qs.filter(result_summary__icontains="error")
+
+    tool_call_logs = list(tool_qs.order_by("reply_id", "iteration", "timestamp")[:300])
+    reply_ids = sorted({t.reply_id for t in tool_call_logs if t.reply_id})
+
+    usage_by_reply = defaultdict(lambda: {"input": 0, "output": 0, "models": set()})
+    if reply_ids:
+        for ul in UsageLog.objects.filter(user=conversation.user, reply_id__in=reply_ids):
+            usage_by_reply[ul.reply_id]["input"] += ul.input_tokens or 0
+            usage_by_reply[ul.reply_id]["output"] += ul.output_tokens or 0
+            if ul.model:
+                usage_by_reply[ul.reply_id]["models"].add(ul.model)
+
+    credit_by_reply = {}
+    if reply_ids:
+        for tx in CreditTransaction.objects.filter(
+            user=conversation.user,
+            reply_id__in=reply_ids,
+            transaction_type="deduction",
+        ):
+            credit_by_reply[tx.reply_id] = float(tx.amount)
+
+    runs_map = defaultdict(list)
+    for t in tool_call_logs:
+        runs_map[t.reply_id].append({
+            "tool_name": t.tool_name,
+            "iteration": t.iteration,
+            "timestamp": t.timestamp.isoformat(),
+            "execution_time_ms": t.execution_time_ms,
+            "arguments": t.arguments,
+            "result_summary": t.result_summary,
+            "is_error": "error" in (t.result_summary or "").lower(),
+        })
+
+    pipeline_runs = []
+    for rid, items in runs_map.items():
+        usage = usage_by_reply.get(rid, {"input": 0, "output": 0, "models": set()})
+        pipeline_runs.append({
+            "reply_id": rid,
+            "tool_calls": items,
+            "usage_input": usage["input"],
+            "usage_output": usage["output"],
+            "models": sorted(usage["models"]),
+            "credit_cost": credit_by_reply.get(rid),
+        })
+
+    return JsonResponse({
+        "system_prompt": system_prompt,
+        "conversation_history": conversation_history,
+        "pipeline_runs": pipeline_runs,
+    })
+
+
+@login_required
+@user_passes_test(lambda u: u.is_staff)
+def ai_debug_run_tool(request):
+    import json
+    from api.ai.tools import execute_tool
+    from api.ai.pipeline import _summarize_tool_result
+
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=405)
+
+    try:
+        payload = json.loads(request.body.decode("utf-8")) if request.body else request.POST
+    except Exception:
+        payload = request.POST
+
+    conv_id = payload.get("conversation_id")
+    tool_name = payload.get("tool_name")
+    args_raw = payload.get("tool_args") or "{}"
+
+    if not conv_id or not tool_name:
+        return JsonResponse({"error": "conversation_id and tool_name required"}, status=400)
+
+    try:
+        conversation = Conversation.objects.get(pk=conv_id)
+    except Conversation.DoesNotExist:
+        return JsonResponse({"error": "conversation not found"}, status=404)
+
+    try:
+        args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+    except Exception:
+        args = {}
+
+    try:
+        result = execute_tool(tool_name, args, conversation.user, conversation)
+    except Exception as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    summary = _summarize_tool_result(tool_name, result)
+    is_error = isinstance(result, dict) and bool(result.get("error"))
+    return JsonResponse({
+        "tool_name": tool_name,
+        "arguments": args,
+        "result": result,
+        "summary": summary,
+        "is_error": is_error,
+    })
