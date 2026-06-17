@@ -7,7 +7,7 @@ from .providers import call_llm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PLANNER_MODEL = os.environ.get("OPENROUTER_PLANNER_MODEL", "openai/gpt-4o-mini")
+DEFAULT_PLANNER_MODEL = os.environ.get("OPENROUTER_PLANNER_MODEL", "google/gemini-2.5-flash-lite")
 
 
 def _strip_code_fences(text):
@@ -34,6 +34,8 @@ def _fallback_plan(customer_text, max_retries=3):
         "stop_criteria": {"name_contains": stop_tokens},
         "max_retries": max_retries,
         "needs_images": False,
+        "match_mode": "specific",
+        "result_limit": 1,
     }
 
 
@@ -71,7 +73,9 @@ def build_planner_prompt(user, conversation, customer_text, retry_reason=None, p
         "  \"search_queries\": [string, ...],\n"
         "  \"stop_criteria\": {\"name_contains\": [string, ...]},\n"
         "  \"max_retries\": 3,\n"
-        "  \"needs_images\": true | false\n"
+        "  \"needs_images\": true | false,\n"
+        "  \"match_mode\": \"specific\" | \"browsing\",\n"
+        "  \"result_limit\": 1 | 2 | 3\n"
         "}\n"
         "Rules:\n"
         "- Always produce 2-3 search_queries when intent=find_product.\n"
@@ -79,6 +83,11 @@ def build_planner_prompt(user, conversation, customer_text, retry_reason=None, p
         "- Use short keyword queries (1-3 words), include synonyms.\n"
         "- name_contains should include core product words (e.g., dress, frock, skirt).\n"
         "- Use max_retries=3.\n"
+        "- Do NOT add unrelated product types (e.g., do not add 'bread' unless the customer asked for bread).\n"
+        "- If the request is for a specific product (brand + number/variant), "
+        "set match_mode=specific and result_limit=1.\n"
+        "- If the customer is browsing or asks 'what do you have', set "
+        "match_mode=browsing and result_limit=3.\n"
         "- Output ONLY JSON, no extra text.\n"
     )
 
@@ -127,6 +136,8 @@ def plan_search(user, conversation, customer_text, retry_reason=None, previous_q
     plan.setdefault("search_queries", [])
     plan.setdefault("stop_criteria", {"name_contains": []})
     plan.setdefault("needs_images", False)
+    plan.setdefault("match_mode", "specific")
+    plan.setdefault("result_limit", 1)
 
     # Normalize queries
     queries = []
@@ -146,5 +157,19 @@ def plan_search(user, conversation, customer_text, retry_reason=None, previous_q
     stop = plan.get("stop_criteria") or {}
     name_contains = [str(t).strip().lower() for t in (stop.get("name_contains") or []) if str(t).strip()]
     plan["stop_criteria"] = {"name_contains": name_contains[:5]}
+
+    # Normalize match mode / result limit
+    match_mode = str(plan.get("match_mode") or "specific").strip().lower()
+    if match_mode not in ("specific", "browsing"):
+        match_mode = "specific"
+    plan["match_mode"] = match_mode
+
+    try:
+        limit = int(plan.get("result_limit", 1))
+    except Exception:
+        limit = 1
+    if limit not in (1, 2, 3):
+        limit = 1 if match_mode == "specific" else 3
+    plan["result_limit"] = limit
 
     return plan, usage

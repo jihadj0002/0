@@ -46,12 +46,12 @@ from .context import build_system_prompt, get_conversation_history
 from .planner import plan_search
 from .providers import call_llm
 from .sender import send_reply
-from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
+from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products, _focus_products
 from .verifier import verify_results
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 7
+MAX_TOOL_ITERATIONS = 5
 
 
 def _split_text_messages(text):
@@ -153,6 +153,11 @@ def _planner_context(plan, results, verify):
                 pid = p.get("pid", "")
                 price = p.get("price") or p.get("discounted_price") or ""
                 lines.append(f"- {name} (PID: {pid}) {price}")
+    if plan.get("match_mode") == "specific":
+        lines.append("Planner says: specific match. Show only the TOP result.")
+    lines.append("Planner already searched. Do NOT call search_products again unless the customer changes the request or asks for alternatives.")
+    if plan.get("result_limit"):
+        lines.append(f"Result limit: {plan.get('result_limit')}")
     return "\n".join(lines)
 
 
@@ -283,7 +288,7 @@ def run(conversation, incoming_message):
     reply_id = uuid.uuid4().hex
 
     system_prompt = build_system_prompt(user, conversation)
-    history = get_conversation_history(conversation, limit=20)
+    history = get_conversation_history(conversation, limit=12)
 
     # Ensure the triggering message is the last user turn
     customer_text = incoming_message.text or ""
@@ -292,6 +297,15 @@ def run(conversation, incoming_message):
 
     plan, plan_results, plan_verify = _plan_and_search(user, conversation, customer_text, reply_id)
     planner_notes = _planner_context(plan, plan_results, plan_verify)
+    plan_best = (plan_verify or {}).get("best_candidates") or []
+    plan_match_mode = (plan or {}).get("match_mode") or "specific"
+    plan_result_limit = int((plan or {}).get("result_limit", 1) or 1)
+    plan_best_pids = [p.get("pid") for p in plan_best if p.get("pid")]
+    if plan_best:
+        try:
+            _focus_products(conversation, plan_best)
+        except Exception as exc:
+            logger.warning("Focus products update failed: %s", exc)
     system_content = system_prompt + ("\n\n" + planner_notes if planner_notes else "")
     messages = [{"role": "system", "content": system_content}] + history
 
@@ -303,7 +317,13 @@ def run(conversation, incoming_message):
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         try:
-            llm_msg, usage = call_llm(messages=messages, tools=TOOL_DEFINITIONS, model=model)
+            llm_msg, usage = call_llm(
+                messages=messages,
+                tools=TOOL_DEFINITIONS,
+                model=model,
+                temperature=0.6,
+                max_tokens=700,
+            )
         except Exception:
             logger.exception("LLM call failed reply_id=%s iter=%d", reply_id, iteration)
             break
@@ -346,6 +366,16 @@ def run(conversation, incoming_message):
                 fn_args = json.loads(tc.function.arguments or "{}")
             except (json.JSONDecodeError, TypeError):
                 fn_args = {}
+
+            if fn_name == "send_images":
+                if plan_match_mode == "specific" and plan_result_limit == 1:
+                    # Restrict to a single best match to avoid sending unrelated items
+                    if plan_best_pids:
+                        fn_args.pop("pids", None)
+                        fn_args["pid"] = plan_best_pids[0]
+                elif plan_result_limit and "pids" in fn_args and plan_best_pids:
+                    # For browsing, cap to the planner's result limit
+                    fn_args["pids"] = plan_best_pids[:plan_result_limit]
 
             t0 = time.time()
             result = execute_tool(fn_name, fn_args, user, conversation)

@@ -6,14 +6,15 @@ def _tokenize(text):
 
 
 def verify_results(plan, results):
-    """Loose verifier: accepts if any result name contains any stop token.
+    """Loose verifier: rank by token overlap, allow soft matches.
 
     Returns dict: {is_valid, best_candidates, reason}
     """
     stop = (plan.get("stop_criteria") or {}).get("name_contains") or []
     stop_tokens = [t.lower() for t in stop if t]
+    result_limit = int(plan.get("result_limit", 3) or 3)
 
-    candidates = []
+    scored = []
     for p in results or []:
         name = (p.get("name") or "").lower()
         name_tokens = set(_tokenize(name))
@@ -21,25 +22,23 @@ def verify_results(plan, results):
         for t in stop_tokens:
             if t in name_tokens:
                 score += 1
-        if score > 0:
-            candidates.append((score, p))
+        scored.append((score, p))
 
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    best = [p for _, p in candidates][:5]
+    scored.sort(key=lambda item: item[0], reverse=True)
+    best = [p for _, p in scored if p][:result_limit]
 
-    if best:
+    if best and (scored[0][0] > 0):
         return {
             "is_valid": True,
             "best_candidates": best,
-            "reason": "Matched stop criteria tokens in product names",
+            "reason": "Matched stop tokens in product names",
         }
 
-    # No strict token match: allow soft pass if there are results but no stop tokens
     if results:
         return {
             "is_valid": True,
-            "best_candidates": results[:5],
-            "reason": "No exact token match; passing loosely with available results",
+            "best_candidates": results[:result_limit],
+            "reason": "Loose match: no token overlap but results available",
         }
 
     return {
