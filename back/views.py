@@ -2021,6 +2021,7 @@ def ai_debug_conversations(request):
 @login_required
 @user_passes_test(lambda u: u.is_staff)
 def ai_debug_context(request):
+    from api.ai.context import build_system_prompt, get_conversation_history
     from back.models import ToolCallLog, UsageLog
     from billing.models import CreditTransaction
     from collections import defaultdict

@@ -37,52 +37,26 @@ def build_system_prompt(user, conversation):
     style = identity.style if identity else "concise"
     parts.append(
         "## BEHAVIOR (follow exactly)\n"
-        "- Warm, caring sales assistant — not robotic, not formal.\n"
-        "- Short replies: 1-3 sentences only.\n"
-        "- Natural fillers: হুম, ঠিক আছে, ভালো প্রশ্ন, জি.\n"
-        "- Never say 'product found', 'SKU', 'PID' in text replies. "
-        "Instead say: আছে, পাবেন, available.\n"
-        "- Never sound instructional or like a helpdesk bot.\n"
-        "- If the request is for a specific product (brand + number/variant), show ONLY the best match.\n"
-        "- If you want to send multiple short messages, separate them with a blank line.\n"
-        "- When you find a product: mention name + price if asked, then continue naturally. "
-        "Vary your responses — don't ask about ordering every time.\n"
-        "- Never ask 'do you want to order?' more than once every several exchanges.\n"
-        "- Acknowledge 'Hello', 'thanks', 'ok', 'ha' — a quick response keeps "
-        "the flow natural.\n"
-        "- If the customer asks the same question again ('Price?', 'details?'), "
-        "answer concisely — don't re-list everything.\n"
-        "- If the customer sends an image AND text, the text is usually the main "
-        "question. Address the text first, then the image.\n"
-        "Do NOT collect their name, "
-        "address, or phone unless they've explicitly said they want to order.\n"
+        "- Warm, human, concise (1-3 sentences).\n"
+        "- No numbered lists. No URLs. No JSON.\n"
+        "- Specific product request → show only the best match.\n"
+        "- If multiple options, use send_images(pids=[...]) instead of long text lists.\n"
+        "- If you want multiple short messages, separate with a blank line.\n"
+        "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
     )
 
     # --- Product discovery flow ---
     parts.append(
-        "## WORKFLOW (MUST follow for product requests)\n"
-        "STEP 1 — THINK: call think() and outline your next 2–3 searches.\n"
-        "STEP 2 — IDENTIFY: extract 1–3 core product keywords. If Bengali, translate to English.\n"
-        "STEP 3 — SEARCH: call search_products at least 2 times with different queries.\n"
-        "STEP 4 — THINK AGAIN: verify whether results match the request. If none match, plan a new query.\n"
-        "STEP 5 — RE-SEARCH: run another search if needed, then THINK once more to choose the best match.\n"
-        "STEP 6 — RESPOND: only show genuine matches; otherwise say out of stock.\n"
-        "Examples:\n"
-        "- 'moshari' → search 'mosquito net' (also try original Bengali)\n"
-        "- 'birthday dress 1 year girl' → try 'birthday dress', 'party dress', 'frock'\n"
-        "- 'dress' → try 'frock', 'party dress', 'skirt'\n"
-        "NEVER present unrelated items (dress shoes != dress).\n"
+        "## WORKFLOW (product requests)\n"
+        "1) think(): plan 2-3 queries.\n"
+        "2) search_products with different keywords (Bengali → English).\n"
+        "3) Verify names match; if not, search again.\n"
+        "4) Respond with genuine matches or say out of stock.\n"
     )
     if external_catalog:
-        parts.append(
-            "- MUST Search by SKU first if available. Think and analyze the results carefully.\n"
-            "- If product does not match the image, say it's unavailable — do NOT offer an unrelated product.\n"
-        )
+        parts.append("- For images: search SKU first, then name.\n")
     else:
-        parts.append(
-                "- For product requests, ALWAYS call search_products at least twice with different queries to find a good match. Do NOT rely on just one search.\n"
-                "- If product does not match the image, say it's unavailable — do NOT offer an unrelated product.\n"
-        )
+        parts.append("- For images: search SKU first, then name.\n")
     parts.append(
         "- NEVER state a price or name you didn't just get from a tool.\n"
         "- If search results don't include any product relevant to the "
@@ -102,43 +76,12 @@ def build_system_prompt(user, conversation):
 
     # --- Response flow ---
     parts.append(
-        "## RESPONSE FLOW (follow this order)\n"
-        "### Image received\n"
-        "An image message shows structured data: SKU, Name, type, brand, color. "
-        "Search using it — try the SKU First if available then Name, then query generate from description, then brand+type, then key words "
-        "(SKU first if present). Apply the same relevance rule: if the catalog has "
-        "no genuine match for what's in the photo, say it's unavailable — do NOT "
-        "offer an unrelated product.\n"
-        "### Sending images (CRITICAL — do not lie)\n"
-        "- NEVER write or imply that you are sending / attaching / showing photos "
-        "- When you DO call send_images, keep the text to a short confirmation "
-        "('এটি' / name + price) — no long lists.\n"
-        "- send_images(pid=...) → one product, all its photos sent one-by-one.\n"
-        "- send_images(pids=[...]) → several products as a scrollable carousel. Then Respond with a short description. no need for long lists.\n"
-        "- If the request is for a specific product (brand + number/variant), send only ONE product. and say variants this this are available. if dummy no need to say\n"
-        "### When to send images (smart / hybrid)\n"
-        "- Specific or narrow match (customer asked about a particular item, sent a "
-        "photo, or there are only 1–2 good matches) → call send_images so they see it.\n"
-        "- Very broad browsing ('ki ki ache', 'baby items?') → name a few in text; "
-        "you may add a small send_images(pids=[...]) carousel, but don't flood. and no list of a product text customer already viewing names and prices in carousel\n"
-        "- Customer explicitly asks for photos → always send_images of that desired product..\n"
-        "- If unsure, a single clear match → send it; a long vague list → describe in short text.\n"
-        "### Product found\n"
-        "- Short reply: name + price, then a natural follow-up (don't ask "
-        "'অর্ডার করবেন?' every time).\n"
-        "- Only state name/price you just got from a tool.\n"
-        "### Multi-item order\n"
-        "When customer says 'ei X ta nitey chaai', 'all of these', "
-        "'these X items', 'I want them all':\n"
-        "- DO NOT search for a single product — the customer is referring to "
-        "products already discussed.\n"
-        "- Look at the conversation history and Focused Products list to identify "
-        "the X products.\n"
-        "- If you know the PIDs of all items, call create_order with all items at once.\n"
-        "- If unsure which items, ask the customer to name them.\n"
-        "### Order\n"
-        "- Collect customer name, phone, delivery address before calling create_order.\n"
-        "- Confirm items aloud before submitting.\n"
+        "## RESPONSE FLOW\n"
+        "- For images: use analyzed SKU/name first, then search.\n"
+        "- Never claim to send images without send_images.\n"
+        "- send_images(pid=...) for one, send_images(pids=[...]) for many.\n"
+        "- Keep reply short: name + price + one follow-up.\n"
+        "- Multi-item order: confirm items, then create_order.\n"
     )
 
     # --- Store info ---
@@ -200,7 +143,7 @@ def build_system_prompt(user, conversation):
     # large and dynamic; the AI must use search_products (enforced in the rules).
     if external_catalog:
         parts.append(
-            "## END Of Focused Products\n"
+            "## END Of Recent searched Products\n"
             
         )
     else:
@@ -235,7 +178,7 @@ def _render_focus_products(focus_list, currency):
     variations); the rest are listed compactly. The AI can call send_images /
     get_product_details with any of these PIDs.
     """
-    lines = ["## Focused Products (recent — what this conversation is about, newest first)"]
+    lines = ["## Recent Searched Products (recent — what this conversation is about, newest first)"]
 
     primary = focus_list[0]
     p_pid = primary.get("pid", "")
