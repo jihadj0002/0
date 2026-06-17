@@ -43,15 +43,13 @@ def _promises_images(text):
 
 
 from .context import build_system_prompt, get_conversation_history
-from .planner import plan_search
 from .providers import call_llm
 from .sender import send_reply
-from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products, _focus_products
-from .verifier import verify_results
+from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ITERATIONS = 5
+MAX_TOOL_ITERATIONS = 7
 
 
 def _split_text_messages(text):
@@ -61,104 +59,6 @@ def _split_text_messages(text):
     return parts if len(parts) > 1 else [text]
 
 
-def _log_planner(user, reply_id, usage, call_type="planner"):
-    _log(user, reply_id, usage, call_type=call_type)
-
-
-def _plan_and_search(user, conversation, customer_text, reply_id):
-    plan, usage = plan_search(user, conversation, customer_text)
-    _log_planner(user, reply_id, usage, call_type="planner")
-
-    if not isinstance(plan, dict) or plan.get("intent") != "find_product":
-        return plan, [], None
-
-    max_retries = int(plan.get("max_retries", 3) or 3)
-    previous_queries = []
-    final_results = []
-    final_verify = None
-
-    for attempt in range(max_retries):
-        queries = plan.get("search_queries") or []
-        if not queries:
-            break
-
-        results = []
-        products = []
-        for q in queries:
-            if q in previous_queries:
-                continue
-            previous_queries.append(q)
-            fn_args = {"query": q, "limit": 5}
-            t0 = time.time()
-            result = execute_tool("search_products", fn_args, user, conversation)
-            elapsed = int((time.time() - t0) * 1000)
-            results.append({"query": q, "result": result})
-            products.extend(result.get("products", []) if isinstance(result, dict) else [])
-
-            try:
-                ToolCallLog.objects.create(
-                    conversation=conversation,
-                    user=user,
-                    reply_id=reply_id,
-                    iteration=-1,
-                    tool_name="search_products",
-                    arguments=fn_args,
-                    result_summary=_summarize_tool_result("search_products", result),
-                    execution_time_ms=elapsed,
-                )
-            except Exception as exc:
-                logger.warning("ToolCallLog write failed (planner search): %s", exc)
-
-        final_results = results
-        final_verify = verify_results(plan, products)
-        if final_verify.get("is_valid"):
-            break
-
-        retry_reason = final_verify.get("reason") or "No relevant matches"
-        plan, usage = plan_search(
-            user,
-            conversation,
-            customer_text,
-            retry_reason=retry_reason,
-            previous_queries=previous_queries,
-        )
-        _log_planner(user, reply_id, usage, call_type=f"planner_retry_{attempt + 1}")
-
-    return plan, final_results, final_verify
-
-
-def _planner_context(plan, results, verify):
-    if not plan:
-        return ""
-    lines = ["## Planner"]
-    intent = plan.get("intent", "find_product")
-    lines.append(f"Intent: {intent}")
-    queries = plan.get("search_queries") or []
-    if queries:
-        lines.append("Planned queries: " + ", ".join(queries))
-    if results:
-        for r in results:
-            q = r.get("query")
-            res = r.get("result", {})
-            products = res.get("products", []) if isinstance(res, dict) else []
-            names = [p.get("name", p.get("pid", "?")) for p in products[:5]]
-            lines.append(f"Search '{q}' → {len(products)} results: {', '.join(names)}")
-    if verify:
-        lines.append(f"Verification: {verify.get('reason', 'n/a')}")
-        best = verify.get("best_candidates") or []
-        if best:
-            lines.append("Verified candidates:")
-            for p in best[:5]:
-                name = p.get("name", "")
-                pid = p.get("pid", "")
-                price = p.get("price") or p.get("discounted_price") or ""
-                lines.append(f"- {name} (PID: {pid}) {price}")
-    if plan.get("match_mode") == "specific":
-        lines.append("Planner says: specific match. Show only the TOP result.")
-    lines.append("Planner already searched. Do NOT call search_products again unless the customer changes the request or asks for alternatives.")
-    if plan.get("result_limit"):
-        lines.append(f"Result limit: {plan.get('result_limit')}")
-    return "\n".join(lines)
 
 
 def _summarize_tool_result(tool_name, result):
@@ -295,19 +195,7 @@ def run(conversation, incoming_message):
     if not history or history[-1].get("content") != customer_text or history[-1].get("role") != "user":
         history.append({"role": "user", "content": customer_text})
 
-    plan, plan_results, plan_verify = _plan_and_search(user, conversation, customer_text, reply_id)
-    planner_notes = _planner_context(plan, plan_results, plan_verify)
-    plan_best = (plan_verify or {}).get("best_candidates") or []
-    plan_match_mode = (plan or {}).get("match_mode") or "specific"
-    plan_result_limit = int((plan or {}).get("result_limit", 1) or 1)
-    plan_best_pids = [p.get("pid") for p in plan_best if p.get("pid")]
-    if plan_best:
-        try:
-            _focus_products(conversation, plan_best)
-        except Exception as exc:
-            logger.warning("Focus products update failed: %s", exc)
-    system_content = system_prompt + ("\n\n" + planner_notes if planner_notes else "")
-    messages = [{"role": "system", "content": system_content}] + history
+    messages = [{"role": "system", "content": system_prompt}] + history
 
     final_text = None
     pending_images = []
@@ -366,16 +254,6 @@ def run(conversation, incoming_message):
                 fn_args = json.loads(tc.function.arguments or "{}")
             except (json.JSONDecodeError, TypeError):
                 fn_args = {}
-
-            if fn_name == "send_images":
-                if plan_match_mode == "specific" and plan_result_limit == 1:
-                    # Restrict to a single best match to avoid sending unrelated items
-                    if plan_best_pids:
-                        fn_args.pop("pids", None)
-                        fn_args["pid"] = plan_best_pids[0]
-                elif plan_result_limit and "pids" in fn_args and plan_best_pids:
-                    # For browsing, cap to the planner's result limit
-                    fn_args["pids"] = plan_best_pids[:plan_result_limit]
 
             t0 = time.time()
             result = execute_tool(fn_name, fn_args, user, conversation)

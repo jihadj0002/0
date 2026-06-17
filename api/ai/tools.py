@@ -170,6 +170,20 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "think",
+            "description": "Private thinking step. Use to outline your next actions before calling tools. Do NOT include customer-facing text. This does not message the customer.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "notes": {"type": "string", "description": "Short internal plan (1-3 lines)"},
+                },
+                "required": ["notes"],
+            },
+        },
+    },
 ]
 
 
@@ -1076,6 +1090,10 @@ def tool_search_knowledge_base(user, query, limit=3):
     return {"results": results, "total": len(results)}
 
 
+def tool_think(notes):
+    return {"ok": True, "notes": notes}
+
+
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1138,6 +1156,9 @@ def execute_tool(name, arguments, user, conversation):
                 query=args.get("query", ""),
                 limit=int(args.get("limit", 3)),
             )
+
+        if name == "think":
+            return tool_think(args.get("notes", ""))
 
         return {"error": f"Unknown tool: {name}"}
 
