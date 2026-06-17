@@ -396,12 +396,13 @@
         </div>
       </div>
 
-      {% if debug_info.tool_calls %}
+        {% if debug_info.tool_calls %}
         <h4 style="margin-top:20px;">Tool Calls ({{ debug_info.tool_calls|length }})</h4>
         {% for call in debug_info.tool_calls %}
           <div class="tool-call">
             <div class="tool-call-header">
-              <span class="tool-call-name">{{ call.name }}</span>
+              <span class="tool-call-name">{% if call.name == 'think' %}💭{% else %}🔧{% endif %} {{ call.name }}</span>
+              {% if call.is_error %}<span style="font-size:11px;color:#b91c1c;margin-left:8px">ERROR</span>{% endif %}
               <span class="tool-call-time">{{ call.timestamp|timesince }} ago</span>
             </div>
             <div class="tool-call-args">
@@ -421,25 +422,56 @@
     <div class="debug-panel">
       <h3>Tool Call History</h3>
       {% if tool_call_logs %}
+        <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px">
+          <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+          <input type="hidden" name="conversation_id" value="{{ selected_conversation.id }}">
+          <div>
+            <label style="font-size:11px;color:#666;display:block">Tool name</label>
+            <input type="text" name="tool_name" value="{{ tool_filter }}" placeholder="search_products" style="width:180px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+          </div>
+          <div>
+            <label style="font-size:11px;color:#666;display:block">Reply ID</label>
+            <input type="text" name="reply_id" value="{{ reply_filter }}" placeholder="reply_id..." style="width:200px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font-size:12px">
+          </div>
+          <label style="font-size:12px;color:#333;display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <input type="checkbox" name="error_only" value="1" {% if error_only %}checked{% endif %}>
+            Errors only
+          </label>
+          <button type="submit" class="btn-secondary" style="padding:6px 14px;font-size:12px">Apply Filters</button>
+        </form>
         <div style="margin-bottom:10px;font-size:0.85rem;color:#666">
-          {{ tool_call_logs|length }} logged tool call(s) for this conversation
+          {{ tool_call_logs|length }} logged tool call(s) in {{ pipeline_runs|length }} run(s)
         </div>
-        {% for tcl in tool_call_logs %}
-          <div class="tool-call" style="margin-bottom:8px">
-            <div class="tool-call-header" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#fef9c3;border-bottom:1px solid #fde68a;cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
-              <span>🔧</span>
-              <span style="font-weight:700;font-size:13px;color:#92400e">{{ tcl.tool_name }}</span>
-              <span style="font-size:11px;color:#666;margin-left:auto">
-                iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
-              </span>
+        {% for run in pipeline_runs %}
+          <div class="tool-call" style="border-color:#93c5fd;margin-bottom:12px">
+            <div class="tool-call-header">
+              <div class="tool-call-name">Run {{ run.reply_id|truncatechars:18 }}</div>
+              <div class="tool-call-time">
+                {{ run.tool_calls|length }} calls · {{ run.usage_input }} in / {{ run.usage_output }} out
+                {% if run.credit_cost is not None %} · {{ run.credit_cost|floatformat:4 }} credits{% endif %}
+              </div>
             </div>
-            <div class="tool-call-body" style="display:none;padding:10px 12px">
-              <div style="font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Arguments</div>
-              <pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto;margin-bottom:8px">{{ tcl.arguments }}</pre>
-              <div style="font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Result Summary</div>
-              <pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:80px;overflow-y:auto">{{ tcl.result_summary|default:"—" }}</pre>
-              <div style="font-size:10px;color:#999;margin-top:6px;text-align:right">{{ tcl.timestamp|date:"M d H:i:s" }} · <code>{{ tcl.reply_id|truncatechars:16 }}</code></div>
-            </div>
+            {% for tcl in run.tool_calls %}
+              <div class="tool-call" style="margin:10px 0;border-color:{% if tcl.is_error %}#fca5a5{% else %}#e2e8f0{% endif %}">
+                <div class="tool-call-header" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:{% if tcl.is_error %}#fee2e2{% else %}#fef9c3{% endif %};border-bottom:1px solid {% if tcl.is_error %}#fca5a5{% else %}#fde68a{% endif %};cursor:pointer;user-select:none" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+                  <span>{% if tcl.tool_name == 'think' %}💭{% else %}🔧{% endif %}</span>
+                  <span style="font-weight:700;font-size:13px;color:#92400e">{{ tcl.tool_name }}</span>
+                  {% if tcl.is_error %}<span style="font-size:11px;color:#b91c1c;margin-left:6px">ERROR</span>{% endif %}
+                  <span style="font-size:11px;color:#666;margin-left:auto">
+                    iter {{ tcl.iteration }} · {{ tcl.execution_time_ms }}ms
+                  </span>
+                </div>
+                <div class="tool-call-body" style="display:none;padding:10px 12px">
+                  <div style="font-size:12px;color:#333;margin-bottom:6px"><strong>Summary:</strong> {{ tcl.result_summary|default:"—" }}</div>
+                  <details>
+                    <summary>Show arguments</summary>
+                    <div style="font-size:11px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin:6px 0 4px">Arguments</div>
+                    <pre style="background:#1e1e2e;color:#cdd6f4;font-family:monospace;font-size:12px;line-height:1.6;padding:10px 12px;border-radius:4px;white-space:pre-wrap;word-break:break-word;max-height:120px;overflow-y:auto">{{ tcl.arguments }}</pre>
+                  </details>
+                  <div style="font-size:10px;color:#999;margin-top:6px;text-align:right">{{ tcl.timestamp|date:"M d H:i:s" }} · <code>{{ run.reply_id|truncatechars:16 }}</code></div>
+                </div>
+              </div>
+            {% endfor %}
           </div>
         {% endfor %}
       {% else %}

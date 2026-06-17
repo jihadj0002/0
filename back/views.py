@@ -1724,7 +1724,9 @@ def ai_debug(request):
     from api.ai.context import build_system_prompt, get_conversation_history
     from api.ai.tools import TOOL_DEFINITIONS, execute_tool
     from api.ai.providers import call_llm
-    from back.models import ToolCallLog
+    from back.models import ToolCallLog, UsageLog
+    from billing.models import CreditTransaction
+    from collections import defaultdict
     import json
     import time
     import uuid
@@ -1743,6 +1745,9 @@ def ai_debug(request):
         'model_used': '',
         'error': None
     }
+    tool_filter = request.POST.get('tool_name') or request.GET.get('tool_name') or ''
+    reply_filter = request.POST.get('reply_id') or request.GET.get('reply_id') or ''
+    error_only = (request.POST.get('error_only') or request.GET.get('error_only')) == '1'
     
     # Handle form submissions
     if request.method == 'POST':
@@ -1853,6 +1858,7 @@ def ai_debug(request):
                                         'name': fn_name,
                                         'args': fn_args,
                                         'result': result,
+                                        'is_error': isinstance(result, dict) and bool(result.get('error')),
                                         'execution_time': tool_end - tool_start,
                                         'timestamp': time.time()
                                     })
@@ -1913,12 +1919,61 @@ def ai_debug(request):
     
     # Build system prompt and history for display
     tool_call_logs = []
+    pipeline_runs = []
     if selected_conversation:
         system_prompt = build_system_prompt(selected_conversation.user, selected_conversation)
         conversation_history = get_conversation_history(selected_conversation, limit=50)
-        tool_call_logs = ToolCallLog.objects.filter(
-            conversation=selected_conversation
-        ).order_by("-timestamp")[:100]
+        tool_qs = ToolCallLog.objects.filter(conversation=selected_conversation)
+        if tool_filter:
+            tool_qs = tool_qs.filter(tool_name=tool_filter)
+        if reply_filter:
+            tool_qs = tool_qs.filter(reply_id__icontains=reply_filter)
+        if error_only:
+            tool_qs = tool_qs.filter(result_summary__icontains="error")
+
+        tool_call_logs = list(tool_qs.order_by("reply_id", "iteration", "timestamp")[:200])
+
+        reply_ids = sorted({t.reply_id for t in tool_call_logs if t.reply_id})
+        usage_by_reply = defaultdict(lambda: {"input": 0, "output": 0, "models": set()})
+        if reply_ids:
+            for ul in UsageLog.objects.filter(user=selected_conversation.user, reply_id__in=reply_ids):
+                usage_by_reply[ul.reply_id]["input"] += ul.input_tokens or 0
+                usage_by_reply[ul.reply_id]["output"] += ul.output_tokens or 0
+                if ul.model:
+                    usage_by_reply[ul.reply_id]["models"].add(ul.model)
+
+        credit_by_reply = {}
+        if reply_ids:
+            for tx in CreditTransaction.objects.filter(
+                user=selected_conversation.user,
+                reply_id__in=reply_ids,
+                transaction_type="deduction",
+            ):
+                credit_by_reply[tx.reply_id] = tx.amount
+
+        runs_map = defaultdict(list)
+        for t in tool_call_logs:
+            runs_map[t.reply_id].append({
+                "tool_name": t.tool_name,
+                "iteration": t.iteration,
+                "timestamp": t.timestamp,
+                "execution_time_ms": t.execution_time_ms,
+                "arguments": t.arguments,
+                "result_summary": t.result_summary,
+                "is_error": "error" in (t.result_summary or "").lower(),
+            })
+
+        pipeline_runs = []
+        for rid, items in runs_map.items():
+            usage = usage_by_reply.get(rid, {"input": 0, "output": 0, "models": set()})
+            pipeline_runs.append({
+                "reply_id": rid,
+                "tool_calls": items,
+                "usage_input": usage["input"],
+                "usage_output": usage["output"],
+                "models": sorted(usage["models"]),
+                "credit_cost": credit_by_reply.get(rid),
+            })
     
     context = {
         'users': users,
@@ -1929,6 +1984,10 @@ def ai_debug(request):
         'conversation_history': conversation_history,
         'debug_info': debug_info,
         'tool_call_logs': tool_call_logs,
+        'pipeline_runs': pipeline_runs,
+        'tool_filter': tool_filter,
+        'reply_filter': reply_filter,
+        'error_only': error_only,
     }
     
     return render(request, 'back/ai_debug.html', context)
