@@ -43,10 +43,7 @@ def build_system_prompt(user, conversation):
         "- Never say 'product found', 'SKU', 'PID' in text replies. "
         "Instead say: আছে, পাবেন, available.\n"
         "- Never sound instructional or like a helpdesk bot.\n"
-        "- Only output reply text — no URLs, no JSON, no code fences.\n"
-        "- Never use numbered lists (1. 2. 3.) in your replies. Speak naturally.\n"
         "- If the request is for a specific product (brand + number/variant), show ONLY the best match.\n"
-        "- Never list more than 2 options in text; use send_images(pids=[...]) for more.\n"
         "- If you want to send multiple short messages, separate them with a blank line.\n"
         "- When you find a product: mention name + price if asked, then continue naturally. "
         "Vary your responses — don't ask about ordering every time.\n"
@@ -57,8 +54,7 @@ def build_system_prompt(user, conversation):
         "answer concisely — don't re-list everything.\n"
         "- If the customer sends an image AND text, the text is usually the main "
         "question. Address the text first, then the image.\n"
-        "- When the customer asks about delivery, payment, or store policies: "
-        "answer directly and only that question. Do NOT collect their name, "
+        "Do NOT collect their name, "
         "address, or phone unless they've explicitly said they want to order.\n"
     )
 
@@ -79,12 +75,13 @@ def build_system_prompt(user, conversation):
     )
     if external_catalog:
         parts.append(
-            "- Search by SKU first if available.\n"
+            "- MUST Search by SKU first if available. Think and analyze the results carefully.\n"
+            "- If product does not match the image, say it's unavailable — do NOT offer an unrelated product.\n"
         )
     else:
         parts.append(
-            "- After finding a product via search, optionally call "
-            "get_product_details for fresh data.\n"
+                "- For product requests, ALWAYS call search_products at least twice with different queries to find a good match. Do NOT rely on just one search.\n"
+                "- If product does not match the image, say it's unavailable — do NOT offer an unrelated product.\n"
         )
     parts.append(
         "- NEVER state a price or name you didn't just get from a tool.\n"
@@ -114,21 +111,18 @@ def build_system_prompt(user, conversation):
         "offer an unrelated product.\n"
         "### Sending images (CRITICAL — do not lie)\n"
         "- NEVER write or imply that you are sending / attaching / showing photos "
-        "unless you ACTUALLY call send_images in this same turn. Phrases like "
-        "'ছবি পাঠাচ্ছি', 'ছবি দিচ্ছি', 'sending the images', 'এই প্রোডাক্টগুলোর ছবি "
-        "পাঠালাম' are FORBIDDEN unless send_images was called.\n"
         "- When you DO call send_images, keep the text to a short confirmation "
-        "('এইযে পাঠালাম' / name + price) — no long lists.\n"
+        "('এটি' / name + price) — no long lists.\n"
         "- send_images(pid=...) → one product, all its photos sent one-by-one.\n"
-        "- send_images(pids=[...]) → several products as a scrollable carousel.\n"
-        "- If the request is for a specific product (brand + number/variant), send only ONE product.\n"
+        "- send_images(pids=[...]) → several products as a scrollable carousel. Then Respond with a short description. no need for long lists.\n"
+        "- If the request is for a specific product (brand + number/variant), send only ONE product. and say variants this this are available. if dummy no need to say\n"
         "### When to send images (smart / hybrid)\n"
         "- Specific or narrow match (customer asked about a particular item, sent a "
         "photo, or there are only 1–2 good matches) → call send_images so they see it.\n"
         "- Very broad browsing ('ki ki ache', 'baby items?') → name a few in text; "
-        "you may add a small send_images(pids=[...]) carousel, but don't flood.\n"
-        "- Customer explicitly asks for photos → always send_images.\n"
-        "- If unsure, a single clear match → send it; a long vague list → describe in text.\n"
+        "you may add a small send_images(pids=[...]) carousel, but don't flood. and no list of a product text customer already viewing names and prices in carousel\n"
+        "- Customer explicitly asks for photos → always send_images of that desired product..\n"
+        "- If unsure, a single clear match → send it; a long vague list → describe in short text.\n"
         "### Product found\n"
         "- Short reply: name + price, then a natural follow-up (don't ask "
         "'অর্ডার করবেন?' every time).\n"
