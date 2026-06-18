@@ -187,6 +187,8 @@ def run(conversation, incoming_message):
         logger.warning("Pre-flight credit check failed for user=%s — proceeding anyway", user.pk)
     reply_id = uuid.uuid4().hex
 
+    customer_text = incoming_message.text or ""
+
     # Check if the triggering message has image analysis data to pass to context.
     # Look at the latest unprocessed customer message with image analysis in attachments.
     image_analysis = None
@@ -210,7 +212,6 @@ def run(conversation, incoming_message):
     history = get_conversation_history(conversation, limit=12)
 
     # Ensure the triggering message is the last user turn
-    customer_text = incoming_message.text or ""
     if not history or history[-1].get("content") != customer_text or history[-1].get("role") != "user":
         history.append({"role": "user", "content": customer_text})
 
