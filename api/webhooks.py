@@ -38,6 +38,15 @@ _batch_timers_lock = threading.Lock()
 _conv_locks: dict[int, threading.Lock] = {}
 _conv_locks_lock = threading.Lock()
 
+# Pending batches queue — when _fire_batch_pipeline can't acquire the lock,
+# the caller's batch PKs are appended here.  The running pipeline drains this
+# queue after finishing, so bursts collapse into ONE run instead of multiple
+# sequential runs with overlapping context.
+_pending_batches: dict[int, list[int]] = {}
+_pending_batches_lock = threading.Lock()
+
+BATCH_TIMER_SECONDS = 15  # wait for burst to settle (was 5s; increased for image analysis)
+
 
 # ---------------------------------------------------------------------------
 # Signature helpers
@@ -79,7 +88,7 @@ def _schedule_batch_pipeline(conversation_id):
         existing = _batch_timers.get(conversation_id)
         if existing is not None:
             existing.cancel()
-        t = threading.Timer(5.0, lambda cid: _executor.submit(_fire_batch_pipeline, cid), args=(conversation_id,))
+        t = threading.Timer(BATCH_TIMER_SECONDS, lambda cid: _executor.submit(_fire_batch_pipeline, cid), args=(conversation_id,))
         t.daemon = True
         _batch_timers[conversation_id] = t
         t.start()
@@ -102,13 +111,21 @@ def _fire_batch_pipeline(conversation_id):
             _conv_locks[conversation_id] = conv_lock
 
     if not conv_lock.acquire(blocking=False):
-        # A pipeline run is already in flight for this conversation. The batches
-        # that triggered THIS timer would otherwise be stranded: the customer may
-        # have stopped sending, so no future message would ever create a new
-        # timer to pick them up. Reschedule a fresh timer so the in-flight run's
-        # leftovers get drained once it releases the lock.
-        logger.info("Pipeline already running for conv=%s — rescheduling to drain remaining batches", conversation_id)
-        _schedule_batch_pipeline(conversation_id)
+        # Pipeline is already running. Merge our batches into the pending queue
+        # instead of creating a separate run. The running pipeline drains the
+        # queue after it finishes, keeping context coherent.
+        stray_pks = list(
+            MessageBatch.objects.filter(
+                conversation_id=conversation_id, processed=False,
+            ).order_by("timestamp").values_list("pk", flat=True)
+        )
+        if stray_pks:
+            with _pending_batches_lock:
+                _pending_batches.setdefault(conversation_id, []).extend(stray_pks)
+            logger.info(
+                "Pipeline already running conv=%s — merged %d batches into pending queue",
+                conversation_id, len(stray_pks),
+            )
         return
 
     try:
@@ -169,13 +186,38 @@ def _fire_batch_pipeline(conversation_id):
         # our pinned batches — never touch batches that arrived in the meantime.
         MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
 
-        # New messages may have arrived DURING this run. Their timer could have
-        # fired while we held the lock (it reschedules itself), but cover the race
-        # explicitly: if unprocessed batches remain, drain them on a fresh timer
-        # so the tail of a burst is never left without an AI reply.
-        if MessageBatch.objects.filter(
+        # Drain any batches that arrived (via _pending_batches merge) while
+        # the pipeline was running — process them immediately so close bursts
+        # collapse into one run.
+        with _pending_batches_lock:
+            merged_pks = _pending_batches.pop(conversation_id, [])
+        if merged_pks:
+            # Deduplicate: only process batches that weren't already handled.
+            fresh_pks = list(
+                MessageBatch.objects.filter(
+                    pk__in=merged_pks, processed=False,
+                ).order_by("timestamp").values_list("pk", flat=True)
+            )
+            if fresh_pks:
+                logger.info("Draining %d merged batches for conv=%s", len(fresh_pks), conversation_id)
+                combined_text = "\n".join(
+                    b.message_text
+                    for b in MessageBatch.objects.filter(pk__in=fresh_pks)
+                    if b.message_text.strip()
+                )
+                if combined_text.strip():
+                    unified = SimpleNamespace(text=combined_text)
+                    try:
+                        run(conversation, unified)
+                        MessageBatch.objects.filter(pk__in=fresh_pks).update(processed=True)
+                    except Exception:
+                        logger.exception(
+                            "Merged pipeline crashed conv=%s — batches preserved", conversation_id
+                        )
+        elif MessageBatch.objects.filter(
             conversation=conversation, processed=False
         ).exists():
+            # Fallback: new batches arrived outside the merge path.
             _schedule_batch_pipeline(conversation_id)
 
     except Conversation.DoesNotExist:

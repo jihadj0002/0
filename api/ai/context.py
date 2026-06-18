@@ -5,8 +5,14 @@ from back.models import Message, Product
 MAX_PROMPT_LENGTH = 10000
 
 
-def build_system_prompt(user, conversation):
-    """Assemble the full system prompt from AgentIdentity, StoreConfig, BehaviorRules, and live conversation state."""
+def build_system_prompt(user, conversation, image_analysis=None):
+    """Assemble the full system prompt from AgentIdentity, StoreConfig, BehaviorRules, and live conversation state.
+
+    ``image_analysis`` — optional dict from api.ai.media.analyze_image_structured
+    (sku, product_name, brand, description) plus ``analysis_search`` for
+    pre-search results.  When the current turn was triggered by an image, this
+    tells the AI that the catalog was already searched so it doesn't re-search.
+    """
     from context.models import AgentIdentity, StoreConfig, BehaviorRules
     from api.products.factory import get_active_source, is_external
 
@@ -39,8 +45,8 @@ def build_system_prompt(user, conversation):
         "## BEHAVIOR (follow exactly)\n"
         "- Warm, human, concise (1-3 sentences).\n"
         "- No numbered lists. No URLs. No JSON.\n"
-        "- Specific product request → show only the best match.\n"
-        "- If multiple options, use send_images(pids=[...]) instead of long text lists.\n"
+        "- Specific product request → show only the best or exact matches.\n"
+        "- If multiple options, use send_images(pids=[...]) to send carousel as names and price are already in the carousel.\n"
         "- If you want multiple short messages, separate with a blank line.\n"
         "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
     )
@@ -73,6 +79,25 @@ def build_system_prompt(user, conversation):
         "- Before create_order collect: customer name, phone, delivery address.\n"
         f"- Keep replies {tone} and {style}."
     )
+
+    # --- Image pre-search awareness ---
+    # When the customer sent an image, the system already analyzed it and
+    # searched the catalog. The results are in "Recent Searched Products"
+    # below. Tell the AI so it doesn't re-search.
+    if image_analysis:
+        parts.append(
+            "## Image Analysis (already processed)\n"
+            "The customer sent an image. The system analyzed it and pre-searched "
+            "the catalog for matching products (results are below in "
+            "'Recent Searched Products'). You do NOT need to search again "
+            "unless the customer asks for something different."
+        )
+        if image_analysis.get("sku"):
+            parts[-1] += f"\nDetected SKU: {image_analysis['sku']}"
+        if image_analysis.get("product_name"):
+            parts[-1] += f"\nDetected name: {image_analysis['product_name']}"
+        if image_analysis.get("brand"):
+            parts[-1] += f"\nDetected brand: {image_analysis['brand']}"
 
     # --- Response flow ---
     parts.append(
@@ -178,6 +203,18 @@ def _render_focus_products(focus_list, currency):
     variations); the rest are listed compactly. The AI can call send_images /
     get_product_details with any of these PIDs.
     """
+    # Dedup by pid — keep first occurrence (newest)
+    seen = set()
+    deduped = []
+    for f in focus_list:
+        pid = f.get("pid")
+        if pid and pid not in seen:
+            seen.add(pid)
+            deduped.append(f)
+    focus_list = deduped
+    if not focus_list:
+        return ""
+
     lines = ["## Recent Searched Products (recent — what this conversation is about, newest first)"]
 
     primary = focus_list[0]

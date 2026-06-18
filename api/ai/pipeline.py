@@ -187,7 +187,26 @@ def run(conversation, incoming_message):
         logger.warning("Pre-flight credit check failed for user=%s — proceeding anyway", user.pk)
     reply_id = uuid.uuid4().hex
 
-    system_prompt = build_system_prompt(user, conversation)
+    # Check if the triggering message has image analysis data to pass to context.
+    # Look at the latest unprocessed customer message with image analysis in attachments.
+    image_analysis = None
+    if customer_text and "[Image:" in customer_text:
+        try:
+            latest_img_msg = Message.objects.filter(
+                conversation=conversation, sender="customer",
+            ).exclude(attachments=None).order_by("-timestamp").first()
+            if latest_img_msg and latest_img_msg.attachments:
+                att = latest_img_msg.attachments
+                ia = att.get("analysis_data") or {}
+                asearch = att.get("analysis_search") or []
+                if ia:
+                    image_analysis = ia
+                    if asearch:
+                        image_analysis["analysis_search"] = asearch
+        except Exception:
+            pass
+
+    system_prompt = build_system_prompt(user, conversation, image_analysis=image_analysis)
     history = get_conversation_history(conversation, limit=12)
 
     # Ensure the triggering message is the last user turn
@@ -202,6 +221,14 @@ def run(conversation, incoming_message):
     product_cards = []
     transferred = False
     image_promise_corrected = False
+    think_called = False
+    search_called = False
+    _product_keywords = re.compile(
+        r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
+        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|ছবি|"
+        r"ki.?ki.?ache|কি কি আছে|show|দেখান|want)",
+        re.IGNORECASE,
+    )
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         try:
@@ -218,9 +245,48 @@ def run(conversation, incoming_message):
 
         _log(user, reply_id, usage, call_type=f"call_{iteration + 1}")
 
-        # No tool calls → LLM is done
+        # Track which tools were called
+        if llm_msg.tool_calls:
+            for tc in llm_msg.tool_calls:
+                fn = tc.function.name
+                if fn == "think":
+                    think_called = True
+                if fn == "search_products":
+                    search_called = True
+
+        # No tool calls → LLM is done (guard: force think or search first)
         if not llm_msg.tool_calls:
             candidate = llm_msg.content or ""
+
+            # GUARD: force think() if not called yet
+            if not think_called and iteration >= 0:
+                think_called = True
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "You replied without using think() first. Call think() now to "
+                        "outline your plan for this turn (what to search, what to verify). "
+                        "Then proceed with the needed tools and finally reply."
+                    ),
+                })
+                continue
+
+            # GUARD: force search_products if the query looks like a product request
+            is_product_query = bool(_product_keywords.search(customer_text or ""))
+            if is_product_query and not search_called:
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "The customer is asking about products. You MUST call "
+                        "search_products before replying. Use different keywords "
+                        "(Bengali → English, synonyms). Do NOT rely on focused products "
+                        "alone — search the catalog first."
+                    ),
+                })
+                continue
+
             # Safety net for the "promised images but never sent them" failure:
             # if the reply claims to send photos but send_images was never called
             # (no images/cards collected) and we have focused products to show,
@@ -273,6 +339,29 @@ def run(conversation, incoming_message):
                 )
             except Exception as exc:
                 logger.warning("ToolCallLog write failed: %s", exc)
+
+            # Relevance guard: for send_images with multiple products,
+            # drop products that share <2 content tokens with the customer query.
+            # Prevents unrelated items (e.g. Similac when customer asked about NAN 2).
+            if fn_name == "send_images" and isinstance(result, dict) and customer_text:
+                prods = result.get("products") or []
+                if len(prods) > 1:
+                    from .tools import _content_tokens as _tok
+                    q_toks = set(_tok(customer_text))
+                    if q_toks:
+                        kept = []
+                        for p in prods:
+                            p_toks = set(_tok(p.get("name", "")))
+                            overlap = len(q_toks & p_toks)
+                            # Keep if ≥2 tokens overlap, or a longer query token matches exactly
+                            if overlap >= 2 or any(
+                                qt in p.get("name", "").lower()
+                                for qt in q_toks if len(qt) > 3
+                            ):
+                                kept.append(p)
+                        if kept and len(kept) < len(prods):
+                            result["products"] = kept
+                            result["total"] = len(kept)
 
             # Collect images and structured product cards for delivery.
             # NEVER expose raw URLs back to the LLM — the model only gets
