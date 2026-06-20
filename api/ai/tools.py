@@ -233,19 +233,7 @@ _STOPWORDS = frozenset({
 })
 
 
-# Common descriptor words that modify a product but are not the product TYPE.
-# They appear across many unrelated items (a "mosquito net" and a "bathtub" are
-# both "foldable" and "baby"), so a match on these alone is not a real match —
-# we require a match on a non-modifier (head/type) token when one exists.
-_MODIFIERS = frozenset({
-    "premium", "side", "large", "small", "medium", "big", "mini", "set", "pack",
-    "piece", "pieces", "pcs", "new", "foldable", "portable", "cartoon", "fancy",
-    "winter", "summer", "baby", "kids", "kid", "girl", "girls", "boy", "boys",
-    "men", "women", "woman", "man", "year", "years", "month", "months", "size",
-    "color", "colour", "style", "fashion", "cute", "soft", "organic",
-    "red", "blue", "pink", "white", "black", "green", "yellow", "purple",
-    "orange", "brown", "grey", "gray", "wool", "leather", "cotton",
-})
+
 
 
 def _content_tokens(text):
@@ -254,57 +242,7 @@ def _content_tokens(text):
     return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
 
 
-def _relevance_score(query_tokens, name, row=None):
-    """Count how many query content-tokens appear in a product name (token-level).
 
-    When ``row`` is provided, also checks the product's ``sku`` and ``pid`` fields
-    so that SKU-code searches (e.g. "33549PP") are not dropped by the name-only
-    overlap check.
-    """
-    name_tokens = set(_content_tokens(name))
-    if not name_tokens or not query_tokens:
-        return 0
-    score = 0
-    for q in query_tokens:
-        if q in name_tokens or any(q in nt or nt in q for nt in name_tokens):
-            score += 1
-    # SKU-aware: if the query matches the product's own sku or pid, count it.
-    # This prevents _rank_and_filter from dropping exact SKU matches that happen
-    # to share zero name tokens with the query.
-    if row:
-        sku = (row.get("sku") or "").lower()
-        pid = (row.get("pid") or "").lower()
-        for q in query_tokens:
-            if q and (q in sku or sku in q or q in pid or pid in q):
-                score += 1
-                break
-    return score
-
-
-def _rank_and_filter(results, query):
-    """Sort results by relevance to the original query and drop zero-overlap junk.
-
-    Keyword fan-out (especially the external word-by-word search) surfaces items
-    that share no word with the request. We drop those outright; remaining items
-    are ranked best-first. Final semantic judgement (e.g. 'dress shoes' is not a
-    'dress') is left to the model, guided by _search_result_instruction.
-    """
-    query_tokens = _content_tokens(query)
-    if not query_tokens:
-        return results
-
-    # A real match must hit a non-modifier (head/type) token when the query has
-    # one — so "bathtub" is not matched by "foldable baby mosquito net", and a
-    # "dress" is not matched by a "winter girl cap". If the query is ALL
-    # modifiers (e.g. just "baby"), fall back to matching any content token.
-    head_tokens = [t for t in query_tokens if t not in _MODIFIERS] or query_tokens
-
-    matched = [r for r in results if _relevance_score(head_tokens, r.get("name", ""), r) > 0]
-    if not matched:
-        return []
-    # Rank by overall token overlap (modifiers included) so the closest wins.
-    matched.sort(key=lambda r: _relevance_score(query_tokens, r.get("name", ""), r), reverse=True)
-    return matched
 
 
 def _image_url(path):
@@ -556,9 +494,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     logger.exception("External search failed for variation=%s", variation)
 
             all_results = _filter_by_budget(all_results, min_price, max_price)
-            # Rank by relevance to the ORIGINAL query and drop zero-overlap junk
-            # (the word-by-word fan-out otherwise surfaces unrelated products).
-            all_results = _rank_and_filter(all_results, query)[:limit]
+            all_results = all_results[:limit]
             if all_results:
                 _focus_products(conversation, all_results[:FOCUS_MAX])
                 out = {"products": all_results, "total": len(all_results)}
@@ -648,10 +584,6 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     break
 
     results = [_product_row(p) for p in products_list]
-    # Rank by relevance and drop zero-overlap junk (skip for generic/empty
-    # queries, where we intentionally show featured/all products).
-    if not generic:
-        results = _rank_and_filter(results, query)
 
     if results and conversation:
         _focus_products(conversation, results[:FOCUS_MAX])
