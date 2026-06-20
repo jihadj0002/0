@@ -254,8 +254,13 @@ def _content_tokens(text):
     return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
 
 
-def _relevance_score(query_tokens, name):
-    """Count how many query content-tokens appear in a product name (token-level)."""
+def _relevance_score(query_tokens, name, row=None):
+    """Count how many query content-tokens appear in a product name (token-level).
+
+    When ``row`` is provided, also checks the product's ``sku`` and ``pid`` fields
+    so that SKU-code searches (e.g. "33549PP") are not dropped by the name-only
+    overlap check.
+    """
     name_tokens = set(_content_tokens(name))
     if not name_tokens or not query_tokens:
         return 0
@@ -263,6 +268,16 @@ def _relevance_score(query_tokens, name):
     for q in query_tokens:
         if q in name_tokens or any(q in nt or nt in q for nt in name_tokens):
             score += 1
+    # SKU-aware: if the query matches the product's own sku or pid, count it.
+    # This prevents _rank_and_filter from dropping exact SKU matches that happen
+    # to share zero name tokens with the query.
+    if row:
+        sku = (row.get("sku") or "").lower()
+        pid = (row.get("pid") or "").lower()
+        for q in query_tokens:
+            if q and (q in sku or sku in q or q in pid or pid in q):
+                score += 1
+                break
     return score
 
 
@@ -284,11 +299,11 @@ def _rank_and_filter(results, query):
     # modifiers (e.g. just "baby"), fall back to matching any content token.
     head_tokens = [t for t in query_tokens if t not in _MODIFIERS] or query_tokens
 
-    matched = [r for r in results if _relevance_score(head_tokens, r.get("name", "")) > 0]
+    matched = [r for r in results if _relevance_score(head_tokens, r.get("name", ""), r) > 0]
     if not matched:
         return []
     # Rank by overall token overlap (modifiers included) so the closest wins.
-    matched.sort(key=lambda r: _relevance_score(query_tokens, r.get("name", "")), reverse=True)
+    matched.sort(key=lambda r: _relevance_score(query_tokens, r.get("name", ""), r), reverse=True)
     return matched
 
 

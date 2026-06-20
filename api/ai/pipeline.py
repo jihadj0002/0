@@ -226,7 +226,7 @@ def run(conversation, incoming_message):
     search_called = False
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
-        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|ছবি|"
+        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|"
         r"ki.?ki.?ache|কি কি আছে|show|দেখান|want)",
         re.IGNORECASE,
     )
