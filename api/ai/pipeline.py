@@ -222,7 +222,6 @@ def run(conversation, incoming_message):
     product_cards = []
     transferred = False
     image_promise_corrected = False
-    think_called = False
     search_called = False
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
@@ -250,28 +249,12 @@ def run(conversation, incoming_message):
         if llm_msg.tool_calls:
             for tc in llm_msg.tool_calls:
                 fn = tc.function.name
-                if fn == "think":
-                    think_called = True
                 if fn == "search_products":
                     search_called = True
 
         # No tool calls → LLM is done (guard: force think or search first)
         if not llm_msg.tool_calls:
             candidate = llm_msg.content or ""
-
-            # GUARD: force think() if not called yet
-            if not think_called and iteration >= 0:
-                think_called = True
-                messages.append({"role": "assistant", "content": candidate})
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "You replied without using think() first. Call think() now to "
-                        "outline your plan for this turn (what to search, what to verify). "
-                        "Then proceed with the needed tools and finally reply."
-                    ),
-                })
-                continue
 
             # GUARD: force search_products if the query looks like a product request
             is_product_query = bool(_product_keywords.search(customer_text or ""))
