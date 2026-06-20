@@ -27,7 +27,7 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search term — SKU code, product name, or keyword"},
-                    "limit": {"type": "integer", "description": "Max results (default 10)", "default": 10},
+                    "limit": {"type": "integer", "description": "Max results (default 10)"},
                     "min_price": {"type": "number", "description": "Minimum price / budget floor — optional; omit if no lower bound"},
                     "max_price": {"type": "number", "description": "Maximum price / budget ceiling — optional; e.g. if customer says 'budget of 500 taka' pass 500"},
                 },
@@ -52,8 +52,8 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
-        "name": "send_images",
-        "description": "Send product images to the customer. Returns name and price. For a single PID, all product images are sent one-by-one. For multiple PIDs via pids=[...], a scrollable carousel is shown. Mention name and price briefly in your reply after sending.",
+            "name": "send_images",
+            "description": "Send product images to the customer. Returns name and price. For a single PID, all product images are sent one-by-one. For multiple PIDs via pids=[...], a scrollable carousel is shown. Mention name and price briefly in your reply after sending.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,6 +64,7 @@ TOOL_DEFINITIONS = [
                         "description": "One or more product PIDs to show as a card carousel (prefer this over calling send_images multiple times)",
                     },
                 },
+                "required": [],
             },
         },
     },
@@ -78,7 +79,7 @@ TOOL_DEFINITIONS = [
                     "customer_name": {"type": "string"},
                     "customer_phone": {"type": "string"},
                     "customer_address": {"type": "string"},
-                    "customer_city": {"type": "string", "default": ""},
+                    "customer_city": {"type": "string"},
                     "delivery_zone": {
                         "type": "string",
                         "enum": ["inside_dhaka", "outside_dhaka"],
@@ -90,7 +91,7 @@ TOOL_DEFINITIONS = [
                             "type": "object",
                             "properties": {
                                 "pid": {"type": "string"},
-                                "quantity": {"type": "integer", "default": 1},
+                                "quantity": {"type": "integer"},
                                 "variation_id": {
                                     "type": "string",
                                     "description": "Required for products that have variations (size/color). Use the variation_id from search_products/get_product_details.",
@@ -131,6 +132,7 @@ TOOL_DEFINITIONS = [
                     "city": {"type": "string"},
                     "address": {"type": "string"},
                 },
+                "required": [],
             },
         },
     },
@@ -148,7 +150,6 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "enum": ["low", "medium", "high", "urgent"],
                         "description": "Issue priority (default medium)",
-                        "default": "medium",
                     },
                 },
                 "required": ["subject", "description"],
@@ -164,7 +165,7 @@ TOOL_DEFINITIONS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "What to look up (e.g. 'return policy', 'shipping time', 'payment methods')"},
-                    "limit": {"type": "integer", "description": "Max results (default 3)", "default": 3},
+                    "limit": {"type": "integer", "description": "Max results (default 3)"},
                 },
                 "required": ["query"],
             },
