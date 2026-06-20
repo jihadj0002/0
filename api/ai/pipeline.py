@@ -223,6 +223,7 @@ def run(conversation, incoming_message):
     transferred = False
     image_promise_corrected = False
     search_called = False
+    focus_hinted = False
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|"
@@ -259,17 +260,33 @@ def run(conversation, incoming_message):
             # GUARD: force search_products if the query looks like a product request
             is_product_query = bool(_product_keywords.search(customer_text or ""))
             if is_product_query and not search_called:
-                messages.append({"role": "assistant", "content": candidate})
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "The customer is asking about products. You MUST call "
-                        "search_products before replying. Use different keywords "
-                        "(Bengali → English, synonyms). Do NOT rely on focused products "
-                        "alone — search the catalog first."
-                    ),
-                })
-                continue
+                has_focus = bool(parse_focus_products(conversation.current_product))
+                if has_focus and not focus_hinted:
+                    focus_hinted = True
+                    messages.append({"role": "assistant", "content": candidate})
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "Relevant products are already listed in "
+                            "'## Recent Searched Products' above. Use that data. "
+                            "Only call search_products if the customer asks for "
+                            "something not already there."
+                        ),
+                    })
+                    continue
+                elif not has_focus:
+                    messages.append({"role": "assistant", "content": candidate})
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            "The customer is asking about products. You MUST call "
+                            "search_products before replying. Use different keywords "
+                            "(Bengali → English, synonyms). Do NOT rely on focused products "
+                            "alone — search the catalog first."
+                        ),
+                    })
+                    continue
+                # has_focus + already hinted → fall through to final_text
 
             # Safety net for the "promised images but never sent them" failure:
             # if the reply claims to send photos but send_images was never called
