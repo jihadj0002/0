@@ -1931,7 +1931,7 @@ def ai_debug(request):
         if error_only:
             tool_qs = tool_qs.filter(result_summary__icontains="error")
 
-        tool_call_logs = list(tool_qs.order_by("reply_id", "iteration", "timestamp")[:200])
+        tool_call_logs = list(tool_qs.order_by("-timestamp")[:200])
 
         reply_ids = sorted({t.reply_id for t in tool_call_logs if t.reply_id})
         usage_by_reply = defaultdict(lambda: {"input": 0, "output": 0, "models": set()})
@@ -1974,7 +1974,13 @@ def ai_debug(request):
                 "models": sorted(usage["models"]),
                 "credit_cost": credit_by_reply.get(rid),
             })
-    
+
+        # Sort pipeline runs: newest tool call first
+        pipeline_runs.sort(key=lambda r: max(tc["timestamp"] for tc in r["tool_calls"]), reverse=True)
+        # Sort tool calls within each run: by iteration ascending
+        for run in pipeline_runs:
+            run["tool_calls"].sort(key=lambda tc: tc["iteration"])
+
     context = {
         'users': users,
         'selected_user': selected_user,
@@ -2050,7 +2056,7 @@ def ai_debug_context(request):
     if error_only:
         tool_qs = tool_qs.filter(result_summary__icontains="error")
 
-    tool_call_logs = list(tool_qs.order_by("reply_id", "iteration", "timestamp")[:300])
+    tool_call_logs = list(tool_qs.order_by("-timestamp")[:300])
     reply_ids = sorted({t.reply_id for t in tool_call_logs if t.reply_id})
 
     usage_by_reply = defaultdict(lambda: {"input": 0, "output": 0, "models": set()})
@@ -2093,6 +2099,12 @@ def ai_debug_context(request):
             "models": sorted(usage["models"]),
             "credit_cost": credit_by_reply.get(rid),
         })
+
+    # Sort pipeline runs: newest tool call first
+    pipeline_runs.sort(key=lambda r: max(tc["timestamp"] for tc in r["tool_calls"]), reverse=True)
+    # Sort tool calls within each run: by iteration ascending
+    for run in pipeline_runs:
+        run["tool_calls"].sort(key=lambda tc: tc["iteration"])
 
     return JsonResponse({
         "system_prompt": system_prompt,
