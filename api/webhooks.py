@@ -45,7 +45,7 @@ _conv_locks_lock = threading.Lock()
 _pending_batches: dict[int, list[int]] = {}
 _pending_batches_lock = threading.Lock()
 
-BATCH_TIMER_SECONDS = 15  # wait for burst to settle (was 5s; increased for image analysis)
+BATCH_TIMER_SECONDS = 7  # wait for burst to settle (was 5s; increased for image analysis)
 
 
 # ---------------------------------------------------------------------------
@@ -76,9 +76,9 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 
 def _schedule_batch_pipeline(conversation_id):
     """
-    (Re)start the 5-second batch timer for a conversation.
+    (Re)start the 7-second batch timer for a conversation.
     Cancels any existing timer so rapid message bursts are collapsed into one
-    pipeline run that fires 5 seconds after the LAST message in the burst.
+    pipeline run that fires 7 seconds after the LAST message in the burst.
 
     The timer callback submits work to the shared thread pool rather than
     running directly in a timer thread — this avoids spawning unlimited
