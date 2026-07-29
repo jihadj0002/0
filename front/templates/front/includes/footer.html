@@ -1,0 +1,18 @@
+{% load static %}
+<footer class="blog-footer">
+  <div class="blog-footer-inner">
+    <div class="blog-footer-links">
+      <a href="{% url 'front:p_policy' %}">Privacy Policy</a>
+      <span class="footer-dot">·</span>
+      <a href="{% url 'front:terms' %}">Terms &amp; Conditions</a>
+      <span class="footer-dot">·</span>
+      <a href="/blog/">Blog</a>
+    </div>
+    <div class="blog-footer-brand">
+      <img src="https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/main/Logo/matrixai.png" width="100" alt="MatrixAi">
+    </div>
+    <div class="blog-footer-copyright">
+      &copy; {% now "Y" %} MatrixAi. All rights reserved.
+    </div>
+  </div>
+</footer>

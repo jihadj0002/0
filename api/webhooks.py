@@ -96,7 +96,7 @@ def _schedule_batch_pipeline(conversation_id):
 
 def _fire_batch_pipeline(conversation_id):
     """
-    Called (via executor) after 5 seconds of silence for a conversation.
+    Called (via executor) after 7 seconds of silence for a conversation.
     Combines all unprocessed MessageBatch rows into a single AI turn.
 
     Locks per-conversation so overlapping runs never happen.  Batch rows are

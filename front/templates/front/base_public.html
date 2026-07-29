@@ -1,0 +1,34 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% block meta %}{% endblock %}
+  {% block og_tags %}{% endblock %}
+  {% block structured_data %}{% endblock %}
+  <link rel="canonical" href="{% block canonical_url %}{{ request.build_absolute_uri }}{% endblock %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/main/Logo/favicon_256x256_3.png">
+  {% include "front/includes/analytics.html" %}
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+  {% include "front/includes/navbar.html" %}
+
+  <main class="blog-main">
+    {% if messages %}
+    <div class="blog-messages">
+      {% for message in messages %}
+        <div class="blog-message blog-message-{{ message.tags }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  {% include "front/includes/footer.html" %}
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

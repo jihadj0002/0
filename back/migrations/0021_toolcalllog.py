@@ -5,6 +5,16 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+class RunIfPostgres(migrations.RunSQL):
+    def database_forwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor == "postgresql":
+            super().database_forwards(app_label, schema_editor, from_state, to_state)
+
+    def database_backwards(self, app_label, schema_editor, from_state, to_state):
+        if schema_editor.connection.vendor == "postgresql":
+            super().database_backwards(app_label, schema_editor, from_state, to_state)
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -73,7 +83,7 @@ class Migration(migrations.Migration):
             ],
             database_operations=[],
         ),
-        migrations.RunSQL(
+        RunIfPostgres(
             sql=(
                 "ALTER TABLE back_toolcalllog "
                 "DROP CONSTRAINT IF EXISTS back_toolcalllog_conversation_id_13331510_fk_back_conv, "

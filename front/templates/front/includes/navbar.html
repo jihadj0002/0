@@ -1,0 +1,15 @@
+{% load static %}
+<nav class="blog-navbar">
+  <div class="blog-navbar-inner">
+    <a href="/" class="blog-navbar-brand">
+      <img src="https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/main/Logo/matrixai.png" width="140" alt="MatrixAi logo">
+    </a>
+    <div class="blog-navbar-links">
+      <a href="/" class="blog-nav-link">Home</a>
+      <a href="{% url 'front:pricing' %}" class="blog-nav-link">Pricing</a>
+      <a href="/blog/" class="blog-nav-link blog-nav-link-active">Blog</a>
+      <a href="{% url 'front:login' %}" class="blog-nav-link">Login</a>
+      <a href="{% url 'front:forumm' %}" class="blog-nav-cta">Get Free</a>
+    </div>
+  </div>
+</nav>

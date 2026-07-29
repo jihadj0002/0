@@ -84,10 +84,13 @@ INSTALLED_APPS = [
     "msg",
     "context",
     "billing",
+    "blog",
+
+    "django_ckeditor_5",
+    "django.contrib.sitemaps",
+    "django.contrib.syndication",
 
     "shortuuid",
-    
-    # "rest_framework.authtoken",
     # "mysql",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -225,17 +228,13 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 
 
-# In production, MEDIA_ROOT should point to the mounted volume path
-# In development, it can point to a local 'media' folder
+IS_PRODUCTION = ENVIRONMENT == "production"
 
-# Detect Railway environment
-
-
-
-CLOUDFLARE_R2_BUCKET=os.environ.get("CLOUDFLARE_R2_BUCKET")
-CLOUDFLARE_R2_ACCESS_KEY=os.environ.get("CLOUDFLARE_R2_ACCESS_KEY")
-CLOUDFLARE_R2_SECRET_KEY=os.environ.get("CLOUDFLARE_R2_SECRET_KEY")
-CLOUDFLARE_R2_BUCKET_ENDPOINT=os.environ.get("CLOUDFLARE_R2_BUCKET_ENDPOINT")
+CLOUDFLARE_R2_BUCKET = os.environ.get("CLOUDFLARE_R2_BUCKET")
+CLOUDFLARE_R2_ACCESS_KEY = os.environ.get("CLOUDFLARE_R2_ACCESS_KEY")
+CLOUDFLARE_R2_SECRET_KEY = os.environ.get("CLOUDFLARE_R2_SECRET_KEY")
+CLOUDFLARE_R2_BUCKET_ENDPOINT = os.environ.get("CLOUDFLARE_R2_BUCKET_ENDPOINT")
+AWS_S3_CUSTOM_DOMAIN = os.environ.get("CLOUDFLARE_R2_PUBLIC_DOMAIN")
 
 CLOUDFLARE_R2_CONFIG_OPTIONS = {
     "bucket_name": CLOUDFLARE_R2_BUCKET,
@@ -246,22 +245,31 @@ CLOUDFLARE_R2_CONFIG_OPTIONS = {
     "signature_version": "s3v4",
 }
 
-STORAGES = {
-    "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
-    },
-    "staticfiles": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
-        "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
-    },
-}
-
-AWS_S3_CUSTOM_DOMAIN = os.environ.get("CLOUDFLARE_R2_PUBLIC_DOMAIN")
-
-MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
-
-STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
+if IS_PRODUCTION and CLOUDFLARE_R2_BUCKET:
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
+        },
+        "staticfiles": {
+            "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+            "OPTIONS": CLOUDFLARE_R2_CONFIG_OPTIONS,
+        },
+    }
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+    STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
+else:
+    STORAGES = {
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+        },
+    }
+    MEDIA_URL = "/media/"
+    MEDIA_ROOT = BASE_DIR / "media"
+    STATIC_URL = "/static/"
 
 # Working
 # https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/products/maxresdefault.jpg
@@ -284,6 +292,58 @@ LOGIN_URL = 'front:login'
 #         'rest_framework.permissions.IsAuthenticated',
 #     ],
 # }
+
+# --------------------
+# CKEDITOR 5 CONFIGURATION
+# --------------------
+CKEDITOR_5_UPLOAD_FILE_TYPES = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff", "svg", "avif"]
+
+CKEDITOR_5_CONFIGS = {
+    "blog": {
+        "toolbar": [
+            "heading", "|", "bold", "italic", "underline", "strikethrough",
+            "link", "|",
+            "bulletedList", "numberedList", "blockQuote", "insertTable",
+            "|", "codeBlock", "code", "|",
+            "imageUpload", "mediaEmbed", "horizontalLine",
+            "|", "undo", "redo", "sourceEditing"
+        ],
+        "image": {
+            "toolbar": [
+                "imageTextAlternative", "imageStyle:full", "imageStyle:side",
+                "linkImage"
+            ],
+        },
+        "table": {
+            "contentToolbar": [
+                "tableColumn", "tableRow", "mergeTableCells",
+                "tableProperties", "tableCellProperties"
+            ],
+        },
+        "heading": {
+            "options": [
+                {"model": "paragraph", "title": "Paragraph", "class": "ck-heading_paragraph"},
+                {"model": "heading2", "view": "h2", "title": "Heading 2", "class": "ck-heading_heading2"},
+                {"model": "heading3", "view": "h3", "title": "Heading 3", "class": "ck-heading_heading3"},
+                {"model": "heading4", "view": "h4", "title": "Heading 4", "class": "ck-heading_heading4"},
+                {"model": "heading5", "view": "h5", "title": "Heading 5", "class": "ck-heading_heading5"},
+                {"model": "heading6", "view": "h6", "title": "Heading 6", "class": "ck-heading_heading6"},
+            ],
+        },
+        "list": {
+            "properties": {
+                "styles": True,
+                "startIndex": True,
+                "reversed": True,
+            }
+        },
+        "htmlSupport": {
+            "allow": [
+                {"name": "/.*/", "attributes": True, "classes": True, "styles": True}
+            ]
+        },
+    },
+}
 
 LOGGING = {
     "version": 1,

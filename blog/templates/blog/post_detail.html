@@ -1,0 +1,211 @@
+{% extends "front/base_public.html" %}
+{% load seo_tags %}
+
+{% block meta %}{% render_meta_tags post %}{% endblock %}
+{% block og_tags %}{% render_og_tags post %}{% endblock %}
+{% block structured_data %}{% render_structured_data post %}{% render_breadcrumb_data post %}{% endblock %}
+{% block canonical_url %}{{ post.canonical_url|default:request.build_absolute_uri }}{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --bg: #0d0d0d; --surface: #141414; --border: #2a2a2a; --text: #e5e5e5; --muted: #888; --accent: #4A00E0; --accent2: #8E2DE2; --radius: 12px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.6; }
+.blog-navbar { background: rgba(13,13,13,0.95); border-bottom: 1px solid var(--border); padding: 16px 0; position: sticky; top: 0; z-index: 100; }
+.blog-navbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+.blog-navbar-links { display: flex; align-items: center; gap: 24px; }
+.blog-nav-link { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; transition: color 0.2s; }
+.blog-nav-link:hover, .blog-nav-link-active { color: #fff; }
+.blog-nav-cta { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; }
+.blog-main { max-width: 800px; margin: 0 auto; padding: 48px 24px; min-height: 60vh; }
+.blog-footer { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; }
+.blog-footer-inner { max-width: 1200px; margin: 0 auto; }
+.blog-footer-links { margin-bottom: 16px; }
+.blog-footer-links a { color: var(--muted); text-decoration: none; font-size: 14px; margin: 0 8px; }
+.blog-footer-links a:hover { color: #fff; }
+.footer-dot { color: var(--muted); }
+.blog-footer-brand { margin-bottom: 12px; }
+.blog-footer-copyright { color: var(--muted); font-size: 13px; }
+
+.breadcrumbs { display: flex; gap: 8px; align-items: center; font-size: 14px; color: var(--muted); margin-bottom: 32px; flex-wrap: wrap; }
+.breadcrumbs a { color: var(--muted); text-decoration: none; }
+.breadcrumbs a:hover { color: var(--accent2); }
+.breadcrumbs .sep { color: var(--border); }
+
+.post-header { margin-bottom: 32px; }
+.post-header .category-badge { display: inline-block; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; }
+.post-header h1 { font-size: 36px; font-weight: 800; line-height: 1.2; margin-bottom: 16px; background: linear-gradient(90deg, #fff, var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.post-meta { color: var(--muted); font-size: 14px; display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.post-hero-image { width: 100%; border-radius: var(--radius); margin-bottom: 32px; }
+
+.blog-content { font-size: 17px; line-height: 1.8; color: #ddd; }
+.blog-content h2 { font-size: 28px; font-weight: 700; margin: 40px 0 16px; color: #fff; }
+.blog-content h3 { font-size: 22px; font-weight: 600; margin: 32px 0 12px; color: #fff; }
+.blog-content h4 { font-size: 18px; font-weight: 600; margin: 24px 0 8px; color: #fff; }
+.blog-content p { margin-bottom: 20px; }
+.blog-content a { color: var(--accent2); text-decoration: underline; }
+.blog-content a:hover { color: #fff; }
+.blog-content ul, .blog-content ol { margin-bottom: 20px; padding-left: 24px; }
+.blog-content li { margin-bottom: 8px; }
+.blog-content blockquote { border-left: 3px solid var(--accent2); padding: 16px 24px; margin: 24px 0; background: rgba(142,45,226,0.05); border-radius: 0 8px 8px 0; font-style: italic; color: #ccc; }
+.blog-content pre { background: #1a1a1a; border: 1px solid var(--border); border-radius: 8px; padding: 20px; overflow-x: auto; margin-bottom: 20px; font-size: 14px; }
+.blog-content code { background: #1a1a1a; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+.blog-content img { max-width: 100%; border-radius: 8px; margin: 24px 0; }
+
+.tags { margin: 32px 0; display: flex; gap: 8px; flex-wrap: wrap; }
+.tags a { padding: 4px 12px; border: 1px solid var(--border); border-radius: 20px; color: var(--muted); text-decoration: none; font-size: 13px; transition: all 0.2s; }
+.tags a:hover { border-color: var(--accent2); color: #fff; }
+
+.author-bio { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 32px; display: flex; align-items: center; gap: 16px; }
+.author-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(90deg, var(--accent), var(--accent2)); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: #fff; }
+.author-info h4 { font-size: 16px; font-weight: 600; color: #fff; }
+.author-info p { font-size: 14px; color: var(--muted); }
+
+.share { display: flex; gap: 12px; margin-bottom: 32px; }
+.share a { padding: 8px 16px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); text-decoration: none; font-size: 14px; transition: all 0.2s; }
+.share a:hover { border-color: var(--accent2); background: rgba(142,45,226,0.1); }
+
+.prev-next { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 48px; }
+.prev-next a { padding: 20px; border: 1px solid var(--border); border-radius: var(--radius); text-decoration: none; transition: all 0.2s; }
+.prev-next a:hover { border-color: var(--accent2); }
+.prev-next .dir { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.prev-next .title { font-size: 16px; font-weight: 600; color: #fff; }
+.prev-next .next { text-align: right; }
+
+.related-posts { margin-bottom: 48px; }
+.related-posts h2 { font-size: 24px; font-weight: 700; margin-bottom: 24px; }
+.related-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.related-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform 0.2s; }
+.related-card:hover { transform: translateY(-4px); border-color: var(--accent2); }
+.related-card img { width: 100%; height: 160px; object-fit: cover; }
+.related-card-body { padding: 16px; }
+.related-card-body h3 { font-size: 16px; font-weight: 600; }
+.related-card-body h3 a { color: #fff; text-decoration: none; }
+.related-card-body h3 a:hover { color: var(--accent2); }
+.related-card-body .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+.newsletter-cta { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 40px; text-align: center; margin-bottom: 48px; }
+.newsletter-cta h3 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.newsletter-cta p { color: var(--muted); margin-bottom: 20px; }
+.newsletter-cta form { display: flex; gap: 12px; max-width: 480px; margin: 0 auto; }
+.newsletter-cta input { flex: 1; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: #fff; font-family: inherit; }
+.newsletter-cta button { padding: 12px 24px; border-radius: 8px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; font-weight: 600; cursor: pointer; font-family: inherit; }
+
+.blog-messages { margin-bottom: 24px; }
+.blog-message { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+.blog-message-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #22c55e; }
+.blog-message-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
+
+@media (max-width: 768px) {
+  .post-header h1 { font-size: 26px; }
+  .blog-content { font-size: 16px; }
+  .prev-next { grid-template-columns: 1fr; }
+  .related-grid { grid-template-columns: 1fr; }
+  .newsletter-cta form { flex-direction: column; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<nav class="breadcrumbs" aria-label="Breadcrumb">
+  <a href="/">Home</a>
+  <span class="sep">/</span>
+  <a href="/blog/">Blog</a>
+  {% if post.category %}
+  <span class="sep">/</span>
+  <a href="/blog/category/{{ post.category.slug }}/">{{ post.category.name }}</a>
+  {% endif %}
+  <span class="sep">/</span>
+  <span style="color:var(--text);">{{ post.title|truncatewords:6 }}</span>
+</nav>
+
+<article>
+  <header class="post-header">
+    {% if post.category %}<span class="category-badge">{{ post.category.name }}</span>{% endif %}
+    <h1>{{ post.title }}</h1>
+    <div class="post-meta">
+      <span>By {{ post.author.get_full_name|default:post.author.username }}</span>
+      <span>{{ post.published_at|date:"F d, Y" }}</span>
+      <span>{{ post.reading_time_minutes }} min read</span>
+      <span>{{ post.view_count }} views</span>
+    </div>
+  </header>
+
+  {% if post.featured_image %}
+  <img src="{{ post.featured_image.url }}" alt="{{ post.alt_text|default:post.title }}" class="post-hero-image" width="800" height="450" loading="eager" fetchpriority="high">
+  {% endif %}
+
+  <div class="blog-content">
+    {{ post.content|safe }}
+  </div>
+
+  {% if post.tags.all %}
+  <div class="tags">
+    {% for tag in post.tags.all %}
+    <a href="/blog/tag/{{ tag.slug }}/">#{{ tag.name }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</article>
+
+<div class="author-bio">
+  <div class="author-avatar">{{ post.author.get_full_name|default:post.author.username|first|upper }}</div>
+  <div class="author-info">
+    <h4>{{ post.author.get_full_name|default:post.author.username }}</h4>
+    <p>MatrixAi team — helping businesses automate customer support with AI.</p>
+  </div>
+</div>
+
+<div class="share">
+  <a href="https://wa.me/?text={{ post.title|urlencode }}%20{{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on WhatsApp</a>
+  <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on Facebook</a>
+  <a href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on Twitter</a>
+  <a href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.build_absolute_uri|urlencode }}&title={{ post.title|urlencode }}" target="_blank" rel="noopener">Share on LinkedIn</a>
+</div>
+
+<nav class="prev-next" aria-label="Adjacent posts">
+  {% if prev_post %}
+  <a href="{{ prev_post.get_absolute_url }}">
+    <div class="dir">← Previous</div>
+    <div class="title">{{ prev_post.title }}</div>
+  </a>
+  {% endif %}
+  {% if next_post %}
+  <a href="{{ next_post.get_absolute_url }}" class="next">
+    <div class="dir">Next →</div>
+    <div class="title">{{ next_post.title }}</div>
+  </a>
+  {% endif %}
+</nav>
+
+{% if related_posts %}
+<section class="related-posts">
+  <h2>Related Posts</h2>
+  <div class="related-grid">
+    {% for related in related_posts %}
+    <a href="{{ related.get_absolute_url }}" style="text-decoration:none;color:inherit;">
+      <div class="related-card">
+        {% if related.featured_image %}
+        <img src="{{ related.featured_image.url }}" alt="{{ related.alt_text|default:related.title }}" loading="lazy">
+        {% endif %}
+        <div class="related-card-body">
+          <h3>{{ related.title }}</h3>
+          <div class="meta">{{ related.published_at|date:"M d, Y" }} · {{ related.reading_time_minutes }} min read</div>
+        </div>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<section class="newsletter-cta">
+  <h3>Get AI & E-commerce tips in your inbox</h3>
+  <p>Subscribe to our newsletter for the latest guides, tips, and strategies.</p>
+  <form method="post" action="/blog/subscribe/">
+    {% csrf_token %}
+    <input type="email" name="email" placeholder="you@example.com" required>
+    <button type="submit">Subscribe</button>
+  </form>
+</section>
+{% endblock %}

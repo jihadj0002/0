@@ -1,0 +1,186 @@
+{% extends "front/base_public.html" %}
+{% load static %}
+{% block meta %}
+<meta name="description" content="AI chatbot tips, e-commerce growth strategies, and customer automation guides from MatrixAi.">
+{% endblock %}
+{% block title %}Blog — MatrixAi{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --bg: #0d0d0d; --surface: #141414; --border: #2a2a2a; --text: #e5e5e5; --muted: #888; --accent: #4A00E0; --accent2: #8E2DE2; --radius: 12px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.6; }
+.blog-navbar { background: rgba(13,13,13,0.95); border-bottom: 1px solid var(--border); padding: 16px 0; position: sticky; top: 0; z-index: 100; }
+.blog-navbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+.blog-navbar-links { display: flex; align-items: center; gap: 24px; }
+.blog-nav-link { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; transition: color 0.2s; }
+.blog-nav-link:hover, .blog-nav-link-active { color: #fff; }
+.blog-nav-cta { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; }
+.blog-main { max-width: 1200px; margin: 0 auto; padding: 48px 24px; min-height: 60vh; }
+.blog-footer { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; }
+.blog-footer-inner { max-width: 1200px; margin: 0 auto; }
+.blog-footer-links { margin-bottom: 16px; }
+.blog-footer-links a { color: var(--muted); text-decoration: none; font-size: 14px; margin: 0 8px; }
+.blog-footer-links a:hover { color: #fff; }
+.footer-dot { color: var(--muted); }
+.blog-footer-brand { margin-bottom: 12px; }
+.blog-footer-copyright { color: var(--muted); font-size: 13px; }
+
+.blog-header { text-align: center; margin-bottom: 48px; }
+.blog-header h1 { font-size: 42px; font-weight: 800; background: linear-gradient(90deg, #fff, var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
+.blog-header p { color: var(--muted); font-size: 18px; max-width: 600px; margin: 0 auto; }
+
+.featured-card { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; margin-bottom: 48px; }
+.featured-card-image { position: relative; min-height: 300px; }
+.featured-card-image img { width: 100%; height: 100%; object-fit: cover; position: absolute; }
+.featured-card-body { padding: 40px; display: flex; flex-direction: column; justify-content: center; }
+.featured-card-body .category-badge { display: inline-block; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 16px; width: fit-content; }
+.featured-card-body h2 { font-size: 28px; font-weight: 700; margin-bottom: 12px; }
+.featured-card-body h2 a { color: #fff; text-decoration: none; }
+.featured-card-body h2 a:hover { color: var(--accent2); }
+.featured-card-body p { color: var(--muted); font-size: 16px; margin-bottom: 16px; line-height: 1.7; }
+.featured-meta { color: var(--muted); font-size: 13px; display: flex; gap: 16px; }
+
+.category-tabs { display: flex; gap: 8px; margin-bottom: 32px; flex-wrap: wrap; }
+.category-tab { padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); text-decoration: none; font-size: 14px; transition: all 0.2s; }
+.category-tab:hover, .category-tab-active { border-color: var(--accent2); color: #fff; background: rgba(142,45,226,0.1); }
+
+.post-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
+.post-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform 0.2s, border-color 0.2s; }
+.post-card:hover { transform: translateY(-4px); border-color: var(--accent2); }
+.post-card-image { width: 100%; height: 200px; object-fit: cover; }
+.post-card-body { padding: 20px; }
+.post-card-body .category-badge { display: inline-block; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+.post-card-body h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.post-card-body h3 a { color: #fff; text-decoration: none; }
+.post-card-body h3 a:hover { color: var(--accent2); }
+.post-card-body p { color: var(--muted); font-size: 14px; margin-bottom: 12px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.post-card-meta { color: var(--muted); font-size: 12px; display: flex; gap: 12px; }
+
+.pagination { display: flex; justify-content: center; gap: 8px; margin-bottom: 48px; }
+.pagination a, .pagination span { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 14px; }
+.pagination a:hover { border-color: var(--accent2); }
+.pagination .current { background: linear-gradient(90deg, var(--accent), var(--accent2)); border: none; color: #fff; }
+
+.sidebar { margin-bottom: 48px; }
+.sidebar h3 { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+.sidebar form { display: flex; gap: 8px; margin-bottom: 32px; }
+.sidebar input[type=email] { flex: 1; padding: 10px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: #fff; font-family: inherit; }
+.sidebar button { padding: 10px 20px; border-radius: 8px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; font-weight: 600; cursor: pointer; font-family: inherit; }
+.sidebar-links { display: flex; flex-direction: column; gap: 8px; }
+.sidebar-links a { color: var(--text); text-decoration: none; font-size: 14px; transition: color 0.2s; }
+.sidebar-links a:hover { color: var(--accent2); }
+
+.blog-messages { margin-bottom: 24px; }
+.blog-message { padding: 12px 16px; border-radius: 8px; margin-bottom: 8px; font-size: 14px; }
+.blog-message-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #22c55e; }
+.blog-message-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
+
+@media (max-width: 768px) {
+  .featured-card { grid-template-columns: 1fr; }
+  .featured-card-image { min-height: 200px; }
+  .post-grid { grid-template-columns: 1fr; }
+  .blog-navbar-links { gap: 12px; }
+  .blog-nav-link, .blog-nav-cta { font-size: 13px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="blog-header">
+  <h1>MatrixAi Blog</h1>
+  <p>AI chatbot tips, e-commerce growth strategies, and customer automation guides.</p>
+</div>
+
+{% if featured_post %}
+<a href="{{ featured_post.get_absolute_url }}" class="featured-card" style="text-decoration:none;color:inherit;">
+  <div class="featured-card-image">
+    {% if featured_post.featured_image %}
+    <img src="{{ featured_post.featured_image.url }}" alt="{{ featured_post.alt_text|default:featured_post.title }}" loading="eager">
+    {% endif %}
+  </div>
+  <div class="featured-card-body">
+    {% if featured_post.category %}<span class="category-badge">{{ featured_post.category.name }}</span>{% endif %}
+    <h2>{{ featured_post.title }}</h2>
+    <p>{{ featured_post.excerpt|default:featured_post.get_meta_description }}</p>
+    <div class="featured-meta">
+      <span>{{ featured_post.published_at|date:"M d, Y" }}</span>
+      <span>{{ featured_post.reading_time_minutes }} min read</span>
+    </div>
+  </div>
+</a>
+{% endif %}
+
+<div style="display:grid;grid-template-columns:1fr 300px;gap:48px;">
+<div>
+<div class="category-tabs">
+  <a href="/blog/" class="category-tab{% if not request.path|cut:'/blog/'|cut:'/' %} category-tab-active{% endif %}">All</a>
+  {% for cat in categories %}
+  <a href="/blog/category/{{ cat.slug }}/" class="category-tab">{{ cat.name }}</a>
+  {% endfor %}
+</div>
+
+<div class="post-grid">
+  {% for post in posts %}
+  <article class="post-card">
+    {% if post.featured_image %}
+    <img src="{{ post.featured_image.url }}" alt="{{ post.alt_text|default:post.title }}" class="post-card-image" loading="lazy">
+    {% endif %}
+    <div class="post-card-body">
+      {% if post.category %}<span class="category-badge">{{ post.category.name }}</span>{% endif %}
+      <h3><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></h3>
+      <p>{{ post.excerpt|default:post.get_meta_description|truncatewords:30 }}</p>
+      <div class="post-card-meta">
+        <span>{{ post.published_at|date:"M d, Y" }}</span>
+        <span>{{ post.reading_time_minutes }} min read</span>
+      </div>
+    </div>
+  </article>
+  {% empty %}
+  <p style="color:var(--muted);grid-column:1/-1;">No posts yet. Check back soon!</p>
+  {% endfor %}
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination">
+  {% if page_obj.has_previous %}
+    <a href="?page={{ page_obj.previous_page_number }}">← Previous</a>
+  {% endif %}
+  {% for num in page_obj.paginator.page_range %}
+    {% if num == page_obj.number %}
+      <span class="current">{{ num }}</span>
+    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+      <a href="?page={{ num }}">{{ num }}</a>
+    {% endif %}
+  {% endfor %}
+  {% if page_obj.has_next %}
+    <a href="?page={{ page_obj.next_page_number }}">Next →</a>
+  {% endif %}
+</div>
+{% endif %}
+</div>
+
+<aside class="sidebar">
+  <h3>Subscribe</h3>
+  <form method="post" action="/blog/subscribe/">
+    {% csrf_token %}
+    <input type="email" name="email" placeholder="your@email.com" required>
+    <button type="submit">Subscribe</button>
+  </form>
+
+  <h3>Recent Posts</h3>
+  <div class="sidebar-links">
+    {% for post in recent_posts %}
+    <a href="{{ post.get_absolute_url }}">{{ post.title }}</a>
+    {% endfor %}
+  </div>
+
+  <h3 style="margin-top:32px;">Categories</h3>
+  <div class="sidebar-links">
+    {% for cat in categories %}
+    <a href="/blog/category/{{ cat.slug }}/">{{ cat.name }}</a>
+    {% endfor %}
+  </div>
+</aside>
+</div>
+{% endblock %}

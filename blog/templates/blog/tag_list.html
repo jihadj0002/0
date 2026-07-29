@@ -1,0 +1,87 @@
+{% extends "front/base_public.html" %}
+{% load seo_tags %}
+
+{% block meta %}
+<meta name="description" content="Posts tagged with {{ tag.name }} on MatrixAi Blog">
+<meta name="robots" content="{% if page_obj.paginator.count < 3 %}noindex,follow{% else %}index,follow{% endif %}">
+{% endblock %}
+{% block og_tags %}{% render_og_tags %}{% endblock %}
+{% block title %}#{{ tag.name }} — MatrixAi Blog{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --bg: #0d0d0d; --surface: #141414; --border: #2a2a2a; --text: #e5e5e5; --muted: #888; --accent: #4A00E0; --accent2: #8E2DE2; --radius: 12px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.6; }
+.blog-navbar { background: rgba(13,13,13,0.95); border-bottom: 1px solid var(--border); padding: 16px 0; position: sticky; top: 0; z-index: 100; }
+.blog-navbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+.blog-navbar-links { display: flex; align-items: center; gap: 24px; }
+.blog-nav-link { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; transition: color 0.2s; }
+.blog-nav-link:hover, .blog-nav-link-active { color: #fff; }
+.blog-nav-cta { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; }
+.blog-main { max-width: 1200px; margin: 0 auto; padding: 48px 24px; min-height: 60vh; }
+.blog-footer { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; }
+.blog-footer-inner { max-width: 1200px; margin: 0 auto; }
+.blog-footer-links { margin-bottom: 16px; }
+.blog-footer-links a { color: var(--muted); text-decoration: none; font-size: 14px; margin: 0 8px; }
+.blog-footer-links a:hover { color: #fff; }
+.footer-dot { color: var(--muted); }
+.blog-footer-brand { margin-bottom: 12px; }
+.blog-footer-copyright { color: var(--muted); font-size: 13px; }
+.tag-header { text-align: center; margin-bottom: 48px; }
+.tag-header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; color: #fff; }
+.tag-header p { color: var(--muted); font-size: 14px; }
+.post-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-bottom: 48px; }
+.post-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: transform 0.2s, border-color 0.2s; }
+.post-card:hover { transform: translateY(-4px); border-color: var(--accent2); }
+.post-card-image { width: 100%; height: 200px; object-fit: cover; }
+.post-card-body { padding: 20px; }
+.post-card-body h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.post-card-body h3 a { color: #fff; text-decoration: none; }
+.post-card-body h3 a:hover { color: var(--accent2); }
+.post-card-body p { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+.post-card-meta { color: var(--muted); font-size: 12px; display: flex; gap: 12px; }
+.pagination { display: flex; justify-content: center; gap: 8px; margin-bottom: 48px; }
+.pagination a, .pagination span { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 14px; }
+.pagination a:hover { border-color: var(--accent2); }
+.pagination .current { background: linear-gradient(90deg, var(--accent), var(--accent2)); border: none; color: #fff; }
+@media (max-width: 768px) { .post-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tag-header">
+  <h1>#{{ tag.name }}</h1>
+  <p>{{ page_obj.paginator.count }} post{{ page_obj.paginator.count|pluralize }}</p>
+</div>
+
+<div class="post-grid">
+  {% for post in posts %}
+  <article class="post-card">
+    {% if post.featured_image %}
+    <img src="{{ post.featured_image.url }}" alt="{{ post.alt_text|default:post.title }}" class="post-card-image" loading="lazy">
+    {% endif %}
+    <div class="post-card-body">
+      <h3><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></h3>
+      <p>{{ post.excerpt|default:post.get_meta_description|truncatewords:30 }}</p>
+      <div class="post-card-meta">
+        <span>{{ post.published_at|date:"M d, Y" }}</span>
+        <span>{{ post.reading_time_minutes }} min read</span>
+      </div>
+    </div>
+  </article>
+  {% empty %}
+  <p style="color:var(--muted);grid-column:1/-1;">No posts with this tag yet.</p>
+  {% endfor %}
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination">
+  {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">← Previous</a>{% endif %}
+  {% for num in page_obj.paginator.page_range %}
+    {% if num == page_obj.number %}<span class="current">{{ num }}</span>{% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}<a href="?page={{ num }}">{{ num }}</a>{% endif %}
+  {% endfor %}
+  {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

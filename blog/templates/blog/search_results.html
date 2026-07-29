@@ -1,0 +1,95 @@
+{% extends "front/base_public.html" %}
+{% load seo_tags %}
+
+{% block meta %}
+<meta name="description" content="Search results for {{ query }} on MatrixAi Blog">
+<meta name="robots" content="noindex,follow">
+{% endblock %}
+{% block title %}Search: {{ query }} — MatrixAi Blog{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --bg: #0d0d0d; --surface: #141414; --border: #2a2a2a; --text: #e5e5e5; --muted: #888; --accent: #4A00E0; --accent2: #8E2DE2; --radius: 12px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; line-height: 1.6; }
+.blog-navbar { background: rgba(13,13,13,0.95); border-bottom: 1px solid var(--border); padding: 16px 0; position: sticky; top: 0; z-index: 100; }
+.blog-navbar-inner { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; }
+.blog-navbar-links { display: flex; align-items: center; gap: 24px; }
+.blog-nav-link { color: var(--muted); text-decoration: none; font-size: 15px; font-weight: 500; transition: color 0.2s; }
+.blog-nav-link:hover, .blog-nav-link-active { color: #fff; }
+.blog-nav-cta { background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; padding: 8px 20px; border-radius: 8px; text-decoration: none; font-size: 15px; font-weight: 600; }
+.blog-main { max-width: 800px; margin: 0 auto; padding: 48px 24px; min-height: 60vh; }
+.blog-footer { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; }
+.blog-footer-inner { max-width: 1200px; margin: 0 auto; }
+.blog-footer-links { margin-bottom: 16px; }
+.blog-footer-links a { color: var(--muted); text-decoration: none; font-size: 14px; margin: 0 8px; }
+.blog-footer-links a:hover { color: #fff; }
+.footer-dot { color: var(--muted); }
+.blog-footer-brand { margin-bottom: 12px; }
+.blog-footer-copyright { color: var(--muted); font-size: 13px; }
+.search-header { text-align: center; margin-bottom: 48px; }
+.search-header h1 { font-size: 28px; font-weight: 700; color: #fff; margin-bottom: 16px; }
+.search-form { display: flex; gap: 12px; max-width: 500px; margin: 0 auto 32px; }
+.search-form input { flex: 1; padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: #fff; font-family: inherit; font-size: 16px; }
+.search-form button { padding: 12px 24px; border-radius: 8px; border: none; background: linear-gradient(90deg, var(--accent), var(--accent2)); color: #fff; font-weight: 600; cursor: pointer; font-family: inherit; }
+.result-count { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+.search-results { list-style: none; padding: 0; }
+.search-result { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; transition: border-color 0.2s; }
+.search-result:hover { border-color: var(--accent2); }
+.search-result a { text-decoration: none; color: inherit; }
+.search-result h3 { font-size: 20px; font-weight: 600; color: #fff; margin-bottom: 8px; }
+.search-result h3:hover { color: var(--accent2); }
+.search-result p { color: var(--muted); font-size: 14px; }
+.search-result .meta { color: var(--muted); font-size: 12px; margin-top: 8px; display: flex; gap: 12px; }
+.pagination { display: flex; justify-content: center; gap: 8px; margin-top: 32px; }
+.pagination a, .pagination span { padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font-size: 14px; }
+.pagination a:hover { border-color: var(--accent2); }
+.pagination .current { background: linear-gradient(90deg, var(--accent), var(--accent2)); border: none; color: #fff; }
+@media (max-width: 768px) { .search-form { flex-direction: column; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="search-header">
+  <h1>Search Blog</h1>
+  <form class="search-form" method="get" action="/blog/search/">
+    <input type="text" name="q" placeholder="Search articles..." value="{{ query }}" required>
+    <button type="submit">Search</button>
+  </form>
+</div>
+
+{% if query %}
+<p class="result-count">{{ page_obj.paginator.count }} result{{ page_obj.paginator.count|pluralize }} for "{{ query }}"</p>
+{% endif %}
+
+{% if posts %}
+<div class="search-results">
+  {% for post in posts %}
+  <div class="search-result">
+    <a href="{{ post.get_absolute_url }}">
+      <h3>{{ post.title }}</h3>
+      <p>{{ post.excerpt|default:post.get_meta_description|truncatewords:35 }}</p>
+      <div class="meta">
+        <span>{{ post.published_at|date:"M d, Y" }}</span>
+        <span>{{ post.reading_time_minutes }} min read</span>
+        {% if post.category %}<span>{{ post.category.name }}</span>{% endif %}
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+{% if page_obj.paginator.num_pages > 1 %}
+<div class="pagination">
+  {% if page_obj.has_previous %}<a href="?q={{ query }}&page={{ page_obj.previous_page_number }}">← Previous</a>{% endif %}
+  {% for num in page_obj.paginator.page_range %}
+    {% if num == page_obj.number %}<span class="current">{{ num }}</span>{% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}<a href="?q={{ query }}&page={{ num }}">{{ num }}</a>{% endif %}
+  {% endfor %}
+  {% if page_obj.has_next %}<a href="?q={{ query }}&page={{ page_obj.next_page_number }}">Next →</a>{% endif %}
+</div>
+{% endif %}
+
+{% elif query %}
+<p style="text-align:center;color:var(--muted);font-size:16px;margin-top:32px;">No results found. Try a different search term.</p>
+{% endif %}
+{% endblock %}

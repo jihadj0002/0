@@ -5,6 +5,10 @@
 # Local Django database
 db.sqlite3
 
+
+# User uploads
+docs/
+
 # User uploads
 media/
 media/*
