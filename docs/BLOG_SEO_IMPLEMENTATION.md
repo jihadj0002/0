@@ -1299,4 +1299,5 @@ Week 4  ████████░░  Phase 4 — Write pillar posts, social s
 Week 5+  ░░░░░░░░  Phase 5 — Monitor, iterate, write weekly, optimize based on data
 ```
 
+
 **End of document.**

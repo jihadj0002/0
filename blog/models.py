@@ -34,7 +34,10 @@ class Category(models.Model):
 class Tag(models.Model):
     name = models.CharField(max_length=50)
     slug = models.SlugField(max_length=60, unique=True)
+    meta_title = models.CharField(max_length=70, blank=True)
+    meta_description = models.TextField(max_length=160, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.name

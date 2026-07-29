@@ -52,6 +52,15 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 .blog-content pre { background: #1a1a1a; border: 1px solid var(--border); border-radius: 8px; padding: 20px; overflow-x: auto; margin-bottom: 20px; font-size: 14px; }
 .blog-content code { background: #1a1a1a; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
 .blog-content img { max-width: 100%; border-radius: 8px; margin: 24px 0; }
+.blog-content table { width: 100%; border-collapse: separate; border-spacing: 0; margin: 24px 0; border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); font-size: 15px; }
+.blog-content table thead { background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+.blog-content table th { color: #fff; font-weight: 600; text-align: left; padding: 12px 16px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; }
+.blog-content table td { padding: 12px 16px; border-top: 1px solid var(--border); color: #ddd; }
+.blog-content table tbody tr { background: var(--surface); transition: background 0.2s; }
+.blog-content table tbody tr:nth-child(even) { background: #1a1a1a; }
+.blog-content table tbody tr:hover { background: rgba(142,45,226,0.08); }
+.blog-content table tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
+.blog-content table tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
 
 .tags { margin: 32px 0; display: flex; gap: 8px; flex-wrap: wrap; }
 .tags a { padding: 4px 12px; border: 1px solid var(--border); border-radius: 20px; color: var(--muted); text-decoration: none; font-size: 13px; transition: all 0.2s; }
@@ -125,8 +134,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
     {% if post.category %}<span class="category-badge">{{ post.category.name }}</span>{% endif %}
     <h1>{{ post.title }}</h1>
     <div class="post-meta">
-      <span>By {{ post.author.get_full_name|default:post.author.username }}</span>
-      <span>{{ post.published_at|date:"F d, Y" }}</span>
+      <span>By <a href="/blog/" style="color:var(--accent2);text-decoration:none;">{{ post.author.get_full_name|default:post.author.username }}</a></span>
+      <time datetime="{{ post.published_at|date:'Y-m-d' }}">{{ post.published_at|date:"F d, Y" }}</time>
       <span>{{ post.reading_time_minutes }} min read</span>
       <span>{{ post.view_count }} views</span>
     </div>
@@ -158,10 +167,10 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
 </div>
 
 <div class="share">
-  <a href="https://wa.me/?text={{ post.title|urlencode }}%20{{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on WhatsApp</a>
-  <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on Facebook</a>
-  <a href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener">Share on Twitter</a>
-  <a href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.build_absolute_uri|urlencode }}&title={{ post.title|urlencode }}" target="_blank" rel="noopener">Share on LinkedIn</a>
+  <a href="https://wa.me/?text={{ post.title|urlencode }}%20{{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener noreferrer">Share on WhatsApp</a>
+  <a href="https://www.facebook.com/sharer/sharer.php?u={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener noreferrer">Share on Facebook</a>
+  <a href="https://twitter.com/intent/tweet?text={{ post.title|urlencode }}&url={{ request.build_absolute_uri|urlencode }}" target="_blank" rel="noopener noreferrer">Share on Twitter</a>
+  <a href="https://www.linkedin.com/shareArticle?mini=true&url={{ request.build_absolute_uri|urlencode }}&title={{ post.title|urlencode }}" target="_blank" rel="noopener noreferrer">Share on LinkedIn</a>
 </div>
 
 <nav class="prev-next" aria-label="Adjacent posts">
@@ -191,7 +200,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
         {% endif %}
         <div class="related-card-body">
           <h3>{{ related.title }}</h3>
-          <div class="meta">{{ related.published_at|date:"M d, Y" }} · {{ related.reading_time_minutes }} min read</div>
+          <div class="meta"><time datetime="{{ related.published_at|date:'Y-m-d' }}">{{ related.published_at|date:"M d, Y" }}</time> · {{ related.reading_time_minutes }} min read</div>
         </div>
       </div>
     </a>

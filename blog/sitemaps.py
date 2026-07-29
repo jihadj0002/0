@@ -1,7 +1,7 @@
 from django.contrib.sitemaps import Sitemap
 from django.urls import reverse
 from django.utils import timezone
-from .models import BlogPost, Category
+from .models import BlogPost, Category, Tag
 
 
 class BlogPostSitemap(Sitemap):
@@ -27,8 +27,25 @@ class CategorySitemap(Sitemap):
     def items(self):
         return Category.objects.all()
 
+    def lastmod(self, obj):
+        return obj.updated_at
+
     def location(self, obj):
         return reverse("blog:category", kwargs={"slug": obj.slug})
+
+
+class TagSitemap(Sitemap):
+    changefreq = "weekly"
+    priority = 0.4
+
+    def items(self):
+        return Tag.objects.all().order_by("name")
+
+    def lastmod(self, obj):
+        return obj.updated_at
+
+    def location(self, obj):
+        return reverse("blog:tag", kwargs={"slug": obj.slug})
 
 
 class StaticSitemap(Sitemap):
@@ -37,6 +54,9 @@ class StaticSitemap(Sitemap):
 
     def items(self):
         return ["front:home", "front:pricing", "front:p_policy", "front:terms"]
+
+    def lastmod(self, item):
+        return None
 
     def location(self, item):
         return reverse(item)

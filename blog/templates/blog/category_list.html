@@ -3,10 +3,25 @@
 
 {% block meta %}
 <meta name="description" content="{{ category.meta_description|default:category.description|default:'Posts categorized under '|add:category.name }}">
-<meta name="robots" content="{% if page_obj.paginator.count < 3 %}noindex,follow{% else %}index,follow{% endif %}">
+<meta name="robots" content="{% if page_obj.number > 1 or page_obj.paginator.count < 3 %}noindex,follow{% else %}index,follow{% endif %}">
+{% if page_obj.has_previous %}<link rel="prev" href="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% if page_obj.previous_page_number > 1 %}?page={{ page_obj.previous_page_number }}{% endif %}">{% endif %}
+{% if page_obj.has_next %}<link rel="next" href="{{ request.scheme }}://{{ request.get_host }}{{ request.path }}?page={{ page_obj.next_page_number }}">{% endif %}
 {% endblock %}
 {% block og_tags %}{% render_og_tags %}{% endblock %}
+{% block canonical_url %}{{ request.scheme }}://{{ request.get_host }}{{ request.path }}{% endblock %}
 {% block title %}{{ category.meta_title|default:category.name }} — MatrixAi Blog{% endblock %}
+{% block structured_data %}
+{% render_breadcrumb_data category=category %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "CollectionPage",
+  "name": "{{ category.meta_title|default:category.name }} — MatrixAi Blog",
+  "description": "{{ category.meta_description|default:category.description|default:'' }}",
+  "url": "{{ request.scheme }}://{{ request.get_host }}{{ request.path }}"
+}
+</script>
+{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -74,7 +89,7 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-ser
       <h3><a href="{{ post.get_absolute_url }}">{{ post.title }}</a></h3>
       <p>{{ post.excerpt|default:post.get_meta_description|truncatewords:30 }}</p>
       <div class="post-card-meta">
-        <span>{{ post.published_at|date:"M d, Y" }}</span>
+        <time datetime="{{ post.published_at|date:'Y-m-d' }}">{{ post.published_at|date:"M d, Y" }}</time>
         <span>{{ post.reading_time_minutes }} min read</span>
       </div>
     </div>

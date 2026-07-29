@@ -103,7 +103,7 @@ def render_structured_data(context, post=None):
             "name": SITE_NAME,
             "logo": {
                 "@type": "ImageObject",
-                "url": f"{site_url}/static/images/logo.png",
+                "url": "https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/main/Logo/favicon_256x256_3.png",
             },
         },
         "mainEntityOfPage": {"@type": "WebPage", "@id": url},
@@ -114,7 +114,7 @@ def render_structured_data(context, post=None):
 
 
 @register.simple_tag(takes_context=True)
-def render_breadcrumb_data(context, post=None):
+def render_breadcrumb_data(context, post=None, category=None, tag=None):
     import json
     request = context.get("request")
     site_url = f"{request.scheme}://{request.get_host()}" if request else ""
@@ -126,7 +126,19 @@ def render_breadcrumb_data(context, post=None):
          "item": f"{site_url}/blog/"},
     ]
 
-    if post and post.category:
+    if category:
+        items.append({
+            "@type": "ListItem", "position": len(items) + 1,
+            "name": category.name,
+            "item": f"{site_url}/blog/category/{category.slug}/",
+        })
+    elif tag:
+        items.append({
+            "@type": "ListItem", "position": len(items) + 1,
+            "name": f"#{tag.name}",
+            "item": f"{site_url}/blog/tag/{tag.slug}/",
+        })
+    elif post and post.category:
         items.append({
             "@type": "ListItem", "position": 3, "name": post.category.name,
             "item": f"{site_url}/blog/category/{post.category.slug}/",

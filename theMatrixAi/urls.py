@@ -1,15 +1,16 @@
 from django.contrib import admin
 from django.conf import settings
 from django.conf.urls.static import static
-from django.urls import path, include
-from django.contrib.sitemaps.views import sitemap
+from django.urls import path, include, re_path
+from django.contrib.sitemaps.views import sitemap, index as sitemap_index
 from django.http import HttpResponse
-from blog.sitemaps import BlogPostSitemap, CategorySitemap, StaticSitemap
+from blog.sitemaps import BlogPostSitemap, CategorySitemap, TagSitemap, StaticSitemap
 
-sitemaps = {
-    "blog_posts": BlogPostSitemap,
+all_sitemaps = {
+    "blog": BlogPostSitemap,
     "categories": CategorySitemap,
-    "static": StaticSitemap,
+    "tags": TagSitemap,
+    "pages": StaticSitemap,
 }
 
 
@@ -34,7 +35,8 @@ urlpatterns = [
     path("msg/", include("msg.urls")),
     path("blog/", include("blog.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),
-    path("sitemap.xml", sitemap, {"sitemaps": sitemaps}, name="sitemap"),
+    re_path(r"^sitemap-(?P<section>.+)\.xml$", sitemap, {"sitemaps": all_sitemaps}, name="sitemap-section"),
+    path("sitemap.xml", sitemap_index, {"sitemaps": all_sitemaps, "sitemap_url_name": "sitemap-section"}, name="sitemap"),
     path("robots.txt", robots_txt, name="robots_txt"),
 ]
 
