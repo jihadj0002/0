@@ -27,7 +27,6 @@ def render_meta_tags(context, post=None):
         )
 
     tags = [
-        f"<title>{escape(title)}</title>",
         f'<meta name="description" content="{escape(description)}">',
     ]
     return mark_safe("\n".join(tags))

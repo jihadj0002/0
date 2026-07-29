@@ -1,6 +1,7 @@
 {% extends "front/base_public.html" %}
 {% load seo_tags %}
 
+{% block title %}{{ post.get_meta_title }} | MatrixAi{% endblock %}
 {% block meta %}{% render_meta_tags post %}{% endblock %}
 {% block og_tags %}{% render_og_tags post %}{% endblock %}
 {% block structured_data %}{% render_structured_data post %}{% render_breadcrumb_data post %}{% endblock %}
