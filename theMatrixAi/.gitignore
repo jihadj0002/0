@@ -8,6 +8,8 @@ db.sqlite3
 
 # User uploads
 docs/
+docs/*
+
 
 # User uploads
 media/
