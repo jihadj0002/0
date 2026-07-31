@@ -155,7 +155,8 @@ _INTENT_PATTERNS: list[tuple[str, re.Pattern, float]] = [
         r"(bal|বাল|boka|বোকা|chudir|চুদির|gud|গুদ|magir|মাগির|madarchod|মাদারচোদ|"
         r"tor putki|তোর মাগি|তোর মায়ের|তোর বাপ|তোর মুখ|তোর গুদ|"
         r"dhat|ধাত|jhak|ঝাক|khoti|খটি|বেহুদা|fuck|shit|"
-        r"nalayek|নালায়েক|pagan|পাগল|gali|গালি|মাইর|mair|idiot|ইডিয়ট|stupid)", re.IGNORECASE
+        r"nalayek|নালায়েক|pagan|পাগল|gali|গালি|মাইর|mair|idiot|ইডিয়ট|stupid|"
+        r"wtf|wth|wt)", re.IGNORECASE
     ), 0.85),
 
     # Create order / buy — EXPRESSING buying intent only. Mere mentions of the
@@ -246,9 +247,18 @@ _SMALL_TALK_RE = re.compile(
     r"^(how are you|what('s|s) up|kemon|কেমন|ভাল|kmon|accho|আচ্ছা|"
     r"kmn achen|kemon achen|কেমন আছেন|valo achi|ভাল আছি|kemon acho|"
     r"ki khobor|কি খবর|তুমি কেমন|আপনি কেমন|"
-    r"ঠিক আছে|ok|okay|thanks|thank you|ধন্যবাদ|bye|goodbye|বিদায়)",
+    r"ঠিক আছে|ok|okay|thanks|thank you|ধন্যবাদ|bye|goodbye|বিদায়|"
+    r"ha|hae|ho|hmm|na|no|yes|acha|accha|thik|hobe|hbe|jani|"
+    r"thik ache|ঠিক|thikase)",
     re.IGNORECASE
 )
+
+_QUICK_FILLER_WORDS = frozenset({
+    "ha", "hae", "ho", "na", "no", "yes", "acha", "accha", "thik", "ok",
+    "okay", "hobe", "hbe", "jani", "ki", "kya", "why", "how", "so", "to",
+    "the", "a", "an", "ache", "ase", "ei", "eta", "o", "ar", "are", "is",
+    "it", "me", "i", "you",
+})
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +303,11 @@ class IntentDetector:
                     scores[intent_name] = final_confidence
 
         if not scores:
+            # Bare product-name messages ("cradle?", "bottle?", "dolna?") match
+            # no pattern but are clearly product queries — search them instead
+            # of falling to UNKNOWN (which answers from memory without tools).
+            if IntentDetector._is_short_product_query(cleaned):
+                return "SEARCH_PRODUCT"
             return IntentDetector._match_catalog_product(text, context) or "UNKNOWN"
 
         # Return the highest-confidence match
@@ -314,6 +329,24 @@ class IntentDetector:
 
         logger.debug("IntentDetector: text=%r → %s (scores=%s)", text[:50], best_intent, scores)
         return best_intent
+
+    @staticmethod
+    def _is_short_product_query(text: str) -> bool:
+        """True when a short message is likely a bare product query.
+
+        "cradle?", "bottle ache?", "dolna?" — no intent pattern matched, but a
+        short message containing a real content word should be searched, not
+        answered from memory. Pure filler/acknowledgments ("na", "ok", "ha",
+        "thik") are excluded — they're caught earlier as SMALL_TALK.
+        """
+        if not text or len(text.strip()) > 40:
+            return False
+        words = [w for w in re.split(r"[\s,.;:!?/]+", text.lower()) if w]
+        if not words or len(words) > 4:
+            return False
+        if all(w in _QUICK_FILLER_WORDS for w in words):
+            return False
+        return any(len(w) >= 3 for w in words)
 
     @staticmethod
     def _match_catalog_product(text: str, context=None) -> str:

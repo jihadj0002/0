@@ -25,7 +25,6 @@ _DIRECT_MAP: dict[str, str | list[PlanStep]] = {
     "SEARCH_PRODUCT": "search_products",
     "ASK_DETAILS": "search_products",
     "RECOMMEND": "search_products",
-    "SEND_IMAGES": "send_images",
     "CHECK_ORDER": "get_order_status",
     "CANCEL_ORDER": "get_order_status",
     "RETURN_PRODUCT": "search_knowledge_base",
@@ -47,6 +46,10 @@ _TEMPLATE_PLANS: dict[str, list[dict]] = {
     ],
     "CATALOG": [
         {"tool": "search_products", "args": {"query": "", "limit": 10}},
+        {"tool": "send_images", "args": {}},
+    ],
+    "SEND_IMAGES": [
+        {"tool": "search_products", "args": {"query": "__incoming_text__", "limit": 5}},
         {"tool": "send_images", "args": {}},
     ],
     "NEGOTIATE": [
@@ -94,10 +97,36 @@ class Planner:
         # 2) Template mode: known multi-step workflow
         template = _TEMPLATE_PLANS.get(intent)
         if template:
+            if intent == "SEND_IMAGES":
+                return Planner._send_images_plan(context)
             return Planner._resolve_template(template, context)
 
         # 3) LLM mode: use LLM to plan
         return Planner._llm_plan(intent, context, reply_id)
+
+    @staticmethod
+    def _send_images_plan(context: ConversationContext) -> list[PlanStep]:
+        """SEND_IMAGES: when the message refers to a product already focused in
+        the conversation, send THAT product's images directly. Never re-search
+        the raw text first — "pic dekhi" would fan out to junk words ("pic"
+        matches "Earwax Picker") and overwrite the focus. Search-then-send only
+        when nothing is focused or the message names an unrelated product.
+        """
+        from .tools import _focus_match_for_query
+
+        match = None
+        try:
+            match = _focus_match_for_query(context.incoming_text or "", context.conversation)
+        except Exception:
+            match = None
+
+        if match:
+            return [PlanStep(tool="send_images", args={"pids": [match["pid"]]})]
+
+        return [
+            PlanStep(tool="search_products", args={"query": context.incoming_text or "", "limit": 5}),
+            PlanStep(tool="send_images", args={}),
+        ]
 
     @staticmethod
     def _build_args(tool_name: str, context: ConversationContext) -> dict:
@@ -197,15 +226,24 @@ class Planner:
                     args["customer_address"] = context.customer.address
             # Catalog browse: send_images without explicit args → whole catalog
             # (all active products) so the customer sees actual cards, not the
-            # single stale focus product.
+            # single stale focus product. External live stores are excluded —
+            # their catalog lives on the provider, so tool_send_images fetches
+            # it (local DB rows would show the wrong store's products).
             if t["tool"] == "send_images" and not args.get("pid") and not args.get("pids"):
-                from back.models import Product
-                catalog_pids = list(
-                    Product.objects.filter(user=context.user, status=True)
-                    .values_list("pid", flat=True)[:8]
-                )
-                if catalog_pids:
-                    args["pids"] = catalog_pids
+                try:
+                    from api.products.factory import get_active_source, is_external
+                    source = get_active_source(context.user)
+                    external_live = bool(source) and source.mode == "live" and is_external(context.user)
+                except Exception:
+                    external_live = False
+                if not external_live:
+                    from back.models import Product
+                    catalog_pids = list(
+                        Product.objects.filter(user=context.user, status=True)
+                        .values_list("pid", flat=True)[:8]
+                    )
+                    if catalog_pids:
+                        args["pids"] = catalog_pids
             steps.append(PlanStep(tool=t["tool"], args=args))
         return steps
 

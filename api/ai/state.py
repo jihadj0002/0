@@ -422,6 +422,25 @@ class WorkflowEngine:
             "product_name": selected.get("name", ""),
         }
 
+        # Multi-variation product (e.g. baby clothing sizes): capture the
+        # size BEFORE delivery details — the external order API requires a
+        # variation_id and the customer knows their size best at this point.
+        variations = cls._product_variations(conversation, pid)
+        if len(variations) >= 2:
+            cls._apply_variation(collected, text, variations)
+            if not collected.get("variation_id"):
+                session = get_session(conversation)
+                session.collected_data = collected
+                session.current_workflow = "create_order"
+                session.state = "awaiting_variation"
+                session.save()
+                opts = ", ".join(str(v.get("name") or v.get("variation_id", "?")) for v in variations)
+                return {"text": (
+                    f"{selected.get('name', '')} — কোন সাইজটা নেবেন? বিকল্প: {opts}"
+                    if lang == "bn" else
+                    f"Which {selected.get('name', '')} size would you like? Options: {opts}"
+                )}
+
         missing = [f for f in ORDER_FIELDS if not collected.get(f)]
 
         session = get_session(conversation)
@@ -484,6 +503,73 @@ class WorkflowEngine:
             return max(1, int(raw.translate(cls._BN_DIGITS)))
         except ValueError:
             return 0
+
+    @classmethod
+    def _product_variations(cls, conversation, pid) -> list:
+        """Return the variation list for a product (from focused products, or a
+        live external lookup when the product isn't in focus — e.g. repeat
+        orders). Empty list when the product has no variations."""
+        try:
+            from .tools import parse_focus_products
+            for fp in parse_focus_products(getattr(conversation, "current_product", "") or ""):
+                if str(fp.get("pid")) == str(pid):
+                    return cls._dedupe_variations(fp.get("variations") or [])
+        except Exception:
+            logger.exception("variation lookup failed conv=%s", getattr(conversation, "pk", "?"))
+        try:
+            from api.products.factory import get_active_source, get_provider, is_external
+            source = get_active_source(conversation.user)
+            if source and source.mode == "live" and is_external(conversation.user):
+                r = get_provider(conversation.user).get_product(pid)
+                if r:
+                    return cls._dedupe_variations(r.get("variations") or [])
+        except Exception:
+            logger.exception("live variation lookup failed conv=%s", getattr(conversation, "pk", "?"))
+        return []
+
+    @staticmethod
+    def _dedupe_variations(variations) -> list:
+        out, seen = [], set()
+        for v in variations or []:
+            vid = v.get("variation_id")
+            if vid is not None and str(vid) not in seen:
+                seen.add(str(vid))
+                out.append(v)
+        return out
+
+    @classmethod
+    def _select_variation(cls, text, variations) -> dict | None:
+        """Match a variation (size/color) from free text. Returns the variation
+        dict or None. Matches exact/substring name and compact forms with
+        Bengali digits normalised ("2-3 years" ↔ "২-৩", "0-6m", "6-12 months")."""
+        if not text or not variations:
+            return None
+        t = (text or "").lower()
+        t_compact = re.sub(r"[\s\-–—()./]+", "", t).translate(cls._BN_DIGITS)
+        for v in variations:
+            name = str(v.get("name") or "").strip().lower()
+            if not name:
+                continue
+            if name in t:
+                return v
+            compact = re.sub(r"\b(months|years|month|year|mths|ages?)\b", "", name)
+            compact = re.sub(r"[\s\-–—()./]+", "", compact).translate(cls._BN_DIGITS)
+            if compact and compact in t_compact:
+                return v
+        return None
+
+    @classmethod
+    def _apply_variation(cls, collected, text, variations) -> bool:
+        """Match a variation name in ``text`` and store it on ``collected``.
+        Returns True when a variation was chosen."""
+        if not variations or collected.get("variation_id"):
+            return False
+        var = cls._select_variation(text, variations)
+        if var is None:
+            return False
+        collected["variation_id"] = str(var.get("variation_id") or "")
+        collected["variation_name"] = str(var.get("name") or "")
+        return True
 
     @classmethod
     def _parse_details(cls, text) -> dict:
@@ -610,6 +696,22 @@ class WorkflowEngine:
                 "quantity": qty or int(collected.get("quantity") or 1),
             })
             session.collected_data = collected
+
+            # Multi-variation product chosen here → ask for the size first.
+            variations = cls._product_variations(conversation, selected.get("pid", ""))
+            if len(variations) >= 2:
+                cls._apply_variation(collected, text, variations)
+                if not collected.get("variation_id"):
+                    session.collected_data = collected
+                    session.state = "awaiting_variation"
+                    session.save()
+                    opts = ", ".join(str(v.get("name") or v.get("variation_id", "?")) for v in variations)
+                    return {"text": (
+                        f"{selected.get('name', '')} — কোন সাইজটা নেবেন? বিকল্প: {opts}"
+                        if lang == "bn" else
+                        f"Which {selected.get('name', '')} size would you like? Options: {opts}"
+                    )}
+
             missing = [f for f in ORDER_FIELDS if not collected.get(f)]
             if missing:
                 session.workflow_step = 0
@@ -624,6 +726,49 @@ class WorkflowEngine:
                     f"Great, {selected.get('name', '')}! To complete your order, "
                     f"could you tell me {FIELD_LABELS_EN[missing[0]]}?"
                 )}
+            summary = cls._order_summary_text(collected, context, lang)
+            session.pending_confirmation = collected
+            session.state = "awaiting_confirmation"
+            session.verified = True
+            session.save()
+            return {"text": summary}
+
+        if session.state == "awaiting_variation":
+            # Size/color collection for multi-variation products.
+            if cls.CANCEL_RE.search(text or ""):
+                reset_session(conversation)
+                return {"text": "অর্ডারটি বাতিল করা হয়েছে। আরও কিছুতে সাহায্য করতে পারি?" if lang == "bn"
+                        else "Order cancelled. Can I help with anything else?"}
+
+            qty = cls._parse_quantity(text)
+            if qty:
+                collected["quantity"] = qty
+                session.collected_data = collected
+                session.save()
+                variations = cls._product_variations(conversation, collected.get("pid", ""))
+                opts = ", ".join(str(v.get("name") or v.get("variation_id", "?")) for v in variations)
+                return {"text": (
+                    f"ঠিক আছে, {qty} পিস! এখন সাইজটা বলুন — {opts}"
+                    if lang == "bn" else
+                    f"Great, {qty} pieces! Now the size — options: {opts}"
+                )}
+
+            variations = cls._product_variations(conversation, collected.get("pid", ""))
+            if not cls._apply_variation(collected, text, variations):
+                opts = ", ".join(str(v.get("name") or v.get("variation_id", "?")) for v in variations)
+                return {"text": (
+                    f"সাইজটা বুঝতে পারিনি। বিকল্পগুলো: {opts}"
+                    if lang == "bn" else
+                    f"Sorry, I didn't catch the size. Options: {opts}"
+                )}
+
+            session.collected_data = collected
+            missing = [f for f in ORDER_FIELDS if not collected.get(f)]
+            if missing:
+                session.workflow_step = ORDER_FIELDS.index(missing[0])
+                session.state = "awaiting_details"
+                session.save()
+                return {"text": _ask_for_field(missing[0], lang)}
             summary = cls._order_summary_text(collected, context, lang)
             session.pending_confirmation = collected
             session.state = "awaiting_confirmation"
@@ -664,6 +809,25 @@ class WorkflowEngine:
                 q = cls._parse_quantity(value)
                 if q:
                     collected["quantity"] = q
+                session.collected_data = collected
+                session.save()
+                # Product changed → the old variation is invalid; re-ask the
+                # size when the new product has multiple variations.
+                variations = cls._product_variations(conversation, swap.get("pid", ""))
+                if len(variations) >= 2:
+                    collected.pop("variation_id", None)
+                    collected.pop("variation_name", None)
+                    session.collected_data = collected
+                    session.state = "awaiting_variation"
+                    session.save()
+                    opts = ", ".join(str(v.get("name") or v.get("variation_id", "?")) for v in variations)
+                    return {"text": (
+                        f"ঠিক আছে, এখন {swap.get('name')} অর্ডার করছি! কোন সাইজটা নেবেন? বিকল্প: {opts}"
+                        if lang == "bn" else
+                        f"Sure, {swap.get('name')} it is! Which size would you like? Options: {opts}"
+                    )}
+                collected.pop("variation_id", None)
+                collected.pop("variation_name", None)
                 session.collected_data = collected
                 session.save()
                 return {"text": (
@@ -754,6 +918,9 @@ class WorkflowEngine:
         phone = collected.get("customer_phone", "")
         address = collected.get("customer_address", "")
         product = collected.get("product_name") or ""
+        variation = collected.get("variation_name") or ""
+        if variation:
+            product = f"{product} ({variation})"
         if lang == "bn":
             return (
                 f"আপনার অর্ডারের সারসংক্ষেপ:\n"
@@ -783,7 +950,11 @@ class WorkflowEngine:
                 customer_address=collected.get("customer_address", ""),
                 customer_city=getattr(conversation, "customer_city", "") or "",
                 delivery_zone="inside_dhaka",
-                items=[{"pid": pid, "quantity": quantity}],
+                items=[{
+                    "pid": pid,
+                    "quantity": quantity,
+                    "variation_id": collected.get("variation_id") or None,
+                }],
             )
             if not result.get("error"):
                 # Persist the collected customer fields on the conversation so

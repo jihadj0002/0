@@ -1,10 +1,13 @@
 """
 ResponseGenerator (P0-6): Final LLM call that generates natural-language reply
-from verified tool results. No tools available — generation only.
+from verified tool results. Product intents get an AGENTIC loop (the model can
+call think / search_products / get_product_details / send_images iteratively,
+like the legacy gemini setup); everything else is single-call generation.
 """
 import json
 import logging
 import re
+import time
 
 from .context import ConversationContext, Response
 from .tools import ToolResult
@@ -15,6 +18,22 @@ _IMAGE_URL_RE = re.compile(
     r"https?://\S+?\.(?:jpg|jpeg|png|gif|webp|bmp|svg)(?:\?\S*)?",
     re.IGNORECASE,
 )
+
+# Product intents where the model may drive iterative searches. Everything else
+# (orders, KB, tickets…) stays deterministic.
+_AGENTIC_INTENTS = frozenset({
+    "SEARCH_PRODUCT", "ASK_PRICE", "ASK_STOCK", "ASK_DETAILS",
+    "COMPARE_PRODUCTS", "RECOMMEND", "SEND_IMAGES", "CATALOG",
+})
+
+# Safe tool subset for the agentic loop — read/search/send only. Order creation
+# stays exclusively in the deterministic WorkflowEngine.
+_AGENT_TOOL_NAMES = frozenset({
+    "think", "search_products", "get_product_details", "send_images",
+    "search_knowledge_base",
+})
+
+MAX_AGENT_ITERATIONS = 6
 
 
 def _detect_lang(context) -> str:
@@ -88,6 +107,13 @@ class ResponseGenerator:
                         return Response(text="আমার কাছে এই বিষয়ে কোনো তথ্য নেই। একজন এজেন্টের সাথে যোগাযোগ করিয়ে দিতে পারি?")
                     return Response(text="I don't have that information available. Would you like me to connect you with an agent?")
 
+        # Product intents: let the model drive iterative searches (like the
+        # legacy setup) — it can search with better keywords, fetch details,
+        # and send images before replying.
+        intent_name = context.intent.name if context.intent else ""
+        if intent_name in _AGENTIC_INTENTS:
+            return ResponseGenerator._agentic_loop(context, tool_results, reply_id, dry_run)
+
         # Build prompt from tool results
         prompt = ResponseGenerator._build_prompt(context, tool_results)
 
@@ -131,6 +157,195 @@ class ResponseGenerator:
             images=images,
             cards=cards,
         )
+
+    @staticmethod
+    def _agentic_loop(
+        context: ConversationContext,
+        seed_results: list[ToolResult],
+        reply_id: str | None = None,
+        dry_run: bool = False,
+    ) -> Response:
+        """Agentic response generation for product intents.
+
+        The model gets the planner's VERIFIED seed results plus read-only tools
+        (think / search_products / get_product_details / send_images) and may
+        iterate: refine keywords, search synonyms, fetch details, send images —
+        then produce the final reply. This restores the legacy behavior where
+        the model searched the catalog itself ("Baby feeder price?" → multiple
+        searches → images → rich answer).
+
+        Guards:
+        - seed search empty & the model never searched → force one more search
+        - reply claims to send images but send_images never ran → force fix
+        - hard cap MAX_AGENT_ITERATIONS LLM calls per turn
+        """
+        from .providers import call_llm
+        from .tools import ToolRegistry
+
+        system_prompt = ResponseGenerator._build_prompt(context, seed_results, agentic=True)
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": context.incoming_text or ""},
+        ]
+        tool_defs = [
+            d for d in ToolRegistry.get_definitions()
+            if d["function"]["name"] in _AGENT_TOOL_NAMES
+        ]
+
+        seed_has_products = any(
+            r.tool == "search_products" and r.state == "success"
+            and (r.data or {}).get("products")
+            for r in seed_results
+        )
+        seed_sent_images = any(
+            r.tool == "send_images" and r.state == "success"
+            and (r.data or {}).get("products")
+            for r in seed_results
+        )
+
+        all_results = list(seed_results)
+        search_forced = False
+        image_promise_corrected = False
+        final_text = None
+
+        for iteration in range(MAX_AGENT_ITERATIONS):
+            try:
+                msg, usage = call_llm(
+                    messages=messages,
+                    tools=tool_defs,
+                    model=context.model,
+                    temperature=0.5,
+                    max_tokens=700,
+                )
+            except Exception as exc:
+                logger.error("Agentic loop LLM call failed iter=%d: %s", iteration, exc)
+                break
+
+            ResponseGenerator._log_loop_usage(context, reply_id, usage, dry_run)
+
+            if not getattr(msg, "tool_calls", None):
+                candidate = (msg.content or "").strip()
+
+                # Guard 1: the seed search found nothing and the model replied
+                # without searching — force one more search attempt.
+                loop_searched = any(
+                    r.tool == "search_products"
+                    for r in all_results[len(seed_results):]
+                )
+                if not seed_has_products and not loop_searched and not search_forced:
+                    search_forced = True
+                    messages.append({"role": "assistant", "content": candidate})
+                    messages.append({"role": "system", "content": (
+                        "The initial search found nothing. Before replying you MUST call "
+                        "search_products again with a different keyword, spelling or synonym "
+                        "(products may be listed under English names; try the brand name, "
+                        "singular/plural, or a related category)."
+                    )})
+                    continue
+
+                # Guard 2: reply claims to send images but send_images never ran.
+                loop_sent_images = any(
+                    r.tool == "send_images" and r.state == "success"
+                    and (r.data or {}).get("products")
+                    for r in all_results[len(seed_results):]
+                )
+                if (not image_promise_corrected and not seed_sent_images
+                        and not loop_sent_images
+                        and ResponseGenerator._promises_images(candidate)):
+                    image_promise_corrected = True
+                    messages.append({"role": "assistant", "content": candidate})
+                    messages.append({"role": "system", "content": (
+                        "You told the customer you would send photos but send_images was "
+                        "never called. Either call send_images now with the focused product "
+                        "pid(s), or rewrite the reply WITHOUT mentioning photos."
+                    )})
+                    continue
+
+                final_text = candidate
+                break
+
+            messages.append(msg)
+            for tc in msg.tool_calls:
+                fn = tc.function.name
+                try:
+                    args = json.loads(tc.function.arguments or "{}")
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+                t0 = time.time()
+                result = ToolRegistry.execute(fn, args, context.user, context.conversation)
+                result.execution_time_ms = int((time.time() - t0) * 1000)
+                all_results.append(result)
+
+                try:
+                    from back.models import ToolCallLog
+                    from .pipeline import _summarize_tool_result
+                    ToolCallLog.objects.create(
+                        conversation=context.conversation,
+                        user=context.user,
+                        reply_id=reply_id,
+                        iteration=len(seed_results) + iteration,
+                        tool_name=fn,
+                        arguments=args,
+                        result_summary=_summarize_tool_result(fn, result.data),
+                        execution_time_ms=result.execution_time_ms,
+                    )
+                except Exception as exc:
+                    logger.warning("Agentic ToolCallLog write failed: %s", exc)
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(
+                        ResponseGenerator._tool_content_for_model(result),
+                        ensure_ascii=False,
+                    ),
+                })
+
+        if final_text is None:
+            final_text = ResponseGenerator._fallback_text(all_results)
+
+        images, cards = ResponseGenerator._extract_media(all_results)
+        final_text = _IMAGE_URL_RE.sub("", final_text or "").strip()
+
+        return Response(text=final_text, images=images, cards=cards)
+
+    @staticmethod
+    def _tool_content_for_model(result: ToolResult) -> dict:
+        """Tool data as seen by the model — image URLs are stripped (media is
+        sent out-of-band by send_reply), replaced with a count."""
+        data = result.data
+        if not isinstance(data, dict):
+            return {"state": result.state, "error": result.error}
+        data = dict(data)
+        if isinstance(data.get("images"), list):
+            data["image_count"] = len(data["images"])
+            data.pop("images", None)
+        return data
+
+    @staticmethod
+    def _log_loop_usage(context, reply_id, usage, dry_run) -> None:
+        if not reply_id:
+            return
+        try:
+            from back.models import UsageLog
+            UsageLog.objects.create(
+                user=context.user,
+                reply_id=reply_id,
+                model=usage.get("model", ""),
+                input_tokens=usage.get("input_tokens", 0),
+                output_tokens=usage.get("output_tokens", 0),
+                call_type="bot_preview" if dry_run else "response_generation",
+            )
+        except Exception as exc:
+            logger.warning("UsageLog write failed reply_id=%s: %s", reply_id, exc)
+
+    @staticmethod
+    def _promises_images(text: str) -> bool:
+        """True if the reply text implies images are being sent."""
+        if not text:
+            return False
+        from .pipeline import _IMG_NOUN_RE, _SEND_CUE_RE
+        return bool(_IMG_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
 
     @staticmethod
     def _unknown_llm_reply(
@@ -179,6 +394,7 @@ class ResponseGenerator:
         context: ConversationContext,
         tool_results: list[ToolResult],
         unclear: bool = False,
+        agentic: bool = False,
     ) -> str:
         """Build the response generation prompt.
 
@@ -255,6 +471,33 @@ class ResponseGenerator:
         if context.customer.name:
             parts.append(f"\nCustomer: {context.customer.name}")
 
+        # Agentic loop guidance — the model drives further searches itself.
+        if agentic:
+            parts.append("""
+## Tools available to you now
+You can call: think (private reasoning), search_products, get_product_details,
+send_images, search_knowledge_base. Use them BEFORE replying when the customer
+asks about products:
+- The 'Here are the VERIFIED results' block above comes from the initial
+  search. If it already contains the right products, reply using it — and if
+  the customer wants photos (or it helps the answer), call send_images with the
+  product pid(s).
+- If that block is empty or the matches look weak/unrelated, call
+  search_products AGAIN with different keywords: synonyms, English names,
+  simpler spellings, brand names, singular/plural, or a related category
+  ("feeder" → "feeding bottle" / "cleanser"). Do at most 3 searches in total;
+  combine related terms into one query.
+- If the customer names several products or categories, search each one.
+- Once you have the best matches: if the customer asked for photos or to browse,
+  call send_images for the top 1-3 products; otherwise just describe the best
+  match(es) with prices from the results.
+- Prefer the product that best matches what the customer described — never dump
+  every search hit into the reply.
+- think() is private — never put customer-facing text in it.
+- When you have everything you need, reply with ONLY the final customer-facing
+  message text (no tool calls, no JSON).
+""")
+
         # P1-14..21: specialist role fragment based on intent (no extra LLM call)
         specialist = ResponseGenerator._specialist_fragment(context)
         if specialist:
@@ -281,6 +524,10 @@ Write a natural, {style} reply in the customer's language (default: {language}).
   and total > 1: list ALL products with prices, never just one.
 - If no products were found, say it's unavailable — do NOT suggest alternatives
   that weren't in the search results.
+- If the exact item the customer asked for was NOT found, but the search results
+  contain RELATED products (e.g. asked for "Vicks candy" → found "Vicks BabyRub"),
+  say the exact item is unavailable AND offer the related product as an
+  alternative with its price. Never claim the related product is what they asked for.
 - NEVER say an order was created, confirmed, or "will be delivered" unless a
   create_order tool result in THIS turn shows an order_id. If the customer
   confirms an order and no create_order result exists, say you're processing it.

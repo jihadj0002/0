@@ -332,10 +332,17 @@ _STOPWORDS = frozenset({
     "my", "me", "i", "we", "this", "that", "these", "those", "it", "do", "does",
     "you", "your", "our", "please", "pls", "show", "need", "want", "looking",
     "have", "has", "had", "any", "some", "all", "new", "get", "give", "send",
+    # image-request words — "pic dekhi" must NOT search the word "pic"
+    "pic", "pics", "photo", "photos", "picture", "pictures", "image", "images",
+    "img", "chobi", "ছবি", "ফটো", "dekhi", "dekha", "dekhan", "dekhao",
+    "dekhaben", "dekho", "dekhte", "dilo", "dilen", "dile", "diben", "den",
     # transliterated Bengali fillers / connectors (not product words)
     "ache", "ase", "achi", "hobe", "hbe", "ki", "kichu", "ektu", "ata", "eita",
     "eta", "ei", "der", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
-    "koto", "dam", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
+    "chailam", "chail", "chacchi", "chaichi", "chaite", "koto", "dam", "taka",
+    "tk", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
+    "select", "sku", "koro", "koren", "korun", "korte", "kore", "korbo",
+    "krbo", "dite", "dita", "dawar", "asole", "mane", "mtlb", "hoise", "hoy",
 })
 
 
@@ -458,6 +465,34 @@ def _clear_focus_product(conversation):
     conversation.current_product = ""
 
 
+def _focus_match_for_query(query, conversation):
+    """Best focused product for a follow-up query, or None.
+
+    Empty-token queries ("eta koto taka?", "pic dekhi") → the most recent
+    focus product. Token queries → the focus item whose name contains the
+    most query tokens (ties go to the most recent — the product under
+    discussion). Explicit IDs/SKUs ("select SKU 31553") return None so the
+    fan-out search resolves them exactly.
+    """
+    if not conversation or not query or not query.strip():
+        return None
+    if any(c.isdigit() for c in query):
+        return None
+    items = parse_focus_products(getattr(conversation, "current_product", ""))
+    if not items:
+        return None
+    toks = _content_tokens(query)
+    if not toks:
+        return items[0]
+    best, best_score = None, 0
+    for item in items:
+        name = (item.get("name") or "").lower()
+        score = sum(1 for t in toks if t in name)
+        if score > best_score:
+            best, best_score = item, score
+    return best if best_score > 0 else None
+
+
 def _external_row(r):
     row = {
         "pid": r["external_id"],
@@ -573,7 +608,7 @@ def _generate_search_queries(original):
         yield latin
     for w in stripped.split():
         wl = _latinize_bn(w)
-        if wl and len(wl) >= 3 and wl not in seen:
+        if wl and len(wl) >= 3 and wl not in seen and wl.lower() not in _STOPWORDS:
             seen.add(wl)
             yield wl
         # 7. Prefix truncations: Bengali inflections ("জলপাইয়ের" → "jolpaiyer")
@@ -584,6 +619,109 @@ def _generate_search_queries(original):
                 if len(pre) >= 4 and pre not in seen:
                     seen.add(pre)
                     yield pre
+
+    # 8. Bengali → English synonyms for common store terms. The catalog is
+    #    English-named ("Mastela ... Cradle"), so a Bengali query like
+    #    "Dolna ache?" must also search "cradle" or it finds nothing and the
+    #    bot wrongly claims the item is unavailable.
+    for w in words:
+        wl = _latinize_bn(w) or w.lower()
+        en = _BN_EN_SYNONYMS.get(wl)
+        if en and en not in seen:
+            seen.add(en)
+            yield en
+
+    # 9. Common misspellings / phonetic variants ("aveno" → "aveeno",
+    #    "sudocream" → "sudocrem", "sunscream" → "sunscreen"). Customers type
+    #    brand names from memory; exact-match search then finds nothing and the
+    #    bot claims the item is unavailable.
+    for w in words:
+        wl = _latinize_bn(w) or w.lower()
+        fixed = _MISSPELL_MAP.get(wl)
+        if fixed and fixed not in seen:
+            seen.add(fixed)
+            yield fixed
+
+
+_MISSPELL_MAP = {
+    "aveno": "aveeno", "avenoo": "aveeno", "avino": "aveeno",
+    "sudocream": "sudocrem", "sudocreem": "sudocrem", "sudokrem": "sudocrem",
+    "sudocrem": "sudocrem", "sunscream": "sunscreen", "suncream": "sunscreen",
+    "sunscrren": "sunscreen", "spf": "spf",
+    "johnson": "johnson's", "johnsons": "johnson's", "jonson": "johnson's",
+    "nivia": "nivea", "nivea": "nivea", "vaslin": "vaseline",
+    "vaseline": "vaseline", "pamper": "pampers", "pampers": "pampers",
+    "huggies": "huggies", "hugies": "huggies",
+    "cerelac": "cerelac", "serelac": "cerelac", "cerelak": "cerelac",
+    "mammy": "mammy", "mamy": "mammy", "mammypoko": "mammy poko",
+    "dettol": "dettol", "detol": "dettol", "savlon": "savlon",
+    "lifbuoy": "lifebuoy", "lifeboy": "lifebuoy", "lifebuoy": "lifebuoy",
+    "colgate": "colgate", "calgate": "colgate",
+    "pedialyte": "pedialyte", "pedialite": "pedialyte",
+    "paracetamol": "paracetamol", "parasitamol": "paracetamol",
+    "tylenol": "tylenol", "mejico": "mejico", "mejico": "mejico",
+    "kinder": "kinder", "cadbury": "cadbury", "cadbory": "cadbury",
+    "nutella": "nutella", "nuttela": "nutella",
+    "horlicks": "horlicks", "horliks": "horlicks", "milo": "milo",
+    "kurkure": "kurkure", "kurrkure": "kurkure", "chanachur": "chanachur",
+    "shampoo": "shampoo", "sampu": "shampoo", "shampo": "shampoo",
+    "conditioner": "conditioner", "kondishonar": "conditioner",
+    "feeder": "feeding", "feeding": "feeding", "bottle": "bottle",
+    "bottel": "bottle", "botol": "bottle", "froker": "frock",
+    "pijama": "pajama", "pajama": "pajama", "genji": "genji",
+    "gengi": "genji", "toothbrush": "toothbrush", "toofbrush": "toothbrush",
+    "toothpaste": "toothpaste", "toofpaste": "toothpaste",
+    "cream": "cream", "creame": "cream", "krim": "cream", "kreem": "cream",
+    "powder": "powder", "pauder": "powder", "powdar": "powder",
+    "lotion": "lotion", "losun": "lotion",
+    "diaper": "diaper", "dayapar": "diaper", "daiper": "diaper",
+    "napkin": "napkin", "napkkin": "napkin",
+    "wet wipe": "wet wipes", "wetwipes": "wet wipes", "wipes": "wipes",
+    "tissue": "tissue", "tisu": "tissue",
+    "mosquito": "mosquito", "mosquito net": "mosquito net", "moskito": "mosquito",
+    "moshari": "mosquito net", "moshary": "mosquito net",
+    "cradle": "cradle", "craddle": "cradle", "dolna": "cradle",
+    "crib": "crib", "cryb": "crib", "cot": "cot", "khat": "cot",
+    "stroller": "stroller", "strolar": "stroller", "stoler": "stroller",
+    "pram": "stroller", "perambulator": "stroller",
+    "walker": "walker", "walkar": "walker", "bouncer": "bouncer",
+    "swing": "swing", "juicer": "juicer", "juisar": "juicer",
+    "blender": "blender", "blendar": "blender",
+}
+
+
+_BN_EN_SYNONYMS = {
+    "dolna": "cradle", "ডোলনা": "cradle", "দোলনা": "cradle",
+    "khat": "bed", "khata": "bed", "palonk": "bed",
+    "strolar": "stroller", "stroller": "stroller",
+    "botol": "bottle", "bottle": "bottle",
+    "saban": "soap", "sampoo": "shampoo", "sampu": "shampoo",
+    "shampoo": "shampoo", "lotion": "lotion", "cream": "cream",
+    "pauder": "powder", "powder": "powder",
+    "juto": "shoes", "shoes": "shoes", "moja": "socks", "socks": "socks",
+    "frok": "frock", "frock": "frock", "pijama": "pajama", "pajama": "pajama",
+    "dayapar": "diaper", "diaper": "diaper", "napkin": "napkin",
+    "wipes": "wipes", "toothbrush": "toothbrush", "toothpaste": "toothpaste",
+    "khilna": "toy", "toys": "toy",
+    "boi": "book", "books": "book", "bag": "bag", "bags": "bag",
+    "ghori": "watch", "watch": "watch", "cap": "cap", "caps": "cap",
+    "mukho": "mask", "mask": "mask", "lunchbox": "lunchbox", "tiffin": "lunchbox",
+    "kanthi": "necklace", "necklace": "necklace", "bala": "bracelet",
+    "brecel": "bracelet", "bracelet": "bracelet", "jomidar": "jewellery",
+    "jewellery": "jewellery", "earring": "earring", "kando": "earring",
+    "salwar": "salwar", "salwar kameez": "salwar", "kameez": "salwar",
+    "genji": "genji", "gengi": "genji", "sando": "sando",
+    "t-shirt": "t-shirt", "tshirt": "t-shirt", "shirt": "shirt",
+    "pants": "pants", "pant": "pants", "short": "shorts", "shorts": "shorts",
+    "panjabi": "panjabi", "fatua": "fatua",
+    "khata": "notebook", "notebook": "notebook",
+    "pencil": "pencil", "pen": "pen", "kalam": "pen",
+    "umbrella": "umbrella", "chata": "umbrella", "chata": "umbrella",
+    "sunscreen": "sunscreen", "sunscream": "sunscreen",
+    "mosquito": "mosquito", "net": "net", "moshari": "net", "moskito": "mosquito",
+    "cradle": "cradle", "crib": "crib", "cot": "cot",
+    "feeding": "feeding", "pump": "pump", "breast pump": "pump",
+}
 
 
 _BN_LATIN_MAP = {
@@ -710,14 +848,44 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     out["_instruction"] = _search_result_instruction(len(results))
                     return out
 
+            # Focus shortcut: the query is about a product already in the
+            # conversation ("eta koto taka?", "pic dekhi", "crib er pic dekhun",
+            # "chailam crib er pic dilen earwax?" — the earwax mention refers
+            # to what was wrongly sent, "crib" to the product under discussion).
+            # Explicit ID/SKU queries ("select SKU 31553") skip it — the
+            # fan-out below resolves those exactly.
+            if not _is_generic_catalog_query(query):
+                match = _focus_match_for_query(query, conversation)
+                if match:
+                    focus_row = None
+                    try:
+                        prow = provider.get_product(match["pid"])
+                        if prow:
+                            focus_row = _external_row(prow)
+                    except Exception:
+                        focus_row = None
+                    if focus_row:
+                        focus_row = _filter_by_budget([focus_row], min_price, max_price)
+                        if focus_row:
+                            out = {"products": focus_row, "total": 1,
+                                   "selected_product": True}
+                            out["_instruction"] = (
+                                "The customer is referring to the focused product above "
+                                "— use it directly."
+                            )
+                            return out
+
             # Multi-strategy: try ALL successive query variations (don't break on
             # first batch — the first variation can return irrelevant results
             # while individual words match perfectly). Dedup by external_id.
             all_results = []
             seen_ids = set()
+            attempted = 0
+            errored = 0
             for variation in _generate_search_queries(query):
                 if len(seen_ids) >= max_external_attempts * limit:
                     break
+                attempted += 1
                 try:
                     rows = provider.search(variation, limit)
                     rows = rows or []
@@ -727,6 +895,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                             seen_ids.add(eid)
                             all_results.append(_external_row(r))
                 except Exception:
+                    errored += 1
                     logger.exception("External search failed for variation=%s", variation)
 
             all_results = _filter_by_budget(all_results, min_price, max_price)
@@ -736,6 +905,18 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 out = {"products": all_results, "total": len(all_results)}
                 out["_instruction"] = _search_result_instruction(len(all_results), query)
                 return out
+            # The provider was unreachable (every variation raised) — never
+            # serve the local catalog (different store) or claim "no items".
+            if attempted and (errored == attempted or provider.last_error is not None):
+                return {
+                    "products": [],
+                    "total": 0,
+                    "_instruction": (
+                        "The store catalog is temporarily unavailable (connection error). "
+                        "Tell the customer the catalog is being loaded and ask them to try "
+                        "again in a moment. Do NOT present local/demo products."
+                    ),
+                }
             # Nothing matched the query — tell the model so it can say unavailable
             # or try a genuinely different keyword (don't fall through to junk).
             if query and query.strip():
@@ -743,15 +924,35 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     "products": [],
                     "total": 0,
                     "_instruction": (
-                        f'No catalog items matched "{query}". Either try ONE more search with a '
-                        "different/simpler keyword or synonym, or tell the customer it's currently "
-                        "unavailable. The customer may be referring to a product discussed earlier "
-                        "in the conversation (see 'Conversation so far'). Do NOT present unrelated products."
+                        f'No catalog items matched "{query}". Try ONE more search with a '
+                        "different/simpler keyword, spelling or synonym (products may be "
+                        "listed under English names). If still nothing: tell the customer "
+                        "\"দুঃখিত, আমরা এটা আমাদের ক্যাটালগে খুঁজে পাইনি\" — you MUST NOT say "
+                        "the item is out of stock (স্টকে নেই / নাই) — 'no match' does not "
+                        "mean 'not in stock'. The customer may be referring to a product "
+                        "discussed earlier (see 'Conversation so far'). Do NOT present "
+                        "unrelated products."
                     ),
                 }
             # Empty query — fall through to local DB / featured handling.
     except Exception:
-        logger.exception("Live search_products failed; falling back to local DB")
+        logger.exception("Live search_products failed for user=%s; NOT falling back to local DB (wrong store)", user.pk)
+        # External live store but the provider is unreachable → never serve the
+        # LOCAL catalog (it belongs to a different store). Say unavailable.
+        try:
+            source = get_active_source(user)
+            if source and source.mode == "live" and is_external(user):
+                return {
+                    "products": [],
+                    "total": 0,
+                    "_instruction": (
+                        "The store catalog is temporarily unavailable (connection error). "
+                        "Tell the customer the catalog is being loaded and ask them to try "
+                        "again in a moment. Do NOT present local/demo products."
+                    ),
+                }
+        except Exception:
+            pass
 
     # If a product is already focused for this conversation, return it directly
     # — but ONLY when the query actually refers to it. Without this guard the
@@ -911,18 +1112,21 @@ def tool_get_product_details(user, pid, conversation=None):
 
     # 1) Live external source.
     fallback_to_db = False
+    external_error = False
     try:
         source = get_active_source(user)
         if source and source.mode == "live" and is_external(user):
             provider = get_provider(user)
             r = provider.get_product(pid)
-            if not r:
+            if not r and provider.last_error is None:
                 try:
                     results = provider.search(pid, limit=1)
                     r = results[0] if results else None
                 except Exception:
                     pass
             if not r:
+                if provider.last_error is not None:
+                    external_error = True
                 fallback_to_db = True
             else:
                 details = {
@@ -954,6 +1158,22 @@ def tool_get_product_details(user, pid, conversation=None):
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
         fallback_to_db = True
+        external_error = True
+
+    # External live store + provider ERROR → never serve local DB rows
+    # (they belong to a different store). A clean "not found" still falls
+    # through — the local lookup simply won't match external pids.
+    if external_error:
+        try:
+            source = get_active_source(user)
+            if source and source.mode == "live" and is_external(user):
+                return {
+                    "pid": "",
+                    "name": "",
+                    "error": "Catalog temporarily unavailable (connection error)",
+                }
+        except Exception:
+            pass
 
     if not fallback_to_db:
         pass
@@ -998,13 +1218,37 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
             requested.append(fallback)
     if not requested:
         # Catalog browse: "sob product er photo pathan" with no product in
-        # focus — send cards for the whole (active) catalog instead of erroring.
-        all_pids = list(
-            Product.objects.filter(user=user, status=True)
-            .values_list("pid", flat=True)[:8]
-        )
-        if all_pids:
-            requested.extend(all_pids)
+        # focus — send cards for the whole catalog instead of erroring.
+        source = get_active_source(user)
+        external_active = bool(source) and is_external(user)
+        live_mode = bool(source) and source.mode == "live" and external_active
+        if live_mode:
+            # External live store: fetch the provider's catalog (local DB rows
+            # belong to a different store — never send those).
+            catalog_error = False
+            try:
+                provider = get_provider(user)
+                for r in provider.list_products(limit=10)[:8]:
+                    eid = r.get("external_id")
+                    if eid and eid not in requested:
+                        requested.append(eid)
+                if not requested and getattr(provider, "last_error", None):
+                    catalog_error = True
+            except Exception:
+                logger.exception("External catalog browse failed for user=%s", user.pk)
+                catalog_error = True
+            if catalog_error:
+                return {
+                    "error": "Store catalog temporarily unavailable (connection error). Do NOT present local/demo products.",
+                    "products": [],
+                }
+        if not requested and not live_mode:
+            all_pids = list(
+                Product.objects.filter(user=user, status=True)
+                .values_list("pid", flat=True)[:8]
+            )
+            if all_pids:
+                requested.extend(all_pids)
     if not requested:
         return {"error": "No product selected — search for a product first", "products": []}
 
@@ -1014,6 +1258,7 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
 
     products = []
     seen_pids = set()
+    external_error = False
 
     for raw_pid in requested:
         if raw_pid in seen_pids:
@@ -1027,8 +1272,8 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
         sku = ""
 
         if live_mode:
+            provider = get_provider(user)
             try:
-                provider = get_provider(user)
                 r = provider.get_product(raw_pid)
                 if not r:
                     try:
@@ -1043,9 +1288,11 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                     discounted_price = str(r.get("discounted_price") or "")
                     sku = r.get("sku") or ""
             except Exception:
-                logger.exception("Live send_images failed for %s; falling back to local DB", raw_pid)
+                logger.exception("Live send_images failed for %s", raw_pid)
+            if not name and getattr(provider, "last_error", None):
+                external_error = True
 
-        if not name:
+        if not name and not live_mode:
             try:
                 p = Product.objects.get(user=user, pid=raw_pid)
                 name = p.name
@@ -1072,6 +1319,11 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
             })
 
     if not products:
+        if live_mode and external_error:
+            return {
+                "error": "Store catalog temporarily unavailable (connection error). Do NOT present local/demo products.",
+                "products": [],
+            }
         return {"error": "No products found", "products": []}
 
     return {"products": products, "total": len(products)}

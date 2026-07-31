@@ -175,6 +175,9 @@ Full walkthrough on a fresh conversation (greetings → catalog → price/discou
 | AX | UNKNOWN messages got a canned "আমি বুঝতে পারিনি" — no AI understanding | UNKNOWN skipped the LLM entirely (planner returns [], `_greeting_or_fallback` canned) | UNKNOWN now runs `_unknown_llm_reply()`: an LLM pass with FULL context (long-term memory, conversation history, store context, focus products) with a dedicated prompt mode (`_build_prompt(unclear=True)`) — interpret typos/fragments/transliterated Bengali from context; clarify with ONE concrete question when genuinely unclear; never invent data; no tools. Logged to UsageLog (billed like a normal reply); canned text only as LLM-failure fallback. Verified: "dilivery kobe?" → delivery charges + timing from context; "zzz xyz qqq" → BN clarifying question; repeated-UNKNOWN → catalog cards still kicks in |
 | AY | Bot ended EVERY reply with a pushy "আপনি কি অর্ডার করতে চান?" (4+ turns in a row) | gpt-4o default sales-mode CTA with no guardrail | Added anti-nagging rule: answer and STOP — no follow-up question, sales pitch, or "anything else?" sign-off; only exception is asking which product when the customer browsed the catalog. Rule placed in FINAL INSTRUCTION (highest-weight position; mid-prompt placement was ignored). Verified: price/size/delivery/payment/photo answers all end flat; catalog listing may end with "কোনটি পছন্দ?" |
 | AZ | Billing/usage audit of the whole orchestration | See "Billing audit" section below | See below — 3 fixes: (1) 4dp rounding drift, (2) unbilled image analysis, (3) dry-run preview rows now tagged |
+| BA | External product source (Monowamart ERP, live mode) tested with real baby-product images | See "External product source audit" section below | See below — 4 fixes: variation step in order workflow, SEND_IMAGES search-first, external catalog fallback, wrong-store fallback guard |
+| BB | Live conversation regression: wrong-product replies ("pic dekhi" → earwax kit, "Dolna ache?" → "not in stock") | See "Wrong-product regression fixes" section below | See below — 4 fixes: focus-first SEND_IMAGES, focus-list matcher, Bengali→English synonyms, junk-word stopwords |
+| BC | Agentic response loop for product intents (restores legacy multi-search behavior) | See "Agentic search loop" section below | See below — model can iterate think/search/details/send_images before replying |
 
 Billing verified separately: per-turn `UsageLog` (planning + response_generation, shared reply_id) → `deduct_for_reply` sums via ModelPricing (gpt-4o 0.0025/0.01 per 1k in/out) → `select_for_update` deduction → `CreditTransaction` audit → `UsageSummary` F() aggregates. Live check: 122 logs / 119 deductions, latest reply deducted, balance chain consistent, renewal_date 2026-08-20. 3 orphaned logs (2.5%, from turns where the LLM call failed after logging — negligible ~0.0015 credits, acceptable).
 
@@ -220,6 +223,57 @@ Audit of the full money path: orchestrator deductions, UsageLog aggregation, ima
 - Audio transcription stays unbilled (prod has no `OPENAI_API_KEY` → placeholder text, no LLM spend; if set, Whisper would bill the merchant's OpenAI key directly, outside credit accounting).
 - Proactive alerts (`back/management/commands/run_proactive_monitor.py`, manual-only) call the LLM without logging/deducting — not scheduled in prod.
 - Dev data anomaly: `credits_total=50` vs `credits_remaining=999.7` (ledger was hand-edited during testing; `usage_percent()` goes negative until an admin adjustment reconciles it).
+
+### External product source audit (2026-07-31, row BA)
+
+Jihad's live Monowamart ERP (external provider, mode=live, 7517 baby products) tested end-to-end with real baby-product images + search + SKU + order flows.
+
+**Verified working (live):**
+- Connection: 7517 products; keyword search ("baby", "baby dress", "diaper", "bottle", "sando"), SKU search exact-match ("39955", "40204-260S", "35946MN", "41484", "40562PK"), `get_product` by external id, multi-variation products (e.g. Sando Genji: 6 sizes with per-variation stock).
+- Vision on the 3 reference images (`docs/external_product_img_test_{0,1,2}.jpg`, via base64 data-URL since they're local): image 0 → SKU `40562PK` Aiwibi koala toothbrush — resolved LIVE to the exact product (Aiwibi Australia Baby ToothBrush BPA Free 2Years, [32263]); image 1 → Star glass bottle `10058` (no ERP SKU match; "glass bottle" name search finds Finer Care/Philips glass bottles); image 2 → Aveeno SPF50 sunscreen `332398` (no ERP SKU match — likely a UPC; name search pending ERP stability).
+- Full image flow (ERP up): vision SKU → webhook pre-search → orchestrator SEND_IMAGES → product images + correct reply with price/stock.
+- Multi-variation ORDER flow (mocked provider, real ERP payload contract): size asked FIRST ("কোন সাইজটা নেবেন? বিকল্প: 0-6 Months, 1-2 Years…"), "2-3 years" matched variation 3874, summary shows "…(2-3 Years)", ERP POST payload = `{'product_id': '2329', 'quantity': 1, 'variation_id': '3874'}` ✓, local Sale + OrderItem created.
+
+**Fixes made during the audit:**
+1. **Order workflow never captured size/variation** — `tool_create_order` hard-errors for multi-variation products, so every sized baby product order would fail. Added `awaiting_variation` state to `WorkflowEngine`: size asked before delivery details; matched via `_select_variation` (name/substring + Bengali-digit-normalized compact forms, "২-৩" ↔ "2-3"); re-asked on product swap; shown in the order summary; `variation_id` passed into `create_order` items. Single-variation products skip the step.
+2. **SEND_IMAGES sent the wrong store's products** — with no focused product it fell back to the LOCAL catalog (the 3 achar rows!) for external users. SEND_IMAGES is now a search-first template (`[search_products(query=incoming_text), send_images]`), and `tool_send_images` catalog-browse fallback fetches the provider's catalog for external live stores.
+3. **Wrong-store fallback on provider failure** — `tool_search_products`/`tool_get_product_details` fell through to the local DB when the ERP errored → a baby store would get achar answers. Now: external live + connection error → "catalog temporarily unavailable" instruction; clean "not found" still handled properly. Same guard added to `tool_send_images` (catalog browse AND per-PID paths — never touches local DB rows for external live users; verified with ERP down: all 3 paths return the unavailable error, internal users still get local-DB fallback).
+4. **Provider swallowed connection errors** — `ExternalProvider.search/list_products/get_product` returned []/None on failure; added `self.last_error` so tools distinguish "no match" from "connection failure".
+
+**External infra note:** `erp.monowamart.com` is UNSTABLE — repeatedly down for minutes at a time (connection refused; homepage 200/API refused intermittently). This is the ERP's infrastructure, not our code. With the fixes above, downtime now degrades gracefully (clear "catalog temporarily unavailable" message, never wrong products).
+
+### Wrong-product regression fixes (2026-07-31, row BB)
+
+Real live conversation (baby store, external ERP): customer asked "Dolna ache?" → bot said "not in stock" (catalog is English-named); after selecting a Mastela crib (SKU 31553), "pic dekhi" → sent the **Earwax Picker kit** pics, and "chailam crib er pic dilen earwax?" → sent a **mosquito net** instead of the crib.
+
+**Root causes:**
+1. SEND_IMAGES template re-searched the raw text first (`search_products("pic dekhi")`) — the word "pic" fanned out and fuzzy-matched "Earwax **Pic**ker", overwriting the focused product.
+2. No Bengali→English synonym expansion — "dolna" found nothing in an English catalog.
+3. Junk words ("pic", "dekhi", "taka", "select", "sku"…) were searched as individual queries.
+4. Complaint messages ("...dilen earwax?") mention the wrongly-sent product too — an "all tokens must match the focus" rule fails; the mention of "crib" must win.
+
+**Fixes (all in `api/ai/planner.py` + `api/ai/tools.py`):**
+1. **Focus-first SEND_IMAGES** — `Planner._send_images_plan`: when the message refers to a focused product, send its images directly (no search step). Search-then-send only when nothing is focused.
+2. **Focus-list matcher** — `_focus_match_for_query`: empty-token queries ("eta koto taka?", "pic dekhi") → most recent focus; token queries → focus item whose name contains the most tokens (ties → most recent). Explicit ID/SKU queries (contains a digit) skip it. Used by both the planner (SEND_IMAGES) and the external focus shortcut in `tool_search_products` (price/details follow-ups no longer fan out to junk).
+3. **Bengali→English synonyms** — `_BN_EN_SYNONYMS` (~60 terms: দোলনা→cradle, খাট→bed, botol→bottle, dayapar→diaper, juto→shoes, frok→frock, …) applied in `_generate_search_queries` step 8; "Dolna ache?" now finds the Mastela cradles.
+4. **Junk-word stopwords** — added image-request + chat filler words (pic/pics/photo/dekhi/dekha/chailam/taka/select/sku/kore/korbo… + ছবি/chobi) to `_STOPWORDS`; also now filtered in the latinized-word loop. "pic dekhi" yields only the full phrase (0 hits → clean no-match), never single junk words.
+
+**Verified live (real ERP, dry-run replay of the exact reported conversation):** "Dolna ache?" → finds cradles; "Cradle ache?" → 3 Mastela products; "select SKU 31553" → crib + price; "pic dekhi" → **crib pics** (send_images only); "chailam crib er pic dilen earwax?" → **crib pics**; "eta koto taka?" → 15,500. Mock-provider runs confirm the same + the token-aware fallback (message naming a different product still searches).
+
+### Agentic search loop (2026-07-31, row BC)
+
+The old gemini-2.5-flash setup let the model drive the search itself (🔧 think → search_products × N → send_images → rich reply with prices + clarifying question). The orchestrator had replaced that with a deterministic planner + a single generation call with `tools=None` — the model could never re-search, so "Baby feeder price?"-style turns got thin answers and no images.
+
+**Fix (`api/ai/response.py`):** product intents (`SEARCH_PRODUCT`, `ASK_PRICE`, `ASK_STOCK`, `ASK_DETAILS`, `COMPARE_PRODUCTS`, `RECOMMEND`, `SEND_IMAGES`, `CATALOG`) now go through `_agentic_loop()`:
+- The planner's VERIFIED seed results are embedded in the prompt; the model additionally gets read-only tools: `think`, `search_products`, `get_product_details`, `send_images`, `search_knowledge_base` (order creation stays exclusively in the deterministic WorkflowEngine).
+- Loop: model calls tools → executed via ToolRegistry → results appended (image URLs stripped, count only) → repeats until it replies in text. Hard cap `MAX_AGENT_ITERATIONS = 6`; prompt guides ≤3 searches ("feeder" → "feeding bottle"/"cleanser").
+- Guards: (1) seed search empty + model never searched → forced corrective search pass; (2) reply claims to send photos without send_images → forced corrective pass (reuses pipeline's `_IMG_NOUN_RE`/`_SEND_CUE_RE`).
+- Prompt rule added: if the exact item is unavailable but related products were found ("Vicks candy" → "Vicks BabyRub"), offer the related product with price.
+- Every loop LLM call logs a `UsageLog` row under the same `reply_id` (billing aggregation unaffected); loop tool calls write `ToolCallLog`.
+
+**Verified (mock ERP):** "Baby feeder price?" → lists 5 cleansers with prices + 5 images/cards (matches the old output); "Vicks candy…" → "candy নেই, তবে Vicks BabyRub… 480 টাকা"; "Post-partum belt ache?" → 2 belts with prices + images. Full wrong-product regression (BB) and not-found regression (aveno/bottle/cradle?/toys) still pass — focus-first SEND_IMAGES and the focus matcher are untouched by the loop.
+
+**Cost note:** a search turn is now 2-3 LLM calls (~3k tokens each) instead of 1 — intentional, matches the old UX and the user's requirement; credits are deducted once per reply via the shared `reply_id`.
 
 ### Remaining (not started)
 

@@ -13,12 +13,15 @@ Currently targets the monowamart ERP "AI" API. Key facts (confirmed live):
 """
 
 import re
+import time
 
 import requests
 
 from .base import ProductProvider
 
 TIMEOUT = 20
+RETRY_ATTEMPTS = 3
+RETRY_DELAY = 1.0
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -49,6 +52,13 @@ def _to_int(value):
 
 class ExternalProvider(ProductProvider):
     # ------------------------------------------------------------------ helpers
+    def __init__(self, source, user=None):
+        super().__init__(source, user=user)
+        # Set by search/list_products/get_product when the ERP is unreachable,
+        # so callers can distinguish "no match" from "connection failure"
+        # (methods return []/None on error for backward compatibility).
+        self.last_error = None
+
     def _base_url(self):
         """Return the ERP base ending in ``/ai`` (no trailing slash, no /products)."""
         url = (self.source.store_url or "").strip() if self.source else ""
@@ -70,10 +80,29 @@ class ExternalProvider(ProductProvider):
         return headers
 
     def _get(self, path, params=None):
+        """GET with retries on connection failures / 5xx.
+
+        The ERP host flaps (seconds-long connection-refused windows), so a
+        single attempt can fail even though the server is about to come back.
+        Connection errors fail fast (~150ms), making short retries cheap.
+        """
         url = f"{self._base_url()}/{path.lstrip('/')}"
-        r = requests.get(url, params=params, headers=self._headers(), timeout=TIMEOUT)
-        r.raise_for_status()
-        return r.json()
+        last_exc = None
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                r = requests.get(url, params=params, headers=self._headers(), timeout=TIMEOUT)
+                if r.status_code >= 500 and attempt < RETRY_ATTEMPTS - 1:
+                    time.sleep(RETRY_DELAY)
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except requests.exceptions.ConnectionError as exc:
+                last_exc = exc
+                if attempt < RETRY_ATTEMPTS - 1:
+                    time.sleep(RETRY_DELAY)
+                    continue
+                raise
+        raise last_exc
 
     # ----------------------------------------------------------------- mapping
     def _media_urls(self, raw):
@@ -151,7 +180,8 @@ class ExternalProvider(ProductProvider):
         try:
             data = self._get("products", params={"page": int(page)})
             return [self._normalize(p) for p in self._items(data)]
-        except Exception:
+        except Exception as exc:
+            self.last_error = exc
             return []
 
     def get_product(self, external_id):
@@ -161,7 +191,8 @@ class ExternalProvider(ProductProvider):
             if not raw:
                 return None
             return self._normalize(raw)
-        except Exception:
+        except Exception as exc:
+            self.last_error = exc
             return None
 
     def search(self, query, limit=5) -> list:
@@ -170,7 +201,8 @@ class ExternalProvider(ProductProvider):
             data = self._get("products", params={"query": query})
             rows = [self._normalize(p) for p in self._items(data)]
             return rows[: int(limit)]
-        except Exception:
+        except Exception as exc:
+            self.last_error = exc
             return []
 
     def create_order(self, order_payload: dict) -> dict:
