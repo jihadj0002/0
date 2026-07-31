@@ -425,6 +425,18 @@
   font-size: 0.85rem; color: var(--accent); cursor: pointer;
   font-weight: 600;
 }
+
+/* Trace labels on bot messages */
+.trace-tags { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 4px; }
+.trace-intent {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  background: #3b82f6; color: #fff; padding: 1px 7px; border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+.trace-tool {
+  font-size: 0.6rem; font-weight: 600;
+  background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 3px;
+}
 </style>
 {% endblock %}
 
@@ -810,7 +822,19 @@ function appendMessages(msgs) {
       }
     }
 
-    inner += `<div class="msg-meta">${m.timestamp}${isBot ? " · 🤖" : ""}</div>`;
+    /* trace labels for bot messages */
+    if (isBot && m.trace) {
+      let tags = "";
+      if (m.trace.intent) tags += `<span class="trace-intent">${m.trace.intent}</span>`;
+      if (m.trace.tool_calls && m.trace.tool_calls.length) {
+        m.trace.tool_calls.forEach(tc => {
+          if (tc.tool) tags += `<span class="trace-tool">${tc.tool}</span>`;
+        });
+      }
+      if (tags) inner = `<div class="trace-tags">${tags}</div>` + inner;
+    }
+
+    inner += `<div class="msg-meta">${m.timestamp}${isBot ? " · 🤖" : isCustomer ? " · 👤" : ""}</div>`;
 
     const row = document.createElement("div");
     row.className = `msg-row ${dir}${extraClass}`;

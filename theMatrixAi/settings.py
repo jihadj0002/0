@@ -34,6 +34,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-!$#k@v1z&2e3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0")
 ENCRYPT_KEY = env("ENCRYPT_KEY", default="default_encrypt_key_please_change_me_1234567890")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+AI_ORCHESTRATOR_ENABLED = os.environ.get("AI_ORCHESTRATOR_ENABLED", "False") == "True"
 
 # --- Meta (Facebook/Instagram) OAuth + app-level webhook ---
 META_APP_ID = env("META_APP_ID", default="")

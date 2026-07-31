@@ -358,11 +358,13 @@ def ajax_ticket_reopen(request):
 @login_required
 @require_POST
 def bot_preview(request):
-    """Dry-run the AI pipeline for a given conversation + message. No platform send, no credit deduction."""
+    """Dry-run the full orchestrator pipeline (intent → workflow → planner → tools → response)
+    for a conversation + message. No platform send, no credit deduction. SessionContext and
+    Message history are persisted so multi-turn previews behave exactly like production."""
     import json as _json
-    from api.ai.context import build_system_prompt, get_conversation_history
-    from api.ai.providers import call_llm
-    from api.ai.tools import TOOL_DEFINITIONS, execute_tool
+    from types import SimpleNamespace
+    from api.ai.orchestrator import Orchestrator
+    from back.models import UsageLog
 
     try:
         body = _json.loads(request.body)
@@ -376,66 +378,42 @@ def bot_preview(request):
         return JsonResponse({"error": "conversation_id and message are required"}, status=400)
 
     conversation = get_object_or_404(Conversation, id=conv_id, user=request.user)
-    user = request.user
 
-    integration = Integration.get_active(user, conversation.platform)
-    model = (integration.ai_model or None) if integration else None
-
-    system_prompt = build_system_prompt(user, conversation)
-    history = get_conversation_history(conversation, limit=20)
-    history.append({"role": "user", "content": message_text})
-    messages_list = [{"role": "system", "content": system_prompt}] + history
-
-    tool_calls_log = []
-    final_text = None
-    total_input = 0
-    total_output = 0
+    orch = Orchestrator(dry_run=True)
     error = None
-
     try:
-        for _ in range(5):
-            llm_msg, usage = call_llm(messages=messages_list, tools=TOOL_DEFINITIONS, model=model)
-            total_input += usage.get("input_tokens", 0)
-            total_output += usage.get("output_tokens", 0)
-
-            if not llm_msg.tool_calls:
-                final_text = llm_msg.content or ""
-                break
-
-            messages_list.append(llm_msg)
-
-            for tc in llm_msg.tool_calls:
-                fn_name = tc.function.name
-                try:
-                    fn_args = _json.loads(tc.function.arguments or "{}")
-                except Exception:
-                    fn_args = {}
-
-                tc_result = execute_tool(fn_name, fn_args, user, conversation)
-                tool_calls_log.append({"name": fn_name, "args": fn_args})
-
-                messages_list.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": _json.dumps(tc_result, default=str),
-                })
-
-                if fn_name == "create_ticket":
-                    final_text = "I'm connecting you with a human agent now."
-                    break
-
-            if final_text:
-                break
-
+        orch.process(conversation, SimpleNamespace(text=message_text))
     except Exception as exc:
         error = str(exc)
 
+    response = orch.last_response
+    reply_id = orch.last_reply_id
+
+    tool_calls_log = []
+    for r in getattr(orch, "_tool_results", None) or []:
+        entry = {"name": r.tool, "state": r.state}
+        if r.data:
+            entry["args"] = r.data
+        if r.state == "error":
+            entry["is_error"] = True
+        tool_calls_log.append(entry)
+
+    usage = {"input": 0, "output": 0, "model": ""}
+    if reply_id:
+        rows = UsageLog.objects.filter(reply_id=reply_id)
+        for row in rows:
+            usage["input"] += row.input_tokens or 0
+            usage["output"] += row.output_tokens or 0
+        last_row = rows.order_by("-timestamp").first()
+        if last_row:
+            usage["model"] = last_row.model or ""
+
     return JsonResponse({
-        "response": final_text or "",
+        "response": (response.text if response else "") or "",
         "tool_calls": tool_calls_log,
-        "input_tokens": total_input,
-        "output_tokens": total_output,
-        "model": model or "gpt-4o-mini",
+        "input_tokens": usage["input"],
+        "output_tokens": usage["output"],
+        "model": usage["model"] or "gpt-4o-mini",
         "error": error,
     })
 
@@ -525,12 +503,21 @@ def ajax_load_messages(request):
             elif isinstance(msg.attachments, str):
                 attachment = {"type": "image", "url": msg.attachments}
 
+        # Extract pipeline trace from raw_payload (bot messages only)
+        trace = None
+        if msg.sender == "bot" and msg.raw_payload and isinstance(msg.raw_payload, dict):
+            trace = {
+                "intent": msg.raw_payload.get("intent"),
+                "tool_calls": msg.raw_payload.get("tool_calls", []),
+            }
+
         messages_data.append({
             "id": msg.id,
             "sender": msg.sender,
             "text": msg.text,
             "timestamp": local_msg_time.strftime("%d %b, %Y %H:%M") if local_msg_time else "",
             "attachment": attachment,
+            "trace": trace,
         })
 
     # ==========================

@@ -1,31 +1,335 @@
-from back.models import Message, Product
+import json
+import logging
+from dataclasses import dataclass, field
+from typing import Any
 
-# Keep headroom so the dynamic tail (focused products + live customer state,
-# appended last) is never the part that gets truncated.
+from django.contrib.auth.models import User
+
+from back.models import Conversation, Message, Product
+
+logger = logging.getLogger(__name__)
+
 MAX_PROMPT_LENGTH = 10000
 
 
-def build_system_prompt(user, conversation, image_analysis=None):
-    """Assemble the full system prompt from AgentIdentity, StoreConfig, BehaviorRules, and live conversation state.
+# ---------------------------------------------------------------------------
+# Shared dataclasses (P0-7)
+# ---------------------------------------------------------------------------
 
-    ``image_analysis`` — optional dict from api.ai.media.analyze_image_structured
-    (sku, product_name, brand, description) plus ``analysis_search`` for
-    pre-search results.  When the current turn was triggered by an image, this
-    tells the AI that the catalog was already searched so it doesn't re-search.
-    """
-    from context.models import AgentIdentity, StoreConfig, BehaviorRules
+@dataclass
+class PlanStep:
+    tool: str
+    args: dict = field(default_factory=dict)
+    depends_on: list[int] | None = None
+    fallback: str | None = None
+    timeout_ms: int = 10000
+    retry_count: int = 1
+
+
+@dataclass
+class Response:
+    text: str = ""
+    images: list[str] = field(default_factory=list)
+    cards: list[dict] = field(default_factory=list)
+    transferred: bool = False
+    metadata: dict = field(default_factory=dict)
+
+
+@dataclass
+class CustomerProfile:
+    name: str = ""
+    phone: str = ""
+    city: str = ""
+    address: str = ""
+    is_returning: bool = False
+    preferred_tone: str = ""
+    language_detected: str = ""
+
+
+@dataclass
+class BusinessSettings:
+    store_name: str = ""
+    address: str = ""
+    whatsapp_number: str = ""
+    currency: str = "BDT"
+    delivery_charge_inside: float = 0
+    delivery_charge_outside: float = 0
+    support_open_time: str = "09:00"
+    support_close_time: str = "21:00"
+    timezone: str = "Asia/Dhaka"
+    agent_name: str = ""
+    agent_role: str = ""
+    agent_tone: str = "friendly"
+    agent_style: str = "concise"
+    agent_language: str = "bn"
+    custom_instructions: str = ""
+    chit_chat_enabled: bool = True
+    chit_chat_style: str = "moderate"
+    cross_sell_enabled: bool = True
+    ask_open_ended: bool = True
+    greeting_message: str = ""
+
+
+@dataclass
+class ProductSummary:
+    pid: str = ""
+    name: str = ""
+    price: str = ""
+    discounted_price: str | None = None
+    stock: int = 0
+    in_stock: bool = True
+    description: str = ""
+    sku: str = ""
+    external_id: str = ""
+
+
+@dataclass
+class OrderSummary:
+    oid: str = ""
+    status: str = ""
+    total: str = ""
+    customer_name: str = ""
+    created_at: str = ""
+
+
+@dataclass
+class MemorySummary:
+    facts: list[dict] = field(default_factory=list)
+    preferences: list[dict] = field(default_factory=list)
+    text: str = ""
+
+
+@dataclass
+class Intent:
+    name: str = "UNKNOWN"
+    confidence: float = 0.0
+    sub_intent: str = ""
+    entities: dict = field(default_factory=dict)
+
+
+@dataclass
+class ConversationContext:
+    user: User | None = None
+    conversation: Conversation | None = None
+    platform: str = ""
+    customer: CustomerProfile = field(default_factory=CustomerProfile)
+    settings: BusinessSettings = field(default_factory=BusinessSettings)
+    products: list[ProductSummary] = field(default_factory=list)
+    orders: list[OrderSummary] = field(default_factory=list)
+    memory: MemorySummary = field(default_factory=MemorySummary)
+    history: list[dict] = field(default_factory=list)
+    intent: Intent | None = None
+    plan: list[PlanStep] | None = None
+    tool_results: list[Any] | None = None
+    incoming_text: str = ""
+    model: str | None = None
+
+    def summary(self, max_products=5, max_orders=3):
+        parts = [f"Platform: {self.platform}"]
+        if self.customer.name:
+            parts.append(f"Customer: {self.customer.name}")
+        if self.customer.phone:
+            parts.append(f"Phone: {self.customer.phone}")
+        if self.customer.city:
+            parts.append(f"City: {self.customer.city}")
+
+        if self.settings.store_name:
+            parts.append(f"Store: {self.settings.store_name}")
+        parts.append(f"Currency: {self.settings.currency}")
+
+        if self.products:
+            lines = ["Focused Products:"]
+            for p in self.products[:max_products]:
+                price = p.discounted_price or p.price
+                lines.append(f"  - {p.name} ({p.pid}) — {price} {self.settings.currency}")
+            parts.append("\n".join(lines))
+
+        if self.orders:
+            lines = ["Recent Orders:"]
+            for o in self.orders[:max_orders]:
+                lines.append(f"  - {o.oid}: {o.status} ({o.total})")
+            parts.append("\n".join(lines))
+
+        if self.memory.text:
+            parts.append(f"Memory:\n{self.memory.text}")
+
+        return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# ConversationManager (P0-1)
+# ---------------------------------------------------------------------------
+
+class ConversationManager:
+
+    @staticmethod
+    def build(conversation, incoming_text="", model=None) -> ConversationContext:
+        user = conversation.user
+        ctx = ConversationContext(
+            user=user,
+            conversation=conversation,
+            platform=conversation.platform,
+            incoming_text=incoming_text,
+            model=model,
+            customer=ConversationManager._load_customer(conversation),
+            settings=ConversationManager._load_settings(user),
+            products=ConversationManager._load_products(conversation),
+            orders=ConversationManager._load_orders(conversation),
+            history=ConversationManager._load_history(conversation),
+            memory=ConversationManager._load_memory(user, conversation),
+        )
+        return ctx
+
+    @staticmethod
+    def _load_customer(conversation) -> CustomerProfile:
+        return CustomerProfile(
+            name=conversation.customer_name or "",
+            phone=conversation.customer_phone or "",
+            city=conversation.customer_city or "",
+            address=conversation.customer_address or "",
+            is_returning=conversation.is_returning or False,
+            preferred_tone=conversation.preferred_tone or "",
+            language_detected=conversation.language_detected or "",
+        )
+
+    @staticmethod
+    def _load_settings(user) -> BusinessSettings:
+        from context.models import AgentIdentity, BehaviorRules, StoreConfig
+
+        settings = BusinessSettings()
+
+        store = StoreConfig.objects.filter(user=user).first()
+        if store:
+            settings.store_name = store.store_name or ""
+            settings.address = store.address or ""
+            settings.whatsapp_number = store.whatsapp_number or ""
+            settings.currency = store.currency or "BDT"
+            settings.delivery_charge_inside = float(store.delivery_charge_inside or 0)
+            settings.delivery_charge_outside = float(store.delivery_charge_outside or 0)
+            settings.support_open_time = str(store.support_open_time or "09:00")
+            settings.support_close_time = str(store.support_close_time or "21:00")
+            settings.timezone = store.timezone or "Asia/Dhaka"
+
+        identity = AgentIdentity.objects.filter(user=user).first()
+        if identity:
+            settings.agent_name = identity.name or ""
+            settings.agent_role = identity.role or ""
+            settings.agent_tone = identity.tone or "friendly"
+            settings.agent_style = identity.style or "concise"
+            settings.agent_language = identity.language or "bn"
+
+        rules = BehaviorRules.objects.filter(user=user).first()
+        if rules:
+            settings.custom_instructions = rules.custom_instructions or ""
+            settings.chit_chat_enabled = rules.chit_chat_enabled
+            settings.chit_chat_style = rules.chit_chat_style or "moderate"
+            settings.cross_sell_enabled = rules.cross_sell_enabled
+            settings.ask_open_ended = rules.ask_open_ended
+            settings.greeting_message = rules.greeting_message or ""
+
+        return settings
+
+    @staticmethod
+    def _load_products(conversation) -> list[ProductSummary]:
+        from .tools import parse_focus_products
+        focus_list = parse_focus_products(getattr(conversation, "current_product", ""))
+        products = []
+        for f in focus_list:
+            products.append(ProductSummary(
+                pid=f.get("pid", ""),
+                name=f.get("name", ""),
+                price=str(f.get("price", "")),
+                discounted_price=str(f.get("discounted_price")) if f.get("discounted_price") else None,
+                stock=f.get("stock", 0),
+                in_stock=f.get("in_stock", True),
+                description=f.get("description", "")[:200],
+                sku=f.get("sku", ""),
+                external_id=f.get("external_id", ""),
+            ))
+        return products
+
+    @staticmethod
+    def _load_orders(conversation) -> list[OrderSummary]:
+        orders = []
+        try:
+            for sale in conversation.orders.all().order_by("-created_at")[:3]:
+                orders.append(OrderSummary(
+                    oid=sale.oid,
+                    status=sale.status,
+                    total=str(sale.amount),
+                    customer_name=sale.customer_name or "",
+                    created_at=sale.created_at.isoformat() if sale.created_at else "",
+                ))
+        except Exception:
+            pass
+        return orders
+
+    @staticmethod
+    def _load_history(conversation, limit=15) -> list[dict]:
+        msgs = list(
+            Message.objects
+            .filter(conversation=conversation)
+            .order_by("-timestamp")[:limit]
+        )
+        msgs.reverse()
+        history = []
+        for m in msgs:
+            role = "assistant" if m.sender == "bot" else "user"
+            content = m.text or ""
+            if not content and m.attachments:
+                att_type = m.attachments.get("type", "")
+                url = m.attachments.get("url") or m.attachments.get("payload", {}).get("url", "")
+                content = f"[{att_type}: {url}]" if url else f"[{att_type}]"
+            history.append({"role": role, "content": content})
+        return history
+
+    @staticmethod
+    def _load_memory(user, conversation) -> MemorySummary:
+        """Load long-term memory (facts, preferences) into the context (P0-11 wiring)."""
+        memory = MemorySummary()
+        try:
+            from .memory import MemoryManager
+
+            entries = MemoryManager.recall(user)
+            if not entries:
+                return memory
+
+            for e in entries[:15]:
+                item = {"key": e.key, "value": e.value, "memory_type": e.memory_type,
+                        "confidence": e.confidence}
+                if e.memory_type == "preference":
+                    memory.preferences.append(item)
+                else:
+                    memory.facts.append(item)
+
+            memory.text = MemoryManager.summarize(user, max_items=8)
+        except Exception as exc:
+            logger.warning("Memory load failed for user=%s: %s", user.pk, exc)
+        return memory
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatible functions (used by old pipeline)
+# ---------------------------------------------------------------------------
+
+def build_system_prompt(user, conversation, image_analysis=None):
+    ctx = ConversationManager.build(conversation)
+    return _build_system_prompt_from_ctx(ctx, image_analysis)
+
+
+def _build_system_prompt_from_ctx(ctx, image_analysis=None):
+    from context.models import AgentIdentity, BehaviorRules, StoreConfig
     from api.products.factory import get_active_source, is_external
 
-    identity = AgentIdentity.objects.filter(user=user).first()
-    store = StoreConfig.objects.filter(user=user).first()
-    rules = BehaviorRules.objects.filter(user=user).first()
+    identity = AgentIdentity.objects.filter(user=ctx.user).first()
+    store = StoreConfig.objects.filter(user=ctx.user).first()
+    rules = BehaviorRules.objects.filter(user=ctx.user).first()
 
-    source = get_active_source(user)
-    external_catalog = bool(source) and is_external(user)
+    source = get_active_source(ctx.user)
+    external_catalog = bool(source) and is_external(ctx.user)
 
     parts = []
 
-    # --- Agent identity ---
     if identity:
         parts.append(
             f"## Your Identity\n"
@@ -38,7 +342,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
     if rules and rules.custom_instructions:
         parts.append(f"## Custom Instructions (user-defined)\n{rules.custom_instructions}")
 
-    # --- Core task rules (these override custom instructions above) ---
     tone = identity.tone if identity else "friendly"
     style = identity.style if identity else "concise"
     parts.append(
@@ -51,7 +354,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
     )
 
-    # --- Product discovery flow ---
     parts.append(
         "## WORKFLOW (product requests)\n"
         "1) think(): plan 2-3 queries.\n"
@@ -80,10 +382,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
         f"- Keep replies {tone} and {style}."
     )
 
-    # --- Image pre-search awareness ---
-    # When the customer sent an image, the system already analyzed it and
-    # searched the catalog. The results are in "Recent Searched Products"
-    # below. Tell the AI so it doesn't re-search.
     if image_analysis:
         parts.append(
             "## Image Analysis (already processed)\n"
@@ -99,7 +397,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
         if image_analysis.get("brand"):
             parts[-1] += f"\nDetected brand: {image_analysis['brand']}"
 
-    # --- Response flow ---
     parts.append(
         "## RESPONSE FLOW\n"
         "- For images: use analyzed SKU/name first, then search.\n"
@@ -109,7 +406,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- Multi-item order: confirm items, then create_order.\n"
     )
 
-    # --- Store info ---
     if store:
         parts.append(
             f"## Store\n"
@@ -122,7 +418,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
             f"Outside: {store.delivery_charge_outside} {store.currency}"
         )
 
-    # --- Behavior rules ---
     if rules:
         chit = f"{'on' if rules.chit_chat_enabled else 'off'} ({rules.chit_chat_style})"
         parts.append(
@@ -132,78 +427,55 @@ def build_system_prompt(user, conversation, image_analysis=None):
         )
         if rules.greeting_message:
             parts.append(f"Greeting template: {rules.greeting_message}")
-        
-        
 
-    # --- Live customer state ---
     cust = []
-    if conversation.customer_name:
-        cust.append(f"Name: {conversation.customer_name}")
-    if conversation.customer_phone:
-        cust.append(f"Phone: {conversation.customer_phone}")
-    if conversation.customer_city:
-        cust.append(f"City: {conversation.customer_city}")
-    if conversation.greeted:
+    if ctx.customer.name:
+        cust.append(f"Name: {ctx.customer.name}")
+    if ctx.customer.phone:
+        cust.append(f"Phone: {ctx.customer.phone}")
+    if ctx.customer.city:
+        cust.append(f"City: {ctx.customer.city}")
+    if ctx.conversation and ctx.conversation.greeted:
         cust.append("Already greeted: yes")
-    if conversation.detected_intent:
-        cust.append(f"Intent: {conversation.detected_intent}")
+    if ctx.conversation and ctx.conversation.detected_intent:
+        cust.append(f"Intent: {ctx.conversation.detected_intent}")
 
     currency = store.currency if store else "BDT"
 
-    # Focused products (kept in context across turns). search_products /
-    # get_product_details persist a rolling list (most-recent-first) of the last
-    # few products this conversation touched, so the AI can act on any of them —
-    # e.g. call send_images with a pid when the customer asks for photos, without
-    # searching again.
     from .tools import parse_focus_products
-    focus_list = parse_focus_products(conversation.current_product)
+    focus_list = parse_focus_products(ctx.conversation.current_product if ctx.conversation else "")
     if focus_list:
         cust.append(_render_focus_products(focus_list, currency))
 
     if cust:
         parts.append("## Current Customer\n" + "\n".join(cust))
 
-    # --- Catalogue snapshot ---
-    # For an external/live source, do NOT inline a list — the live catalog is
-    # large and dynamic; the AI must use search_products (enforced in the rules).
     if external_catalog:
-        parts.append(
-            "## END Of Recent searched Products\n"
-            
-        )
+        parts.append("## END Of Recent searched Products\n")
     else:
-        available_products = list(Product.objects.filter(user=user, status=True)[:20])
+        available_products = list(Product.objects.filter(user=ctx.user, status=True)[:20])
         if available_products:
             lines = ["## Available Products (sample — use search_products for the full catalog)"]
             for p in available_products:
                 desc = (p.description or "")[:80]
+                price_str = f"{p.price} {currency}"
+                if p.discounted_price and p.discounted_price < p.price:
+                    price_str += f" (discounted: {p.discounted_price} {currency})"
                 lines.append(
-                    f"- {p.name} (PID: {p.pid}) — {p.price} {currency}"
+                    f"- {p.name} (PID: {p.pid}) — {price_str}"
                     + (f" — {desc}" if desc else "")
                 )
             parts.append("\n".join(lines))
         else:
             parts.append("## Available Products\nNo products listed — use search_products.")
 
-    # NOTE: conversation history is NOT embedded here — pipeline.py passes it as
-    # real chat messages, so embedding it again would duplicate every turn.
-
-    # Join all parts and truncate if too long
     system_prompt = "\n\n".join(parts)
     if len(system_prompt) > MAX_PROMPT_LENGTH:
-        # Truncate and add indicator
         system_prompt = system_prompt[:MAX_PROMPT_LENGTH] + "\n\n[SYSTEM PROMPT TRUNCATED]"
     return system_prompt
 
 
 def _render_focus_products(focus_list, currency):
-    """Render the rolling focused-products list for the system prompt.
-
-    The most recent product (index 0) is shown in full (description +
-    variations); the rest are listed compactly. The AI can call send_images /
-    get_product_details with any of these PIDs.
-    """
-    # Dedup by pid — keep first occurrence (newest)
     seen = set()
     deduped = []
     for f in focus_list:
@@ -257,14 +529,12 @@ def _render_focus_products(focus_list, currency):
 
 
 def get_conversation_history(conversation, limit=20):
-    """Return the last `limit` messages as an OpenAI-format list."""
     msgs = list(
         Message.objects
         .filter(conversation=conversation)
         .order_by("-timestamp")[:limit]
     )
     msgs.reverse()
-
     history = []
     for m in msgs:
         role = "assistant" if m.sender == "bot" else "user"
@@ -274,5 +544,4 @@ def get_conversation_history(conversation, limit=20):
             url = m.attachments.get("url") or m.attachments.get("payload", {}).get("url", "")
             content = f"[{att_type}: {url}]" if url else f"[{att_type}]"
         history.append({"role": role, "content": content})
-
     return history

@@ -134,7 +134,7 @@ def _fire_batch_pipeline(conversation_id):
 
         close_old_connections()
         from types import SimpleNamespace
-        from api.ai.pipeline import run
+        from django.conf import settings
 
         conversation = Conversation.objects.get(id=conversation_id)
 
@@ -175,7 +175,12 @@ def _fire_batch_pipeline(conversation_id):
 
         unified = SimpleNamespace(text=combined_text)
         try:
-            run(conversation, unified)
+            if settings.AI_ORCHESTRATOR_ENABLED:
+                from api.ai.orchestrator import run_via_orchestrator
+                run_via_orchestrator(conversation, unified)
+            else:
+                from api.ai.pipeline import run
+                run(conversation, unified)
         except Exception:
             logger.exception(
                 "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
@@ -208,7 +213,12 @@ def _fire_batch_pipeline(conversation_id):
                 if combined_text.strip():
                     unified = SimpleNamespace(text=combined_text)
                     try:
-                        run(conversation, unified)
+                        if settings.AI_ORCHESTRATOR_ENABLED:
+                            from api.ai.orchestrator import run_via_orchestrator
+                            run_via_orchestrator(conversation, unified)
+                        else:
+                            from api.ai.pipeline import run
+                            run(conversation, unified)
                         MessageBatch.objects.filter(pk__in=fresh_pks).update(processed=True)
                     except Exception:
                         logger.exception(
@@ -323,11 +333,23 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     media_url = (attachments or {}).get("url") or ""
     if not media_url and isinstance((attachments or {}).get("payload"), dict):
         media_url = (attachments or {}).get("payload", {}).get("url", "")
-    if att_type == "image" and media_url and ai_enabled:
+    # Also skip when the user has no credits left — the analysis is a paid
+    # vision call and the pipeline would refuse the reply anyway.
+    from billing.models import UserBalance
+    has_credits = UserBalance.objects.filter(
+        user=conv.user, credits_remaining__gt=0
+    ).exists()
+    if att_type == "image" and media_url and ai_enabled and has_credits:
         try:
+            import uuid as _uuid
             from api.ai.media import analyze_image_structured
             from api.ai.tools import tool_search_products
-            data = analyze_image_structured(media_url)
+            # Bill the vision call against its own reply_id (never counted as
+            # a customer "reply" — tokens/credits only).
+            media_reply_id = _uuid.uuid4().hex
+            data = analyze_image_structured(
+                media_url, user=conv.user, reply_id=media_reply_id
+            )
             structured = {k: v for k, v in data.items() if k != "description"}
             attachments["analysis_data"] = structured
             desc = data.get("description", "")
@@ -386,6 +408,13 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
                     })
             if search_results:
                 attachments["analysis_search"] = search_results
+
+            # Deduct the vision cost (tokens were logged under media_reply_id)
+            try:
+                from billing.deductions import deduct_for_reply
+                deduct_for_reply(conv.user, media_reply_id, count_as_reply=False)
+            except Exception as exc:
+                logger.warning("Image analysis deduction failed mid=%s: %s", mid, exc)
         except Exception as exc:
             logger.warning("Image analysis failed mid=%s: %s", mid, exc)
 

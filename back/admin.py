@@ -7,7 +7,7 @@ from django.shortcuts import render
 from django.urls import path
 
 from .models import (
-    Conversation, Integration, Message, OrderItem, Package, PackageImages,
+    AuditLog, Conversation, Integration, Message, OrderItem, Package, PackageImages,
     PackageItem, Product, ProductImages, ProductSource, Sale, Setting,
     SupportTicket, ToolCallLog, UserProfile, UsageLog,
 )
@@ -556,6 +556,34 @@ class ToolCallLogAdmin(admin.ModelAdmin):
 
     def conversation_link(self, obj):
         from django.utils.html import format_html
+        return format_html(
+            '<a href="/admin/back/conversation/{}/change/">{} ({})</a>',
+            obj.conversation_id,
+            obj.conversation.customer_id[:20] if obj.conversation and obj.conversation.customer_id else "?",
+            obj.conversation.platform if obj.conversation else "?",
+        )
+    conversation_link.short_description = "Conversation"
+
+
+@admin.register(AuditLog)
+class AuditLogAdmin(admin.ModelAdmin):
+    list_display = ["tool_name", "result_state", "actor_role", "conversation_link", "execution_time_ms", "timestamp"]
+    list_filter = ["tool_name", "result_state", "timestamp", "user"]
+    search_fields = ["tool_name", "result_summary", "conversation__customer_id", "arguments"]
+    readonly_fields = [f.name for f in AuditLog._meta.fields]
+    list_select_related = ("conversation", "user")
+    raw_id_fields = ("conversation", "user")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def conversation_link(self, obj):
+        from django.utils.html import format_html
+        if not obj.conversation_id:
+            return "—"
         return format_html(
             '<a href="/admin/back/conversation/{}/change/">{} ({})</a>',
             obj.conversation_id,

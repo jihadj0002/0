@@ -8,17 +8,21 @@ from django.utils import timezone
 logger = logging.getLogger(__name__)
 
 
-def deduct_for_reply(user, reply_id):
+def deduct_for_reply(user, reply_id, count_as_reply=True):
     """
     Atomic credit deduction for a completed AI reply.
 
     Steps:
       1. Auto-renew if renewal_date has passed.
       2. Sum all UsageLog rows for this reply_id.
-      3. Calculate credit cost using ModelPricing (0 if model not priced).
+      3. Calculate credit cost using ModelPricing (0 if model not priced),
+         rounded to the ledger's 4-decimal precision so the balance,
+         CreditTransaction, and UsageSummary all agree.
       4. select_for_update() → deduct → floor at 0.
       5. Write CreditTransaction audit row.
-      6. Increment UsageSummary for today.
+      6. Increment UsageSummary for today (counts as an AI call; counts as a
+         "reply" only when count_as_reply=True — media analysis bills tokens
+         without inflating reply counts).
       7. If credits exhausted → disable all user Integrations.
     """
     from back.models import UsageLog, Integration
@@ -49,6 +53,11 @@ def deduct_for_reply(user, reply_id):
 
         total_calls = len(logs)
 
+        # Round once to the ledger's precision so balance / CreditTransaction /
+        # UsageSummary never drift apart (previously the exact 6-decimal cost
+        # was rounded separately per write, silently losing ~0.0002/125 replies).
+        total_cost = total_cost.quantize(Decimal("0.0001"))
+
         with transaction.atomic():
             try:
                 balance = UserBalance.objects.select_for_update().get(user=user)
@@ -63,8 +72,9 @@ def deduct_for_reply(user, reply_id):
 
             new_credits = max(Decimal("0"), balance.credits_remaining - total_cost)
             balance.credits_remaining = new_credits
-            balance.messages_used = F("messages_used") + 1
-            balance.save(update_fields=["credits_remaining", "messages_used", "updated_at"])
+            if count_as_reply:
+                balance.messages_used = F("messages_used") + 1
+            balance.save(update_fields=["credits_remaining", "updated_at"] + (["messages_used"] if count_as_reply else []))
 
             CreditTransaction.objects.create(
                 user=user,
@@ -87,7 +97,7 @@ def deduct_for_reply(user, reply_id):
                 },
             )
             UsageSummary.objects.filter(pk=summary.pk).update(
-                total_replies=F("total_replies") + 1,
+                total_replies=F("total_replies") + (1 if count_as_reply else 0),
                 total_ai_calls=F("total_ai_calls") + total_calls,
                 total_input_tokens=F("total_input_tokens") + total_input,
                 total_output_tokens=F("total_output_tokens") + total_output,

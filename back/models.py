@@ -369,6 +369,7 @@ class Conversation(models.Model):
 
     customer_phone = models.CharField(max_length=50, blank=True, null=True)
     customer_city = models.CharField(max_length=100, blank=True, null=True)
+    customer_address = models.CharField(max_length=500, blank=True, null=True)
 
     is_returning = models.BooleanField(default=False)
     preferred_tone = models.CharField(max_length=50, blank=True, null=True)
@@ -733,3 +734,30 @@ class ToolCallLog(models.Model):
 
     def __str__(self):
         return f"{self.tool_name} ({self.conversation_id})"
+
+
+class AuditLog(models.Model):
+    """Full audit trail for every tool execution (P1-3)."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="audit_logs")
+    conversation = models.ForeignKey(
+        Conversation, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    tool_name = models.CharField(max_length=100, db_index=True)
+    arguments = models.JSONField(default=dict, blank=True)
+    result_state = models.CharField(max_length=20, default="success")
+    result_summary = models.TextField(blank=True, default="")
+    execution_time_ms = models.IntegerField(default=0)
+    actor_role = models.CharField(max_length=50, blank=True, default="")
+    ip_address = models.CharField(max_length=50, blank=True, default="")
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Audit Log"
+        verbose_name_plural = "Audit Logs"
+        ordering = ["-timestamp"]
+        indexes = [
+            models.Index(fields=["user", "tool_name", "timestamp"]),
+        ]
+
+    def __str__(self):
+        return f"{self.tool_name} [{self.result_state}] — {self.user_id}"

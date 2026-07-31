@@ -85,6 +85,25 @@ def analyze_image_structured(image_url: str, user=None, reply_id=None) -> dict:
             max_tokens=300,
             temperature=0.1,
         )
+
+        # Log the vision call for billing BEFORE parsing — tokens were spent
+        # even if the JSON below fails to parse. Caller (webhooks) charges the
+        # user via deduct_for_reply(..., count_as_reply=False) with this id.
+        usage = resp.usage
+        if user and reply_id:
+            try:
+                from back.models import UsageLog
+                UsageLog.objects.create(
+                    user=user,
+                    reply_id=reply_id,
+                    model=VISION_MODEL,
+                    input_tokens=usage.prompt_tokens if usage else 0,
+                    output_tokens=usage.completion_tokens if usage else 0,
+                    call_type="image_analysis",
+                )
+            except Exception as exc:
+                logger.warning("Vision UsageLog write failed: %s", exc)
+
         text = resp.choices[0].message.content or ""
         import json as _json
         data = _json.loads(text)

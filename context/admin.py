@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import AgentIdentity, RAGChunk, StoreConfig, BehaviorRules
+from .models import AgentIdentity, RAGChunk, StoreConfig, BehaviorRules, ProactiveRule
 
 
 class AgentIdentityAdmin(admin.ModelAdmin):
@@ -26,7 +26,13 @@ class RAGChunkAdmin(admin.ModelAdmin):
     search_fields = ("source",)
     ordering = ("-created_at",)
 
+class ProactiveRuleAdmin(admin.ModelAdmin):
+    list_display = ("user", "event_type", "is_enabled", "notify_channel", "updated_at")
+    list_filter = ("event_type", "is_enabled", "notify_channel")
+    search_fields = ("user__username", "user__email")
+
 admin.site.register(RAGChunk, RAGChunkAdmin)
 admin.site.register(AgentIdentity, AgentIdentityAdmin)
 admin.site.register(StoreConfig, StoreConfigAdmin)
 admin.site.register(BehaviorRules, BehaviorRulesAdmin)
+admin.site.register(ProactiveRule, ProactiveRuleAdmin)
