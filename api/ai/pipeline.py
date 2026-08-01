@@ -450,7 +450,7 @@ def run(conversation, incoming_message):
         attachment["cards"] = product_cards
         attachment["type"] = "product_cards" if len(product_cards) > 1 else "product_card"
 
-    Message.objects.create(
+    msg = Message.objects.create(
         conversation=conversation,
         sender="bot",
         text=final_text,
@@ -459,12 +459,24 @@ def run(conversation, incoming_message):
 
     # Send via platform — pass product_cards only for multi-product carousel;
     # single-product images are sent individually (avoids duplicate image messages).
-    send_reply(
+    delivery = send_reply(
         conversation,
         _split_text_messages(final_text),
         image_urls=unique_images or None,
         product_cards=product_cards if len(product_cards) > 1 else None,
     )
+
+    # Record the delivery outcome on the message so "saved but not delivered"
+    # failures are visible instead of silent.
+    try:
+        raw = msg.raw_payload or {}
+        if not isinstance(raw, dict):
+            raw = {}
+        raw["delivery"] = delivery
+        msg.raw_payload = raw
+        msg.save(update_fields=["raw_payload"])
+    except Exception:
+        logger.warning("Delivery-status write failed reply_id=%s", reply_id)
 
     # Deduct credits after reply is confirmed sent
     try:

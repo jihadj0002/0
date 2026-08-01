@@ -292,7 +292,7 @@ class Orchestrator:
             ]
 
         # Save message with pipeline trace in raw_payload
-        Message.objects.create(
+        msg = Message.objects.create(
             conversation=conversation,
             sender="bot",
             text=response.text,
@@ -307,12 +307,24 @@ class Orchestrator:
 
         # Send via platform
         texts = self._split_text(response.text)
-        send_reply(
+        delivery = send_reply(
             conversation,
             texts,
             image_urls=response.images or None,
             product_cards=response.cards if len(response.cards) > 1 else None,
         )
+
+        # Record the delivery outcome on the message so "saved but not delivered"
+        # failures are visible instead of silent.
+        try:
+            raw = msg.raw_payload or {}
+            if not isinstance(raw, dict):
+                raw = {}
+            raw["delivery"] = delivery
+            msg.raw_payload = raw
+            msg.save(update_fields=["raw_payload"])
+        except Exception:
+            logger.warning("Delivery-status write failed reply_id=%s", reply_id)
 
     def _split_text(self, text: str) -> list[str]:
         if not text:

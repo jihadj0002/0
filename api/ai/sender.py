@@ -18,25 +18,45 @@ def _normalize_texts(text):
     return [text] if text else []
 
 
+def _public_urls(urls):
+    """Keep only absolute http(s) URLs — Messenger/WhatsApp/Telegram all
+    require publicly fetchable URLs. Relative paths (legacy /media/... rows,
+    ERP junk) are dropped and reported so failures stay visible."""
+    out = []
+    for u in (urls or []) or []:
+        if isinstance(u, str) and u.startswith(("http://", "https://")):
+            out.append(u)
+    return out
+
+
 def send_reply(conversation, text, image_urls=None, product_cards=None):
-    """Dispatch a reply (text + images + product cards) to the customer."""
+    """Dispatch a reply (text + images + product cards) to the customer.
+
+    Returns a delivery report dict: {"ok": bool, "sent": {...}, "errors": [...]}
+    Callers may persist it on the Message for debugging. Never raises.
+    """
     platform = conversation.platform
+    result = {"ok": False, "sent": {}, "errors": []}
     try:
         integration = Integration.get_active(conversation.user, platform)
         if not integration or not integration.access_token:
             logger.warning("No active integration for user=%s platform=%s", conversation.user_id, platform)
-            return
+            result["errors"].append("no active integration / access token")
+            return result
 
         texts = _normalize_texts(text)
         if platform == "whatsapp":
-            _whatsapp(conversation, integration, texts, image_urls, product_cards)
+            result = _whatsapp(conversation, integration, texts, image_urls, product_cards)
         elif platform in ("messenger", "instagram"):
-            _messenger(conversation, integration, texts, image_urls, product_cards)
+            result = _messenger(conversation, integration, texts, image_urls, product_cards)
         elif platform == "telegram":
-            _telegram(conversation, integration, texts, image_urls, product_cards)
-
+            result = _telegram(conversation, integration, texts, image_urls, product_cards)
+        else:
+            result["errors"].append(f"unsupported platform {platform}")
     except Exception:
         logger.exception("send_reply failed conv=%s platform=%s", conversation.pk, platform)
+        result["errors"].append("send_reply exception")
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -50,34 +70,51 @@ def _whatsapp(conversation, integration, texts, image_urls, product_cards=None):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
     to = conversation.customer_id
 
+    sent = {"cards": 0, "images": 0, "texts": 0}
+    errors = []
+
     # WhatsApp has no card carousel — send each product's first image with a
     # name + price caption as a fallback.
     for card in (product_cards or [])[:5]:
-        images = card.get("images") or []
+        images = _public_urls(card.get("images"))
         if not images:
             continue
-        _post(url, headers, {
+        ok, err = _post(url, headers, {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "image",
             "image": {"link": images[0], "caption": _card_caption(card)},
         })
+        if ok:
+            sent["cards"] += 1
+        else:
+            errors.append(err)
 
-    for img_url in (image_urls or [])[:5]:
-        _post(url, headers, {
+    for img_url in _public_urls(image_urls)[:5]:
+        ok, err = _post(url, headers, {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "image",
             "image": {"link": img_url},
         })
+        if ok:
+            sent["images"] += 1
+        else:
+            errors.append(err)
 
     for text in texts:
-        _post(url, headers, {
+        ok, err = _post(url, headers, {
             "messaging_product": "whatsapp",
             "to": to,
             "type": "text",
             "text": {"body": text, "preview_url": False},
         })
+        if ok:
+            sent["texts"] += 1
+        else:
+            errors.append(err)
+
+    return {"ok": not errors, "sent": sent, "errors": errors}
 
 
 def _messenger(conversation, integration, texts, image_urls, product_cards=None):
@@ -86,11 +123,14 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
     headers = {"Authorization": f"Bearer {token}"}
     recipient = {"id": conversation.customer_id}
 
+    sent = {"cards": 0, "images": 0, "texts": 0}
+    errors = []
+
     # Send product cards as a generic template carousel (max 10 elements)
     if product_cards:
         elements = []
         for card in product_cards[:10]:
-            images = card.get("images", [])
+            images = _public_urls(card.get("images", []))
             price_str = ""
             if card.get("discounted_price"):
                 price_str = f"৳{card['discounted_price']}"
@@ -111,7 +151,7 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
                 ],
             })
         if elements:
-            _post(url, headers, {
+            ok, err = _post(url, headers, {
                 "recipient": recipient,
                 "message": {
                     "attachment": {
@@ -123,15 +163,29 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
                     }
                 },
             })
+            if ok:
+                sent["cards"] += 1
+            else:
+                errors.append(err)
 
-    for img_url in (image_urls or [])[:5]:
-        _post(url, headers, {
+    for img_url in _public_urls(image_urls)[:5]:
+        ok, err = _post(url, headers, {
             "recipient": recipient,
             "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
         })
+        if ok:
+            sent["images"] += 1
+        else:
+            errors.append(err)
 
     for text in texts:
-        _post(url, headers, {"recipient": recipient, "message": {"text": text}})
+        ok, err = _post(url, headers, {"recipient": recipient, "message": {"text": text}})
+        if ok:
+            sent["texts"] += 1
+        else:
+            errors.append(err)
+
+    return {"ok": not errors, "sent": sent, "errors": errors}
 
 
 def _telegram(conversation, integration, texts, image_urls, product_cards=None):
@@ -139,21 +193,38 @@ def _telegram(conversation, integration, texts, image_urls, product_cards=None):
     chat_id = conversation.customer_id
     base = f"https://api.telegram.org/bot{token}"
 
+    sent = {"cards": 0, "images": 0, "texts": 0}
+    errors = []
+
     # Telegram has no card carousel — send each product's first image with a
     # name + price caption as a fallback.
     for card in (product_cards or [])[:5]:
-        images = card.get("images") or []
+        images = _public_urls(card.get("images"))
         if not images:
             continue
-        _post(f"{base}/sendPhoto", {}, {
+        ok, err = _post(f"{base}/sendPhoto", {}, {
             "chat_id": chat_id, "photo": images[0], "caption": _card_caption(card),
         })
+        if ok:
+            sent["cards"] += 1
+        else:
+            errors.append(err)
 
-    for img_url in (image_urls or [])[:5]:
-        _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
+    for img_url in _public_urls(image_urls)[:5]:
+        ok, err = _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
+        if ok:
+            sent["images"] += 1
+        else:
+            errors.append(err)
 
     for text in texts:
-        _post(f"{base}/sendMessage", {}, {"chat_id": chat_id, "text": text})
+        ok, err = _post(f"{base}/sendMessage", {}, {"chat_id": chat_id, "text": text})
+        if ok:
+            sent["texts"] += 1
+        else:
+            errors.append(err)
+
+    return {"ok": not errors, "sent": sent, "errors": errors}
 
 
 def _card_caption(card):
@@ -164,9 +235,15 @@ def _card_caption(card):
 
 
 def _post(url, headers, payload):
+    """POST to a platform API. Returns (ok, error_message_or_None)."""
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=10)
         if not resp.ok:
-            logger.warning("Platform send failed %s %s: %s", url, payload.get("type", ""), resp.text[:200])
+            msg = f"{url} {payload.get('type', '')}: {resp.text[:200]}"
+            logger.warning("Platform send failed %s", msg)
+            return False, msg
+        return True, None
     except requests.RequestException as exc:
+        msg = f"{url}: request error: {exc}"
         logger.warning("Platform send request error: %s", exc)
+        return False, msg

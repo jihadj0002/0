@@ -246,7 +246,10 @@ CLOUDFLARE_R2_CONFIG_OPTIONS = {
     "signature_version": "s3v4",
 }
 
-if IS_PRODUCTION and CLOUDFLARE_R2_BUCKET:
+# Use Cloudflare R2 whenever the bucket config is present (dev + production).
+# This guarantees every image/file save lands in R2 and default_storage.url()
+# returns the absolute public CDN URL — required for Messenger/WhatsApp sends.
+if CLOUDFLARE_R2_BUCKET and CLOUDFLARE_R2_ACCESS_KEY and CLOUDFLARE_R2_SECRET_KEY and CLOUDFLARE_R2_BUCKET_ENDPOINT:
     STORAGES = {
         "default": {
             "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
