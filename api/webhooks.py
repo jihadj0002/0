@@ -139,14 +139,19 @@ def _fire_batch_pipeline(conversation_id):
         conversation = Conversation.objects.get(id=conversation_id)
 
         # Guard: don't fire if AI was disabled since the timer was scheduled.
-        ai_still_enabled = (
-            conversation.is_ai_enabled
-            and Integration.objects.filter(
-                user=conversation.user,
-                platform=conversation.platform,
-                is_enabled=True,
-            ).exists()
-        )
+        # A temporarily-disabled conversation (human handoff) auto-re-enables
+        # once its delay elapsed — new messages must wake it up again.
+        ai_still_enabled = conversation.is_ai_enabled
+        if not ai_still_enabled:
+            try:
+                ai_still_enabled = conversation.auto_enable_ai()
+            except Exception:
+                logger.exception("auto_enable_ai failed conv=%s", conversation.pk)
+        ai_still_enabled = ai_still_enabled and Integration.objects.filter(
+            user=conversation.user,
+            platform=conversation.platform,
+            is_enabled=True,
+        ).exists()
         if not ai_still_enabled:
             MessageBatch.objects.filter(
                 conversation=conversation, processed=False

@@ -46,7 +46,13 @@ class Orchestrator:
             incoming_message: SimpleNamespace with .text attribute, or Message-like object
         """
         if not conversation.is_ai_enabled:
-            return
+            try:
+                if not conversation.auto_enable_ai():
+                    logger.info("Conversation AI disabled — skipping orchestrator conv=%s", conversation.pk)
+                    return
+            except Exception:
+                logger.exception("auto_enable_ai failed conv=%s", conversation.pk)
+                return
 
         user = conversation.user
 
@@ -123,22 +129,43 @@ class Orchestrator:
         context.intent = IntentDC(name=intent_name, confidence=1.0)
         self._intent_name = intent_name
 
-        # Step 2a: A confirmation ("ok", "হ্যাঁ") right after a product question
+        # Step 2a: A confirmation ("ok", "হ্যাঁ") right after an ORDER question
         # ("...নিতে আগ্রহী?") means the customer wants that product → order flow.
+        # The last bot question must actually be asking for an order — a bare
+        # "ok" after any other question ("আরেকটা দেখতে চান?", "ছবি পাঠাব?") is
+        # NOT buying intent.
         if intent_name in ("SMALL_TALK", "GREETING", "UNKNOWN"):
             from .state import WorkflowEngine
             if WorkflowEngine.CONFIRM_RE.search(customer_text):
                 last_bot = Message.objects.filter(
                     conversation=conversation, sender="bot"
                 ).order_by("-timestamp").first()
-                if last_bot and last_bot.text and last_bot.text.rstrip().endswith("?"):
+                if (
+                    last_bot and last_bot.text
+                    and last_bot.text.rstrip().endswith("?")
+                    and WorkflowEngine.ORDER_QUESTION_RE.search(last_bot.text)
+                ):
                     intent_name = "CREATE_ORDER"
                     context.intent = IntentDC(name=intent_name, confidence=1.0)
                     self._intent_name = intent_name
                     logger.info(
-                        "Orchestrator confirm-after-question → CREATE_ORDER conv=%s",
+                        "Orchestrator confirm-after-order-question → CREATE_ORDER conv=%s",
                         conversation.pk,
                     )
+
+        # Step 2a-lite: customers often volunteer their number mid-chat ("amar
+        # number 01712345678"). Save it so any later order flow prefills
+        # instead of asking. Presence of a phone is NOT buying intent.
+        if not getattr(conversation, "customer_phone", ""):
+            digits = _re.sub(r"\D", "", customer_text)
+            if len(digits) >= 10:
+                phone = digits[:15]
+                try:
+                    Conversation.objects.filter(pk=conversation.pk).update(customer_phone=phone)
+                    conversation.customer_phone = phone
+                    logger.info("Captured volunteered phone conv=%s", conversation.pk)
+                except Exception:
+                    logger.exception("Phone capture failed conv=%s", conversation.pk)
 
         # Repeated "didn't understand": after one failed turn, proactively show
         # the catalog (text + cards) instead of looping the same canned apology.

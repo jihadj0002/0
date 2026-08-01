@@ -10,6 +10,8 @@ import json
 import logging
 from pathlib import Path
 
+from back.models import Message
+
 from .context import ConversationContext, PlanStep
 from .tools import ToolRegistry
 
@@ -76,6 +78,18 @@ class Planner:
         Uses direct → template → LLM fallback.
         """
         if intent in ("GREETING", "SMALL_TALK", "UNKNOWN", "FRUSTRATION"):
+            # First-contact greeting: open with the catalog (featured products
+            # as cards) instead of a bare "hello" — browse-first flow. Repeat
+            # greetings stay text-only.
+            if intent == "GREETING" and context.conversation is not None:
+                try:
+                    first_customer_msgs = Message.objects.filter(
+                        conversation=context.conversation, sender="customer"
+                    ).count()
+                    if first_customer_msgs <= 1:
+                        return [PlanStep(tool="search_products", args={"query": "", "limit": 8})]
+                except Exception:
+                    logger.exception("First-greeting catalog check failed")
             return []
 
         # Orders are handled EXCLUSIVELY by the deterministic workflow

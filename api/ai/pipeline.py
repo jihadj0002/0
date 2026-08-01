@@ -148,7 +148,12 @@ def run(conversation, incoming_message):
         final text → save bot Message → send via platform → log all LLM calls
     """
     if not conversation.is_ai_enabled:
-        return
+        try:
+            if not conversation.auto_enable_ai():
+                return
+        except Exception:
+            logger.exception("auto_enable_ai failed conv=%s", conversation.pk)
+            return
 
     user = conversation.user
 

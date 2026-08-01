@@ -8,7 +8,14 @@ turn-by-turn, validates transitions, and executes the final tool calls.
 import logging
 import re
 
+from django.utils import timezone
+
 logger = logging.getLogger(__name__)
+
+# Zombie-flow guard: an order workflow that has seen no activity for this long
+# is abandoned on the next message so a stale session can never hijack a
+# brand-new conversation (customer presence ≠ ordering intent).
+WORKFLOW_TIMEOUT = timezone.timedelta(minutes=30)
 
 # ---------------------------------------------------------------------------
 # State transitions (P1-10)
@@ -234,11 +241,14 @@ def _lang(conversation):
         return "bn"
 
 
-def _ask_for_field(field, lang):
-    labels = FIELD_LABELS if lang == "bn" else FIELD_LABELS_EN
+def _ask_for_missing_fields(missing, lang):
+    """Ask for every still-missing order field in one message (never
+    re-asks a name/phone/address the customer already provided)."""
     if lang == "bn":
-        return f"ঠিক আছে! অর্ডারটি সম্পন্ন করতে {labels[field]} জানাবেন? 🛒"
-    return f"Great! To complete your order, could you tell me {labels[field]}?"
+        parts = " ও ".join(FIELD_LABELS[f] for f in missing)
+        return f"অর্ডারটি সম্পন্ন করতে {parts} জানাবেন? 🛒"
+    parts = ", ".join(FIELD_LABELS_EN[f] for f in missing)
+    return f"To complete your order, could you tell me {parts}?"
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +272,21 @@ class WorkflowEngine:
         r"^(no|nope|na|nah|cancel|never ?mind|stop|না|বাতিল|থামুন|লাগবে না|প্রয়োজন নেই)",
         re.IGNORECASE
     )
+    # Bot questions that actually ask the customer to order ("নিতে চান?",
+    # "অর্ডার করব?"). A bare "ok" after ANY other question ("আরেকটা দেখতে
+    # চান?", "ছবি পাঠাব?") must NOT start an order flow.
+    ORDER_QUESTION_RE = re.compile(
+        r"(অর্ডার|নিতে চান|আগ্রহী|নিবেন|নেবেন|নিন কি|কিনবেন|কিনতে চান|"
+        r"interested|order|want (it|this|that|one)|দরকার|কোনটা নিবেন|"
+        r"নেবেন কি|কিনবেন কি|order korbo|নিবো কি|নিব কি)", re.IGNORECASE
+    )
+    # Browse-y verbs — a short message containing one of these ("tetuler achar
+    # den", "bedbug spray dekhan") is browsing, never a name/address answer.
+    BROWSE_VERB_RE = re.compile(
+        r"(den|diben|din|দেন|দিন|দিবেন|দেবেন|দাও|দেখান|dekhan|dekhao|"
+        r"dekhaben|dekha|দেখা|ছবি|pic|photo|pathan|পাঠান|দাম|dam|koto|"
+        r"কত\b|আছে|ache|stock|দেখতে|দেখুন)", re.IGNORECASE
+    )
     QUESTION_RE = re.compile(
         r"[?؟]|^(what|which|why|how|when|who|কি|কী|কোন|কেন|কেমন)\b", re.IGNORECASE
     )
@@ -283,28 +308,66 @@ class WorkflowEngine:
 
     @classmethod
     def handle_message(cls, conversation, text, context) -> dict | None:
-        """If a workflow is active, consume the message.
+        """If an order workflow is active, consume ONLY order-ish messages.
 
-        Returns a response dict {"text": ...} or None when the message
-        should be processed by the normal orchestrator pipeline instead.
+        The workflow is a pause-able step — it must never hijack unrelated
+        messages (a customer asking for pictures, prices or the catalog is
+        NOT answering the phone field). Returns a response dict {"text": ...}
+        when the message is consumed by the flow, or None when the normal
+        orchestrator pipeline should answer it instead.
         """
         session = get_session(conversation)
         if session.state == "idle":
             return None
 
-        # Price negotiation or frustration mid-flow: let the pipeline answer
-        # (price hold / de-escalation); the pending field stays for the next
-        # message. "150 e den" must not become a customer name or quantity.
-        if getattr(getattr(context, "intent", None), "name", "") in ("NEGOTIATE", "FRUSTRATION"):
+        # Zombie flows: a workflow idle for too long is abandoned so a session
+        # started hours/days ago can never swallow the next conversation.
+        if session.updated_at and (timezone.now() - session.updated_at) > WORKFLOW_TIMEOUT:
+            reset_session(conversation)
             return None
+
+        intent = getattr(getattr(context, "intent", None), "name", "")
+        text_n = (text or "").strip()
 
         # A question while collecting data is NOT a field answer — let the AI
         # answer it; the pending field stays pending for the next message.
-        if cls.QUESTION_RE.search(text or ""):
+        if cls.QUESTION_RE.search(text_n):
+            return None
+
+        digits = re.sub(r"\D", "", text_n)
+
+        if session.current_workflow == "create_order":
+            # Details-looking answers ("01712345678", "Mirpur 10, 017...") always
+            # belong to the flow — even if the classifier called them a product
+            # search. Names/addresses are short bare answers without browse
+            # verbs ("amar nam Jubayer", "Mirpur 10 kajipara").
+            if len(digits) >= 10:
+                return cls._handle_order_step(conversation, session, text_n, context)
+            if intent in ("UNKNOWN", "SMALL_TALK", "SEARCH_PRODUCT") and (
+                len(text_n.split()) <= 4 and not cls.BROWSE_VERB_RE.search(text_n)
+            ):
+                return cls._handle_order_step(conversation, session, text_n, context)
+
+        # Intents that are clearly NOT order-field answers — let the pipeline
+        # answer (catalog, images, prices, stock, complaints...). The pending
+        # flow stays paused for the next order-ish message. Frustration drops
+        # the pending order entirely so we never keep nagging a vexed customer.
+        BYPASS_INTENTS = {
+            "SEND_IMAGES", "CATALOG", "SEARCH_PRODUCT", "ASK_STOCK",
+            "CHECK_ORDER", "CANCEL_ORDER", "RETURN_PRODUCT", "ASK_DELIVERY",
+            "ASK_PAYMENT", "ASK_PRICE", "ASK_DETAILS", "COMPARE_PRODUCTS",
+            "NEGOTIATE", "FRUSTRATION", "HUMAN_SUPPORT", "ESCALATION",
+            "ASK_FAQ", "BILLING_QUERY", "UPGRADE_PLAN", "STORE_SYNC",
+            "ANALYTICS_QUERY", "CONTENT_REQUEST", "RECOMMEND",
+            "GREETING", "SMALL_TALK",
+        }
+        if intent in BYPASS_INTENTS:
+            if intent == "FRUSTRATION":
+                reset_session(conversation)
             return None
 
         if session.current_workflow == "create_order":
-            return cls._handle_order_step(conversation, session, text, context)
+            return cls._handle_order_step(conversation, session, text_n, context)
         return None
 
     @classmethod
@@ -455,7 +518,7 @@ class WorkflowEngine:
         session.workflow_step = 0
         session.state = "awaiting_details"
         session.save()
-        return {"text": _ask_for_field(missing[0], _lang(conversation))}
+        return {"text": _ask_for_missing_fields(missing, _lang(conversation))}
 
     @classmethod
     def _previous_order_for(cls, conversation):
@@ -720,11 +783,11 @@ class WorkflowEngine:
                 if lang == "bn":
                     return {"text": (
                         f"ঠিক আছে, {selected.get('name', '')}! "
-                        f"অর্ডারটি সম্পন্ন করতে {FIELD_LABELS[missing[0]]} জানাবেন? 🛒"
+                        f"{_ask_for_missing_fields(missing, lang)}"
                     )}
                 return {"text": (
-                    f"Great, {selected.get('name', '')}! To complete your order, "
-                    f"could you tell me {FIELD_LABELS_EN[missing[0]]}?"
+                    f"Great, {selected.get('name', '')}! "
+                    f"{_ask_for_missing_fields(missing, lang)}"
                 )}
             summary = cls._order_summary_text(collected, context, lang)
             session.pending_confirmation = collected
@@ -768,7 +831,7 @@ class WorkflowEngine:
                 session.workflow_step = ORDER_FIELDS.index(missing[0])
                 session.state = "awaiting_details"
                 session.save()
-                return {"text": _ask_for_field(missing[0], lang)}
+                return {"text": _ask_for_missing_fields(missing, lang)}
             summary = cls._order_summary_text(collected, context, lang)
             session.pending_confirmation = collected
             session.state = "awaiting_confirmation"
@@ -865,7 +928,7 @@ class WorkflowEngine:
                         session.workflow_step = ORDER_FIELDS.index(missing[0])
                         session.state = "awaiting_details"
                         session.save()
-                        return {"text": _ask_for_field(missing[0], lang)}
+                        return {"text": _ask_for_missing_fields(missing, lang)}
                     summary = cls._order_summary_text(collected, context, lang)
                     session.pending_confirmation = collected
                     session.state = "awaiting_confirmation"
@@ -876,9 +939,27 @@ class WorkflowEngine:
             # Validate the collected value so "ok"/"yes" isn't stored as a name
             problem = cls._validate_field_value(field, value, lang)
             if problem:
+                retries = int((collected or {}).get("_field_retries", 0))
+                if retries >= 2:
+                    # Escape hatch: after repeated failed attempts for the same
+                    # field, stop the loop instead of nagging forever.
+                    reset_session(conversation)
+                    if lang == "bn":
+                        return {"text": (
+                            "ঠিক আছে, অর্ডারটা পরে নিতে পারি। আগে প্রোডাক্ট দেখে নিন — "
+                            "'ছবি দেন' লিখলে ছবি পাঠাই, আবার অর্ডার করতেই চাইলে বলুন!"
+                        )}
+                    return {"text": (
+                        "No problem — we can order later. Browse the catalog first, "
+                        "and just tell me when you're ready to order!"
+                    )}
+                collected["_field_retries"] = retries + 1
+                session.collected_data = collected
+                session.save()
                 return {"text": problem}
 
             collected[field] = value
+            collected["_field_retries"] = 0
             session.collected_data = collected
 
             missing = [f for f in ORDER_FIELDS if not collected.get(f)]
@@ -886,7 +967,7 @@ class WorkflowEngine:
                 session.workflow_step += 1
                 session.state = "awaiting_details"
                 session.save()
-                return {"text": _ask_for_field(missing[0], lang)}
+                return {"text": _ask_for_missing_fields(missing, lang)}
 
             # All fields collected -> confirm
             summary = cls._order_summary_text(collected, context, lang)
