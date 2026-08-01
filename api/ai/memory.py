@@ -133,6 +133,40 @@ class MemoryManager:
                 "value": match.group(1),
                 "confidence": 0.7,
             })
+        else:
+            # Bare whitelisted place in an address ("Mirpur 10 kajipara") —
+            # the whitelist already filters out junk words.
+            bare = [p for p in _KNOWN_PLACES if p in text_lower]
+            if bare:
+                facts.append({
+                    "key": "location",
+                    "value": bare[0],
+                    "confidence": 0.5,
+                })
+
+        # Product interest: the customer named a real catalog product (unique
+        # word match, so a shared word like "gel" can't trigger this). Latest
+        # mention wins — future turns show what this customer is shopping for.
+        try:
+            from back.models import Product
+            products = list(Product.objects.filter(user=conversation.user, status=True)[:50])
+            unique = {}
+            words = [w for w in re.split(r"[\s,.;:!?]+", text_lower) if len(w) >= 3]
+            for w in words:
+                hit = [p for p in products
+                       if p.name and w in p.name.lower()]
+                if len(hit) == 1 and hit[0].pid not in unique:
+                    unique[hit[0].pid] = hit[0]
+            if len(unique) == 1:
+                p = next(iter(unique.values()))
+                facts.append({
+                    "key": "product_interest",
+                    "value": {"product": p.name, "pid": p.pid,
+                              "price": str(p.price)},
+                    "confidence": 0.6,
+                })
+        except Exception as exc:
+            logger.warning("Product-interest extraction failed: %s", exc)
 
         for fact in facts:
             try:

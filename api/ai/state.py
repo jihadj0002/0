@@ -348,6 +348,15 @@ class WorkflowEngine:
         r"dekhaben|dekha|দেখা|ছবি|pic|photo|pathan|পাঠান|দাম|dam|koto|"
         r"কত\b|আছে|ache|stock|দেখতে|দেখুন)", re.IGNORECASE
     )
+    # Narrow visual-browse signal for the flow gates: "pic den", "ছবি দেন",
+    # "dekhan" mean the customer is browsing, NOT answering the order step.
+    # Plain "5 pcs den" must NOT match ("den" alone is overloaded — a quantity
+    # answer), or the quantity silently gets lost to the LLM.
+    _BROWSE_PAUSE_RE = re.compile(
+        r"(pic|photo|images?|ছবি|dekhi|দেখি|dekha|দেখা|dekhan|দেখান|"
+        r"dekhao|দেখাও|dekhaben|দেখাবেন|dekhte|দেখতে|দেখুন|catalog|"
+        r"ক্যাটালগ)", re.IGNORECASE
+    )
     QUESTION_RE = re.compile(
         r"[?؟]|^(what|which|why|how|when|who|কি|কী|কোন|কেন|কেমন)\b", re.IGNORECASE
     )
@@ -398,6 +407,26 @@ class WorkflowEngine:
         digits = re.sub(r"\D", "", text_n)
 
         if session.current_workflow == "create_order":
+            if intent == "FRUSTRATION":
+                reset_session(conversation)
+                return None
+            # The flow owns its decision states: a product-selection answer, a
+            # confirmation, or a size answer is ALWAYS consumed by the flow —
+            # even when the 5-second batch timer merged several rapid messages
+            # into one longer text ("Bait powder ta\n5 pcs"). Letting the LLM
+            # improvise these steps is how orders lose their product/quantity
+            # ("didn't understand the product" loops).
+            if session.state in (
+                "awaiting_product_selection",
+                "awaiting_confirmation",
+                "awaiting_variation",
+            ):
+                # Visual-browse requests ("tetuler achar er pic den") pause the
+                # flow — the customer is browsing, not answering the order step;
+                # the pending step stays for the next order-ish message.
+                if cls._BROWSE_PAUSE_RE.search(text_n):
+                    return None
+                return cls._handle_order_step(conversation, session, text_n, context)
             # Details-looking answers ("01712345678", "Mirpur 10, 017...") always
             # belong to the flow — even if the classifier called them a product
             # search. Names/addresses are short bare answers without browse
@@ -405,7 +434,7 @@ class WorkflowEngine:
             if len(digits) >= 10:
                 return cls._handle_order_step(conversation, session, text_n, context)
             if intent in ("UNKNOWN", "SMALL_TALK", "SEARCH_PRODUCT") and (
-                len(text_n.split()) <= 4 and not cls.BROWSE_VERB_RE.search(text_n)
+                len(text_n.split()) <= 4 and not cls._BROWSE_PAUSE_RE.search(text_n)
             ):
                 return cls._handle_order_step(conversation, session, text_n, context)
 
@@ -512,6 +541,27 @@ class WorkflowEngine:
 
         # 1. Explicit reference in the message
         selected = resolve_product_reference(text, focus) if focus else None
+        # 1b. The message NAMES a product but it isn't in focus ("ami Ninjar Gel
+        #     order korbo" while focus holds other search results) — quick-search
+        #     the catalog; only a unique hit is decisive.
+        if selected is None:
+            found = cls._quick_catalog_search(conversation.user, text)
+            if len(found) == 1 and found[0].get("pid"):
+                selected = found[0]
+            elif len(found) > 1:
+                # A shared word ("gel") inflates the result set; a message token
+                # that matches exactly ONE returned product ("ninjar") decides.
+                tokens = [
+                    t for t in re.split(r"[\s,.;:!?]+", text.lower())
+                    if len(t) >= 3 and t not in cls._QUICK_SEARCH_STOPWORDS
+                ]
+                unique = {}
+                for t in tokens:
+                    hits = [p for p in found if t in (p.get("name") or "").lower()]
+                    if len(hits) == 1 and hits[0].get("pid") not in unique:
+                        unique[hits[0]["pid"]] = hits[0]
+                if len(unique) == 1:
+                    selected = next(iter(unique.values()))
         # 2. Deixis ("eita order korbo", "এইটা") → the last product actually
         #    discussed, before repeat/history so a stale focus never wins.
         if selected is None and cls._DEIXIS_RE.search(text):
@@ -1212,6 +1262,25 @@ class WorkflowEngine:
                 }],
             )
             if not result.get("error"):
+                # Remember the order so later turns ("আবার অর্ডার", "আমার অর্ডারটা")
+                # answer from memory instead of a blank "didn't understand".
+                try:
+                    from .memory import MemoryManager
+                    MemoryManager.store_fact(
+                        conversation.user,
+                        "last_order",
+                        {
+                            "oid": result.get("oid", ""),
+                            "product": collected.get("product_name", ""),
+                            "quantity": quantity,
+                            "amount": str(result.get("total") or result.get("amount") or ""),
+                        },
+                        memory_type="preference",
+                        confidence=1.0,
+                        conversation=conversation,
+                    )
+                except Exception as exc:
+                    logger.warning("Order memory store failed conv=%s: %s", conversation.pk, exc)
                 # Persist the collected customer fields on the conversation so
                 # future (repeat) orders prefill correctly.
                 try:

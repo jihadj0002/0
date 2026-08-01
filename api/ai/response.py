@@ -19,6 +19,18 @@ _IMAGE_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# LLMs sometimes render images as markdown in text ("![Name](url)") even though
+# images are sent separately — strip the whole construct so customers never see
+# a raw "![Product]()" line.
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+
+
+def _clean_media_markdown(text: str) -> str:
+    """Remove image URLs and image-markdown remnants from reply text."""
+    if not text:
+        return text
+    return _MD_IMAGE_RE.sub("", _IMAGE_URL_RE.sub("", text)).strip()
+
 # Product intents where the model may drive iterative searches. Everything else
 # (orders, KB, tickets…) stays deterministic.
 _AGENTIC_INTENTS = frozenset({
@@ -149,8 +161,8 @@ class ResponseGenerator:
         # Extract images and card data from tool results
         images, cards = ResponseGenerator._extract_media(tool_results)
 
-        # Safety: strip any image URLs that slipped through
-        text = _IMAGE_URL_RE.sub("", text).strip()
+        # Safety: strip any image URLs / markdown images that slipped through
+        text = _clean_media_markdown(text)
 
         return Response(
             text=text,
@@ -305,7 +317,7 @@ class ResponseGenerator:
             final_text = ResponseGenerator._fallback_text(all_results)
 
         images, cards = ResponseGenerator._extract_media(all_results)
-        final_text = _IMAGE_URL_RE.sub("", final_text or "").strip()
+        final_text = _clean_media_markdown(final_text or "")
 
         return Response(text=final_text, images=images, cards=cards)
 
@@ -624,12 +636,42 @@ Write a natural, {style} reply in the customer's language (default: {language}).
 
     @staticmethod
     def _extract_media(tool_results: list[ToolResult]) -> tuple[list[str], list[dict]]:
-        """Extract image URLs and product cards from tool results."""
+        """Extract image URLs and product cards from tool results.
+
+        Cards come from search/catalog results (one carousel element per
+        product) or from send_images results; standalone images come from
+        send_images only. The orchestrator sends cards XOR images, so a
+        catalog reply is a card carousel and a photo request is images —
+        never both at once."""
         images: list[str] = []
         cards: list[dict] = []
 
         for r in tool_results:
-            if r.tool == "send_images" and r.state == "success" and r.data:
+            if r.tool == "search_products" and r.state == "success" and r.data:
+                prods = r.data.get("products") or []
+                images_by_pid = {}
+                pids = [p.get("pid") for p in prods if p.get("pid")]
+                if pids:
+                    try:
+                        from back.models import Product, ProductImages
+                        from .tools import _image_url
+                        for p in Product.objects.filter(pid__in=pids):
+                            imgs = []
+                            main = _image_url(p.image)
+                            if main:
+                                imgs.append(main)
+                            for row in ProductImages.objects.filter(product=p).values_list("images", flat=True):
+                                url = _image_url(row)
+                                if url and url not in imgs:
+                                    imgs.append(url)
+                            images_by_pid[p.pid] = imgs
+                    except Exception:
+                        images_by_pid = {}
+                for p in prods:
+                    imgs = images_by_pid.get(p.get("pid")) or []
+                    if imgs:
+                        cards.append({**p, "images": imgs})
+            elif r.tool == "send_images" and r.state == "success" and r.data:
                 products = r.data.get("products", [])
                 if products:
                     for p in products:
@@ -646,7 +688,7 @@ Write a natural, {style} reply in the customer's language (default: {language}).
                 seen.add(img)
                 unique.append(img)
 
-        return unique[:5], cards
+        return unique[:5], cards[:10]
 
     @staticmethod
     def _greeting_or_fallback(context: ConversationContext) -> str:

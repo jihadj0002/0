@@ -264,6 +264,16 @@ class Orchestrator:
         # Step 6: Save bot message and send
         self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
 
+        # A first-contact greeting is now done — mark it so context/prompts can
+        # stop treating every later "hi" as a fresh customer.
+        if getattr(self, "_intent_name", "") == "GREETING":
+            try:
+                if not conversation.greeted:
+                    Conversation.objects.filter(pk=conversation.pk).update(greeted=True)
+                    conversation.greeted = True
+            except Exception:
+                pass
+
         # Step 6b: Background memory extraction (P0-12) — non-blocking
         if not self.dry_run:
             try:
@@ -302,7 +312,10 @@ class Orchestrator:
 
         # Build attachment metadata
         attachment = {}
-        if response.images:
+        # Cards and raw images are mutually exclusive: product cards already
+        # carry the product photo (carousel), so sending raw images on top
+        # duplicates media on the customer's screen ("photo and cards both").
+        if response.images and not response.cards:
             attachment["images"] = response.images
         if response.cards:
             attachment["cards"] = response.cards
@@ -337,8 +350,8 @@ class Orchestrator:
         delivery = send_reply(
             conversation,
             texts,
-            image_urls=response.images or None,
-            product_cards=response.cards if len(response.cards) > 1 else None,
+            image_urls=response.images if not response.cards else None,
+            product_cards=response.cards or None,
         )
 
         # Record the delivery outcome on the message so "saved but not delivered"
