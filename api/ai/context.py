@@ -302,7 +302,7 @@ class ConversationManager:
                 else:
                     memory.facts.append(item)
 
-            memory.text = MemoryManager.summarize(user, max_items=8)
+            memory.text = MemoryManager.summarize(user, max_items=8, entries=entries)
         except Exception as exc:
             logger.warning("Memory load failed for user=%s: %s", user.pk, exc)
         return memory
@@ -318,32 +318,28 @@ def build_system_prompt(user, conversation, image_analysis=None):
 
 
 def _build_system_prompt_from_ctx(ctx, image_analysis=None):
-    from context.models import AgentIdentity, BehaviorRules, StoreConfig
     from api.products.factory import get_active_source, is_external
 
-    identity = AgentIdentity.objects.filter(user=ctx.user).first()
-    store = StoreConfig.objects.filter(user=ctx.user).first()
-    rules = BehaviorRules.objects.filter(user=ctx.user).first()
-
+    settings = ctx.settings
     source = get_active_source(ctx.user)
     external_catalog = bool(source) and is_external(ctx.user)
 
     parts = []
 
-    if identity:
+    if settings.agent_name:
         parts.append(
             f"## Your Identity\n"
-            f"Name: {identity.name}\n"
-            f"Role: {identity.role or 'Sales & Support Agent'}\n"
-            f"Tone: {identity.tone}  |  Style: {identity.style}  |  Language: {identity.language}\n"
-            f"Always respond in the customer's detected language, defaulting to {identity.language}."
+            f"Name: {settings.agent_name}\n"
+            f"Role: {settings.agent_role or 'Sales & Support Agent'}\n"
+            f"Tone: {settings.agent_tone}  |  Style: {settings.agent_style}  |  Language: {settings.agent_language}\n"
+            f"Always respond in the customer's detected language, defaulting to {settings.agent_language}."
         )
 
-    if rules and rules.custom_instructions:
-        parts.append(f"## Custom Instructions (user-defined)\n{rules.custom_instructions}")
+    if settings.custom_instructions:
+        parts.append(f"## Custom Instructions (user-defined)\n{settings.custom_instructions}")
 
-    tone = identity.tone if identity else "friendly"
-    style = identity.style if identity else "concise"
+    tone = settings.agent_tone or "friendly"
+    style = settings.agent_style or "concise"
     parts.append(
         "## BEHAVIOR (follow exactly)\n"
         "- Warm, human, concise (1-3 sentences).\n"
@@ -406,27 +402,26 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
         "- Multi-item order: confirm items, then create_order.\n"
     )
 
-    if store:
+    if settings.store_name:
         parts.append(
             f"## Store\n"
-            f"Name: {store.store_name or 'Our Store'}\n"
-            f"Address: {store.address or 'Not set'}\n"
-            f"WhatsApp: {store.whatsapp_number or 'Not set'}\n"
-            f"Support hours: {store.support_open_time} – {store.support_close_time} ({store.timezone})\n"
-            f"Currency: {store.currency}\n"
-            f"Delivery inside: {store.delivery_charge_inside} {store.currency}  |  "
-            f"Outside: {store.delivery_charge_outside} {store.currency}"
+            f"Name: {settings.store_name or 'Our Store'}\n"
+            f"Address: {settings.address or 'Not set'}\n"
+            f"WhatsApp: {settings.whatsapp_number or 'Not set'}\n"
+            f"Support hours: {settings.support_open_time} – {settings.support_close_time} ({settings.timezone})\n"
+            f"Currency: {settings.currency}\n"
+            f"Delivery inside: {settings.delivery_charge_inside} {settings.currency}  |  "
+            f"Outside: {settings.delivery_charge_outside} {settings.currency}"
         )
 
-    if rules:
-        chit = f"{'on' if rules.chit_chat_enabled else 'off'} ({rules.chit_chat_style})"
-        parts.append(
-            f"## Behavior\n"
-            f"Chit-chat: {chit}  |  Cross-sell: {'yes' if rules.cross_sell_enabled else 'no'}  |  "
-            f"Ask open-ended questions: {'yes' if rules.ask_open_ended else 'no'}"
-        )
-        if rules.greeting_message:
-            parts.append(f"Greeting template: {rules.greeting_message}")
+    chit = f"{'on' if settings.chit_chat_enabled else 'off'} ({settings.chit_chat_style})"
+    parts.append(
+        f"## Behavior\n"
+        f"Chit-chat: {chit}  |  Cross-sell: {'yes' if settings.cross_sell_enabled else 'no'}  |  "
+        f"Ask open-ended questions: {'yes' if settings.ask_open_ended else 'no'}"
+    )
+    if settings.greeting_message:
+        parts.append(f"Greeting template: {settings.greeting_message}")
 
     cust = []
     if ctx.customer.name:
@@ -440,7 +435,7 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
     if ctx.conversation and ctx.conversation.detected_intent:
         cust.append(f"Intent: {ctx.conversation.detected_intent}")
 
-    currency = store.currency if store else "BDT"
+    currency = settings.currency or "BDT"
 
     # Active order session — the customer is mid-order (details or confirm
     # step). The LLM MUST see the exact pending state so price/quantity

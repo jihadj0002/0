@@ -56,8 +56,9 @@ class MemoryManager:
         return list(qs.order_by("-confidence", "-updated_at"))
 
     @staticmethod
-    def summarize(user, max_items=10):
-        entries = MemoryManager.recall(user)
+    def summarize(user, max_items=10, entries=None):
+        if entries is None:
+            entries = MemoryManager.recall(user)
         if not entries:
             return ""
         lines = []

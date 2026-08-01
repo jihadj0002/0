@@ -19,6 +19,14 @@ _IMAGE_URL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Photo-request tokens — send_images is only offered when one of these appears
+# ("pic", "ছবি", "dekhi"...). Plain quantity answers like "5 pcs den" must NOT
+# match (overloaded "den"), so only visual-browse words are listed.
+_PHOTO_ASK_RE = re.compile(
+    r"(pic|photo|images?|ছবি|dekhi|দেখি|dekha|দেখা|dekhan|দেখান|"
+    r"dekhao|দেখাও|dekhaben|দেখাবেন|dekhte|দেখতে|দেখুন)", re.IGNORECASE
+)
+
 # LLMs sometimes render images as markdown in text ("![Name](url)") even though
 # images are sent separately — strip the whole construct so customers never see
 # a raw "![Product]()" line.
@@ -160,6 +168,7 @@ class ResponseGenerator:
 
         # Extract images and card data from tool results
         images, cards = ResponseGenerator._extract_media(tool_results)
+        images, cards = ResponseGenerator._media_for_intent(context, images, cards)
 
         # Safety: strip any image URLs / markdown images that slipped through
         text = _clean_media_markdown(text)
@@ -199,10 +208,7 @@ class ResponseGenerator:
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": context.incoming_text or ""},
         ]
-        tool_defs = [
-            d for d in ToolRegistry.get_definitions()
-            if d["function"]["name"] in _AGENT_TOOL_NAMES
-        ]
+        tool_defs = ResponseGenerator._loop_tools(context)
 
         seed_has_products = any(
             r.tool == "search_products" and r.state == "success"
@@ -263,6 +269,7 @@ class ResponseGenerator:
                 )
                 if (not image_promise_corrected and not seed_sent_images
                         and not loop_sent_images
+                        and ResponseGenerator._photo_requested(context)
                         and ResponseGenerator._promises_images(candidate)):
                     image_promise_corrected = True
                     messages.append({"role": "assistant", "content": candidate})
@@ -317,6 +324,7 @@ class ResponseGenerator:
             final_text = ResponseGenerator._fallback_text(all_results)
 
         images, cards = ResponseGenerator._extract_media(all_results)
+        images, cards = ResponseGenerator._media_for_intent(context, images, cards)
         final_text = _clean_media_markdown(final_text or "")
 
         return Response(text=final_text, images=images, cards=cards)
@@ -350,6 +358,36 @@ class ResponseGenerator:
             )
         except Exception as exc:
             logger.warning("UsageLog write failed reply_id=%s: %s", reply_id, exc)
+
+    @staticmethod
+    def _loop_tools(context) -> list:
+        """Agent-loop tool definitions for this turn. send_images is offered
+        ONLY when the customer asked for photos — otherwise the model would
+        auto-send product images on every search/price reply ("sending images
+        only when asked for")."""
+        from .tools import ToolRegistry
+        tool_defs = [
+            d for d in ToolRegistry.get_definitions()
+            if d["function"]["name"] in _AGENT_TOOL_NAMES
+        ]
+        if not ResponseGenerator._photo_requested(context):
+            tool_defs = [
+                d for d in tool_defs
+                if d["function"]["name"] != "send_images"
+            ]
+        return tool_defs
+
+    @staticmethod
+    def _photo_requested(context) -> bool:
+        """True when the customer explicitly asked for photos — the only time
+        send_images may run. "Cockroach marar jnno?" must NOT auto-send
+        images, "pic den dekhi bait powder er" must."""
+        intent_name = context.intent.name if context.intent else ""
+        if intent_name == "SEND_IMAGES":
+            return True
+        if not (context.incoming_text or ""):
+            return False
+        return bool(_PHOTO_ASK_RE.search(context.incoming_text))
 
     @staticmethod
     def _promises_images(text: str) -> bool:
@@ -639,10 +677,9 @@ Write a natural, {style} reply in the customer's language (default: {language}).
         """Extract image URLs and product cards from tool results.
 
         Cards come from search/catalog results (one carousel element per
-        product) or from send_images results; standalone images come from
-        send_images only. The orchestrator sends cards XOR images, so a
-        catalog reply is a card carousel and a photo request is images —
-        never both at once."""
+        product); standalone images come from send_images only. The caller
+        gates cards to catalog intents and images to photo requests, so a
+        single-product or price reply never re-sends the whole carousel."""
         images: list[str] = []
         cards: list[dict] = []
 
@@ -672,13 +709,8 @@ Write a natural, {style} reply in the customer's language (default: {language}).
                     if imgs:
                         cards.append({**p, "images": imgs})
             elif r.tool == "send_images" and r.state == "success" and r.data:
-                products = r.data.get("products", [])
-                if products:
-                    for p in products:
-                        p_imgs = p.get("images", [])
-                        images.extend(p_imgs[:5])
-                        if len(products) > 1:
-                            cards.append(p)
+                for p in (r.data.get("products") or []):
+                    images.extend((p.get("images") or [])[:5])
 
         # Deduplicate
         seen = set()
@@ -689,6 +721,19 @@ Write a natural, {style} reply in the customer's language (default: {language}).
                 unique.append(img)
 
         return unique[:5], cards[:10]
+
+    @staticmethod
+    def _media_for_intent(context, images, cards):
+        """Intent-level media rules:
+        - cards (carousel) only for catalog browsing ("ki product ache?") —
+          never for single-product details, price, qty or order replies
+          ("sends the whole carousel again and again" was exactly this)
+        - images only for photo requests (send_images is additionally gated by
+          tool access, so images cannot appear here unless the customer asked)"""
+        intent_name = context.intent.name if context.intent else ""
+        if intent_name != "CATALOG":
+            cards = []
+        return images, cards
 
     @staticmethod
     def _greeting_or_fallback(context: ConversationContext) -> str:

@@ -388,6 +388,7 @@ class WorkflowEngine:
         """
         session = get_session(conversation)
         if session.state == "idle":
+            cls._remember_order_hint(conversation, text, context)
             return None
 
         # Zombie flows: a workflow idle for too long is abandoned so a session
@@ -437,6 +438,12 @@ class WorkflowEngine:
                 len(text_n.split()) <= 4 and not cls._BROWSE_PAUSE_RE.search(text_n)
             ):
                 return cls._handle_order_step(conversation, session, text_n, context)
+            # Longer messages can still be order answers when they carry a
+            # product or quantity signal ("Bait powder ta 5 pcs") — only
+            # browse requests ("tetuler achar er pic den") stay paused.
+            if session.state == "awaiting_details" and not cls._BROWSE_PAUSE_RE.search(text_n):
+                if cls._parse_quantity(text_n) or cls._product_mention(conversation, text_n):
+                    return cls._handle_order_step(conversation, session, text_n, context)
 
         # Intents that are clearly NOT order-field answers — let the pipeline
         # answer (catalog, images, prices, stock, complaints...). The pending
@@ -481,6 +488,64 @@ class WorkflowEngine:
     )
 
     @classmethod
+    def _remember_order_hint(cls, conversation, text, context):
+        """Capture (product, qty) from NON-order messages ("5 pcs bedbug spray
+        ta?", "400 kore rakhen") so a later "ok order korbo" carries the
+        product AND quantity the customer was discussing. Only fresh,
+        uniquely-resolved hints are kept — never guesses from stopwords."""
+        try:
+            from .tools import parse_focus_products
+
+            session = get_session(conversation)
+            focus = parse_focus_products(getattr(conversation, "current_product", "") or "")
+            selected = resolve_product_reference(text, focus) if focus else None
+            if selected is None:
+                found = cls._quick_catalog_search(conversation.user, text)
+                if len(found) == 1 and found[0].get("pid"):
+                    selected = found[0]
+                elif len(found) > 1:
+                    tokens = [
+                        t for t in re.split(r"[\s,.;:!?]+", text.lower())
+                        if len(t) >= 3 and t not in cls._QUICK_SEARCH_STOPWORDS
+                    ]
+                    unique = {}
+                    for t in tokens:
+                        hits = [p for p in found if t in (p.get("name") or "").lower()]
+                        if len(hits) == 1 and hits[0].get("pid") not in unique:
+                            unique[hits[0]["pid"]] = hits[0]
+                    if len(unique) == 1:
+                        selected = next(iter(unique.values()))
+            qty = cls._parse_quantity(text)
+            if not (selected or qty):
+                return
+            # Merge with the previous hint: "bedbug spray ta?" (product) then
+            # "5pcs" (qty) then "400 kore" (nothing) must accumulate into one
+            # {product, qty} — never overwrite the product with an empty hint.
+            old = (session.collected_data or {}).get("_hint") or {}
+            hint = {}
+            if selected:
+                hint.update(pid=selected.get("pid", ""),
+                            product_name=selected.get("name", ""))
+            elif old.get("pid"):
+                hint.update(pid=old.get("pid", ""),
+                            product_name=old.get("product_name", ""))
+            if qty:
+                hint["quantity"] = qty
+            elif old.get("quantity"):
+                hint["quantity"] = old["quantity"]
+            hint["ts"] = timezone.now().isoformat()
+            collected = dict(session.collected_data or {})
+            collected["_hint"] = hint
+            session.collected_data = collected
+            session.save(update_fields=["collected_data", "updated_at"])
+            logger.info(
+                "Order hint captured conv=%s product=%s qty=%s",
+                conversation.pk, hint.get("product_name"), hint.get("quantity"),
+            )
+        except Exception as exc:
+            logger.warning("Order hint capture failed conv=%s: %s", conversation.pk, exc)
+
+    @classmethod
     def _quick_catalog_search(cls, user, text) -> list:
         """Best-effort catalog lookup for order messages that name no prior
         focus product ("আমের আচার এক কেজি অর্ডার দিব"). Reuses the full
@@ -504,6 +569,23 @@ class WorkflowEngine:
         except Exception:
             logger.exception("quick catalog search failed")
             return []
+
+    @classmethod
+    def _product_mention(cls, conversation, text) -> dict | None:
+        """Resolve a product reference in the message (focus first, then
+        catalog quick-search) — used by the flow gates to decide whether a
+        longer message is an order answer or a browse request."""
+        try:
+            from .tools import parse_focus_products
+            focus = parse_focus_products(getattr(conversation, "current_product", "") or "")
+            sel = resolve_product_reference(text, focus) if focus else None
+            if sel is None:
+                found = cls._quick_catalog_search(conversation.user, text)
+                if len(found) == 1:
+                    sel = found[0]
+            return sel
+        except Exception:
+            return None
 
     @classmethod
     def start_order_flow(cls, conversation, context) -> dict | None:
@@ -538,6 +620,26 @@ class WorkflowEngine:
                 focus = parse_focus_products(conversation.current_product or "")
 
         quantity = cls._parse_quantity(text)
+
+        # Fresh (product, qty) hint from a recent non-order message ("5 pcs
+        # bedbug spray ta?") — a later "ok order korbo" carries them over.
+        hint = None
+        try:
+            _session = get_session(conversation)
+            _hint = (_session.collected_data or {}).get("_hint") or {}
+            if _hint.get("ts"):
+                from datetime import datetime as _dt
+                ts = _dt.fromisoformat(_hint["ts"])
+                if ts.tzinfo is None:
+                    ts = timezone.make_aware(ts, timezone.get_current_timezone())
+                if timezone.now() - ts <= timezone.timedelta(minutes=20):
+                    hint = _hint
+            cd = dict(_session.collected_data or {})
+            if cd.pop("_hint", None) is not None:
+                _session.collected_data = cd
+                _session.save(update_fields=["collected_data"])
+        except Exception:
+            hint = None
 
         # 1. Explicit reference in the message
         selected = resolve_product_reference(text, focus) if focus else None
@@ -586,6 +688,13 @@ class WorkflowEngine:
         # 4. Last product discussed in history
         if selected is None and focus:
             selected = _resolve_from_history(context)
+        # 4.5. Order hint — the product the customer was just negotiating about
+        #      ("bedbug spray ta? … 5pcs … 400 kore") is more current than
+        #      older focus items.
+        if selected is None and hint and hint.get("pid"):
+            selected = {"pid": hint["pid"], "name": hint.get("product_name", "")}
+        if not quantity and hint and hint.get("quantity"):
+            quantity = int(hint["quantity"])
 
         # 5/6. Focus products — exactly one focused product, or several (ask)
         if selected is None and focus:
@@ -1140,6 +1249,29 @@ class WorkflowEngine:
                 reset_session(conversation)
                 return {"text": "অর্ডারটি বাতিল করা হয়েছে। আরও কিছুতে সাহায্য করতে পারি?" if lang == "bn"
                         else "Order cancelled. Can I help with anything else?"}
+            # The customer is refining the pending order instead of confirming
+            # ("5 pcs", "Bait powder ta", "eta 2ta den") — update the pending
+            # data and re-show the summary so what gets confirmed is what the
+            # customer just said. Never silently confirm a stale summary.
+            pending = dict(session.pending_confirmation or collected)
+            changed = False
+            sel = cls._product_mention(conversation, text)
+            if sel and sel.get("pid") and sel.get("pid") != pending.get("pid"):
+                pending["pid"] = sel.get("pid", "")
+                pending["product_name"] = sel.get("name", "")
+                pending.pop("variation_id", None)
+                pending.pop("variation_name", None)
+                changed = True
+            qty = cls._parse_quantity(text)
+            if qty:
+                pending["quantity"] = qty
+                changed = True
+            if changed:
+                session.pending_confirmation = pending
+                session.collected_data = pending
+                session.verified = True
+                session.save()
+                return {"text": cls._order_summary_text(pending, context, lang)}
             if lang == "bn":
                 return {"text": "আপনি কি অর্ডারটি নিশ্চিত করতে চান? (হ্যাঁ / না)"}
             return {"text": "Do you want to confirm the order? (yes / no)"}

@@ -78,18 +78,9 @@ class Planner:
         Uses direct → template → LLM fallback.
         """
         if intent in ("GREETING", "SMALL_TALK", "UNKNOWN", "FRUSTRATION"):
-            # First-contact greeting: open with the catalog (featured products
-            # as cards) instead of a bare "hello" — browse-first flow. Repeat
-            # greetings stay text-only.
-            if intent == "GREETING" and context.conversation is not None:
-                try:
-                    first_customer_msgs = Message.objects.filter(
-                        conversation=context.conversation, sender="customer"
-                    ).count()
-                    if first_customer_msgs <= 1:
-                        return [PlanStep(tool="search_products", args={"query": "", "limit": 8})]
-                except Exception:
-                    logger.exception("First-greeting catalog check failed")
+            # First-contact greeting: text-only (a welcome line). The catalog
+            # carousel is shown only when the customer asks to browse ("ki
+            # product ache?") — dumping the whole carousel on "hi" is spammy.
             return []
 
         # Orders are handled EXCLUSIVELY by the deterministic workflow
