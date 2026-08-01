@@ -442,6 +442,47 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
 
     currency = store.currency if store else "BDT"
 
+    # Active order session — the customer is mid-order (details or confirm
+    # step). The LLM MUST see the exact pending state so price/quantity
+    # questions ("total koto?") are answered from it, not hallucinated.
+    if ctx.conversation is not None:
+        try:
+            from context.models import SessionContext
+            from api.ai.state import ORDER_FIELDS
+            from back.models import Product
+            sess = SessionContext.objects.filter(conversation=ctx.conversation).first()
+            if sess and sess.current_workflow == "create_order" and sess.state != "idle":
+                cd = sess.collected_data or {}
+                pending = []
+                pid = cd.get("pid")
+                if pid:
+                    prod = Product.objects.filter(user=ctx.user, pid=pid).first()
+                    qty = int(cd.get("quantity") or 1)
+                    name = cd.get("product_name") or (prod.name if prod else "")
+                    pending.append(f"Product: {name} (qty {qty})")
+                    if prod:
+                        price = prod.discounted_price or prod.price or 0
+                        pending.append(f"Unit price: {price} {currency}")
+                if sess.state == "awaiting_confirmation" and sess.pending_confirmation:
+                    pc = sess.pending_confirmation
+                    if pc.get("customer_name"):
+                        pending.append(f"Name: {pc.get('customer_name')}")
+                    if pc.get("customer_phone"):
+                        pending.append(f"Phone: {pc.get('customer_phone')}")
+                    if pc.get("customer_address"):
+                        pending.append(f"Address: {pc.get('customer_address')}")
+                pending.append(f"Flow step: {sess.state}")
+                if pending:
+                    parts.append(
+                        "## ACTIVE ORDER (pending, do not guess amounts)\n"
+                        + "\n".join(pending)
+                        + "\nAnswer order-price/quantity questions from this "
+                          "section. Do NOT create or repeat the order — the flow "
+                          "collects details and asks for confirmation itself."
+                    )
+        except Exception:
+            pass
+
     from .tools import parse_focus_products
     focus_list = parse_focus_products(ctx.conversation.current_product if ctx.conversation else "")
     if focus_list:

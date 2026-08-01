@@ -124,20 +124,81 @@ def _resolve_from_history(context):
             content = (h.get("content") or "").lower()
             if not content or h.get("role") == "assistant":
                 continue
-            words = [w for w in re.split(r"[\s,.;:!?]+", content) if len(w) >= 3]
-            if not words:
-                continue
+            # Full product name mentioned verbatim → decisive.
             for p in products:
                 name = (p.name or "").strip().lower()
-                if not name:
-                    continue
-                if name in content or any(w in name for w in words):
+                if name and name in content:
                     return {"pid": p.pid, "name": p.name, "price": str(p.price),
                             "discounted_price": str(p.discounted_price) if p.discounted_price else None,
                             "stock": p.stock_quantity, "in_stock": p.stock_quantity > 0}
+            # Unique word hits only: "ninjar" isolates Ninjar Gel while the
+            # shared word "gel" matches several products and stays ambiguous.
+            words = [
+                w for w in re.split(r"[\s,.;:!?]+", content)
+                if len(w) >= 3 and w not in WorkflowEngine._QUICK_SEARCH_STOPWORDS
+            ]
+            unique = {}
+            for w in words:
+                hit = [p for p in products
+                       if p.name and w in p.name.lower()]
+                if len(hit) == 1 and hit[0].pid not in unique:
+                    unique[hit[0].pid] = hit[0]
+            if len(unique) == 1:
+                p = next(iter(unique.values()))
+                return {"pid": p.pid, "name": p.name, "price": str(p.price),
+                        "discounted_price": str(p.discounted_price) if p.discounted_price else None,
+                        "stock": p.stock_quantity, "in_stock": p.stock_quantity > 0}
     except Exception as exc:
         logger.warning("History product resolution failed: %s", exc)
     return None
+
+
+def _resolve_deixis(context, text):
+    """'eita / এইটা / this one' → the last product actually discussed in recent
+    history (either role), newest mention first. A message naming several
+    products (e.g. a catalog listing) is skipped — the customer's own
+    single-product mention is more specific."""
+    try:
+        from back.models import Product
+
+        user = getattr(getattr(context, "conversation", None), "user", None)
+        history = getattr(context, "history", None) or []
+        if not user or not history:
+            return None
+        products = list(Product.objects.filter(user=user, status=True)[:50])
+        stop = WorkflowEngine._QUICK_SEARCH_STOPWORDS
+        for h in reversed(history[-30:]):
+            content = (h.get("content") or "").lower()
+            if not content:
+                continue
+            # Full product name mentioned verbatim → decisive.
+            for p in products:
+                name = (p.name or "").strip().lower()
+                if name and name in content:
+                    return {"pid": p.pid, "name": p.name, "price": str(p.price),
+                            "discounted_price": str(p.discounted_price) if p.discounted_price else None,
+                            "stock": p.stock_quantity, "in_stock": p.stock_quantity > 0}
+            # Unique word hits only: "ninjar" isolates Ninjar Gel while the
+            # shared word "gel" matches several products and stays ambiguous.
+            words = [
+                w for w in re.split(r"[\s,.;:!?]+", content)
+                if len(w) >= 3 and w not in stop
+            ]
+            unique = {}
+            for w in words:
+                hit = [p for p in products
+                       if p.name and w in p.name.lower()]
+                if len(hit) == 1 and hit[0].pid not in unique:
+                    unique[hit[0].pid] = hit[0]
+            if len(unique) == 1:
+                p = next(iter(unique.values()))
+                return {"pid": p.pid, "name": p.name, "price": str(p.price),
+                        "discounted_price": str(p.discounted_price) if p.discounted_price else None,
+                        "stock": p.stock_quantity, "in_stock": p.stock_quantity > 0}
+        return None
+    except Exception as exc:
+        logger.warning("Deixis resolution failed: %s", exc)
+        return None
 
 
 def resolve_product_reference(text, focus_products, default_index=0):
@@ -298,7 +359,7 @@ class WorkflowEngine:
     )
     _QUANTITY_RE = re.compile(
         r"(?P<qty>\d+|[০-৯]+|এক|দুই|তিন|চার|পাঁচ|one|two|three|four|five)"
-        r"\s*(?:pcs|pc|pieces?|kg|কেজি|পিস|টা|টি|খানা)(?!\w)", re.IGNORECASE
+        r"\s*(?:pcs|pc|pieces?|piece|kg|কেজি|পিস|টা|টি|ta|খানা)(?!\w)", re.IGNORECASE
     )
     _BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
@@ -370,12 +431,42 @@ class WorkflowEngine:
             return cls._handle_order_step(conversation, session, text_n, context)
         return None
 
+    # Tokens that carry no product meaning — an order message made ONLY of
+    # these ("ami toh 2 pcs order korlam") must never resolve to a catalog
+    # product via quick search ("pcs" matches "Fly Glue Trap (10 Pcs)").
+    _QUICK_SEARCH_STOPWORDS = frozenset({
+        "ami", "amar", "amr", "tumi", "apni", "toh", "tah", "but", "and",
+        "the", "er", "or", "ar", "ki", "koto", "korte", "kore", "korbo",
+        "korlam", "korbe", "kori", "করব", "করলাম", "করবে", "চাই", "chai",
+        "den", "diben", "দেন", "দিবেন", "bhai", "vai", "ভাই", "bhaiya",
+        "ভাইয়া", "eita", "eta", "ei", "এটা", "এইটা", "oid", "ota", "na",
+        "না", "ok", "okay", "hobe", "hbe", "হবে", "order", "অর্ডার", "pcs",
+        "pc", "piece", "pieces", "পিস", "টা", "টি", "ta", "kg", "কেজি",
+        "2", "3", "4", "5", "amar", "jodi", "jadi", "যা", "dite", "দিতে",
+        "eita", "eta", "aita", "ei", "oi", "এইটা", "এটা", "ওটা", "সেটা",
+    })
+
+    _DEIXIS_RE = re.compile(
+        r"(eita|aita|eta|ei|oi|এইটা|এটা|ওটা|সেটা|ওই|the one|this one|"
+        r"that one|same|একই)", re.IGNORECASE
+    )
+
     @classmethod
     def _quick_catalog_search(cls, user, text) -> list:
         """Best-effort catalog lookup for order messages that name no prior
         focus product ("আমের আচার এক কেজি অর্ডার দিব"). Reuses the full
-        search pipeline (variations, Bengali transliteration, prefixes)."""
+        search pipeline (variations, Bengali transliteration, prefixes).
+
+        Messages containing only generic order-speak ("ami toh 2 pcs order
+        korlam") resolve to NOTHING — guessing a product from stopwords is
+        how wrong-product orders happen."""
         if not text or not user:
+            return []
+        tokens = [
+            t for t in re.split(r"[\s,.;:!?/]+", text.lower())
+            if t and t not in cls._QUICK_SEARCH_STOPWORDS
+        ]
+        if not tokens or all(len(t) <= 2 or t.isdigit() for t in tokens):
             return []
         try:
             from .tools import tool_search_products
@@ -391,15 +482,16 @@ class WorkflowEngine:
 
         Resolution order for the product:
           1. explicit reference in the message ("jolpai", "আমের আচার")
-          2. last product discussed in conversation history
+          2. deixis ("eita", "এইটা") → last product actually discussed
           3. repeat-order signal ("আবার", "again") → last order's product
-          4. exactly one focused product
-          5. ambiguous focus (several products) → ask which one
-          6. nothing resolvable → ask for a product name (never falls through
+          4. last product mentioned by the customer in conversation history
+          5. exactly one focused product
+          6. ambiguous focus (several products) → ask which one
+          7. nothing resolvable → ask for a product name (never falls through
              to LLM improvisation — orders are created only via this flow)
 
-        If all required customer fields are already known, creates the order
-        immediately. Otherwise begins turn-by-turn collection.
+        If all required customer fields are already known, shows the order
+        summary and asks for confirmation before creating it.
         """
         from .tools import parse_focus_products, _focus_products, FOCUS_MAX
 
@@ -420,6 +512,10 @@ class WorkflowEngine:
 
         # 1. Explicit reference in the message
         selected = resolve_product_reference(text, focus) if focus else None
+        # 2. Deixis ("eita order korbo", "এইটা") → the last product actually
+        #    discussed, before repeat/history so a stale focus never wins.
+        if selected is None and cls._DEIXIS_RE.search(text):
+            selected = _resolve_deixis(context, text)
         # 3. Repeat-order signal → reuse the previous order's product (checked
         #    before history so "আবার অর্ডার করব" reuses the LAST ORDER's
         #    product AND quantity instead of whatever product was discussed).
@@ -437,11 +533,11 @@ class WorkflowEngine:
                         "Let me know if you'd like to see something else."
                     )}
                 selected = repeat_from
-        # 2. Last product discussed in history
+        # 4. Last product discussed in history
         if selected is None and focus:
             selected = _resolve_from_history(context)
 
-        # 4/5. Focus products — exactly one focused product, or several (ask)
+        # 5/6. Focus products — exactly one focused product, or several (ask)
         if selected is None and focus:
             if len(focus) == 1:
                 selected = focus[0]
@@ -461,7 +557,7 @@ class WorkflowEngine:
                     f"Which product would you like to order? We have: {names}. Please name one."
                 )}
         if selected is None:
-            # 6. Nothing resolvable — ask for a product name.
+            # 7. Nothing resolvable — ask for a product name.
             reset_session(conversation)
             return {"text": (
                 "কোন প্রোডাক্টটা অর্ডার করতে চান? আমাদের ক্যাটালগ থেকে একটার নাম বলুন।"
@@ -508,9 +604,17 @@ class WorkflowEngine:
 
         session = get_session(conversation)
         if not missing:
-            # Everything known -> create order in one turn
-            result = cls._execute_create_order(conversation, session, collected, context)
-            return cls._order_created_response(result, context, lang=_lang(conversation))
+            # Everything known -> show the summary and confirm anyway. A silent
+            # one-turn create is how wrong quantities/products slip through
+            # ("2 ta" parsed as 1, stale focus picked the wrong product).
+            session.collected_data = collected
+            session.current_workflow = "create_order"
+            session.workflow_step = 0
+            session.state = "awaiting_confirmation"
+            session.pending_confirmation = collected
+            session.verified = True
+            session.save()
+            return {"text": cls._order_summary_text(collected, context, lang)}
 
         # Start collection
         session.collected_data = collected
@@ -994,6 +1098,38 @@ class WorkflowEngine:
                 else "Sorry, I didn't catch that. Could you repeat?"}
 
     @classmethod
+    def _order_totals(cls, conversation, collected) -> tuple:
+        """(unit_price, delivery_charge, total) computed exactly like the
+        create_order tool computes them — the confirm summary always matches
+        the order that will actually be created."""
+        from decimal import Decimal
+        from back.models import Product
+        from context.models import StoreConfig
+
+        unit = Decimal("0")
+        try:
+            product = Product.objects.filter(
+                user=conversation.user, pid=collected.get("pid", ""), status=True
+            ).first()
+            if product:
+                unit = product.discounted_price or product.price or Decimal("0")
+        except Exception:
+            pass
+        delivery = Decimal("0")
+        try:
+            store = StoreConfig.objects.filter(user=conversation.user).first()
+            if store:
+                zone = collected.get("delivery_zone", "inside_dhaka")
+                delivery = (
+                    store.delivery_charge_inside if zone == "inside_dhaka"
+                    else store.delivery_charge_outside
+                ) or Decimal("0")
+        except Exception:
+            pass
+        qty = int(collected.get("quantity") or 1)
+        return unit, delivery, (unit * qty) + delivery
+
+    @classmethod
     def _order_summary_text(cls, collected, context, lang) -> str:
         name = collected.get("customer_name", "")
         phone = collected.get("customer_phone", "")
@@ -1002,16 +1138,32 @@ class WorkflowEngine:
         variation = collected.get("variation_name") or ""
         if variation:
             product = f"{product} ({variation})"
+        qty = int(collected.get("quantity") or 1)
+        unit, delivery, total = cls._order_totals(context.conversation, collected)
+        conv = getattr(context, "conversation", None)
         if lang == "bn":
-            return (
-                f"আপনার অর্ডারের সারসংক্ষেপ:\n"
-                f"👤 নাম: {name}\n📞 মোবাইল: {phone}\n📍 ঠিকানা: {address}\n"
-                f"🛒 পণ্য: {product}\n\n"
-                f"অর্ডারটি নিশ্চিত করতে চান? (হ্যাঁ / না)"
-            )
+            prod_line = f"🛒 পণ্য: {qty} × {product}"
+            if unit:
+                prod_line += f" ({unit:,.0f} টাকা/পিস)"
+            lines = [
+                f"আপনার অর্ডারের সারসংক্ষেপ:",
+                f"👤 নাম: {name}",
+                f"📞 মোবাইল: {phone}",
+                f"📍 ঠিকানা: {address}",
+                prod_line,
+                f"ডেলিভারি চার্জ: {delivery:,.0f} টাকা",
+                f"মোট: {total:,.0f} টাকা",
+                "",
+                "অর্ডারটি নিশ্চিত করতে চান? (হ্যাঁ / না)",
+            ]
+            return "\n".join(lines)
+        prod_line = f"Product: {qty} × {product}"
+        if unit:
+            prod_line += f" ({unit:,.2f} each)"
         return (
             f"Order summary:\nName: {name}\nPhone: {phone}\nAddress: {address}\n"
-            f"Product: {product}\n\nConfirm the order? (yes / no)"
+            f"{prod_line}\nDelivery: {delivery:,.2f}\nTotal: {total:,.2f}\n\n"
+            f"Confirm the order? (yes / no)"
         )
 
     @classmethod
@@ -1021,6 +1173,28 @@ class WorkflowEngine:
 
         pid = collected.get("pid", "")
         quantity = int(collected.get("quantity") or 1)
+
+        # Duplicate guard: a still-pending order for the SAME product placed
+        # moments ago is almost always a mis-click or a correction attempt —
+        # creating a second one silently doubles the order. Surface the
+        # existing order instead and let the customer decide.
+        try:
+            from back.models import Sale
+            recent = Sale.objects.filter(
+                conversation=conversation,
+                status="pending",
+                created_at__gte=timezone.now() - timezone.timedelta(minutes=30),
+            ).prefetch_related("items")
+            for s in recent:
+                if s.items.filter(product_name__iexact=(collected.get("product_name") or "")).exists():
+                    reset_session(conversation)
+                    return {
+                        "error": "duplicate",
+                        "duplicate_of": s.oid,
+                        "duplicate_amount": str(s.amount),
+                    }
+        except Exception:
+            logger.exception("Duplicate-order check failed conv=%s", conversation.pk)
 
         try:
             result = tool_create_order(
@@ -1060,6 +1234,20 @@ class WorkflowEngine:
 
     @classmethod
     def _order_created_response(cls, result, context, lang) -> dict:
+        if result.get("error") == "duplicate":
+            oid = result.get("duplicate_of", "?")
+            amount = result.get("duplicate_amount", "")
+            if lang == "bn":
+                return {"text": (
+                    f"এই পণ্যটির একটি অর্ডার (আইডি: {oid}, মোট {amount} টাকা) আগেই "
+                    f"পেন্ডিং আছে। ওটাই চূড়ান্ত করব, নাকি বাতিল করে নতুন করব? "
+                    f"('বাতিল করো' লিখলেই বাতিল করে নতুন অর্ডার নেব)"
+                )}
+            return {"text": (
+                f"You already have a pending order for this item (ID: {oid}, "
+                f"total {amount}). Should I finalize that one, or cancel it and "
+                f"place a new one?"
+            )}
         if result.get("error"):
             details = result.get("details")
             msg = str(details if details else result["error"])
