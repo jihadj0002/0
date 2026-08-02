@@ -32,12 +32,21 @@ _PHOTO_ASK_RE = re.compile(
 # a raw "![Product]()" line.
 _MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
+# Link-style remnants: "[Image: <url>](<url>)" (label mentions the image) and
+# empty skeletons "[Image: ]()" left after the URL inside was stripped.
+_MD_IMAGE_LINK_RE = re.compile(r"\[[^\]]*(?:image|img|ছবি)[^\]]*\]\([^)]*\)", re.IGNORECASE)
+_MD_EMPTY_LINK_RE = re.compile(r"\[[^\]]*\]\(\)")
+
 
 def _clean_media_markdown(text: str) -> str:
     """Remove image URLs and image-markdown remnants from reply text."""
     if not text:
         return text
-    return _MD_IMAGE_RE.sub("", _IMAGE_URL_RE.sub("", text)).strip()
+    text = _IMAGE_URL_RE.sub("", text)
+    text = _MD_IMAGE_RE.sub("", text)
+    text = _MD_IMAGE_LINK_RE.sub("", text)
+    text = _MD_EMPTY_LINK_RE.sub("", text)
+    return text.strip()
 
 # Product intents where the model may drive iterative searches. Everything else
 # (orders, KB, tickets…) stays deterministic.
@@ -164,7 +173,7 @@ class ResponseGenerator:
                     logger.warning("UsageLog write failed reply_id=%s: %s", reply_id, exc)
         except Exception as exc:
             logger.error("ResponseGenerator LLM call failed: %s", exc)
-            text = ResponseGenerator._fallback_text(tool_results)
+            text = ResponseGenerator._fallback_text(tool_results, context)
 
         # Extract images and card data from tool results
         images, cards = ResponseGenerator._extract_media(tool_results)
@@ -172,6 +181,10 @@ class ResponseGenerator:
 
         # Safety: strip any image URLs / markdown images that slipped through
         text = _clean_media_markdown(text)
+        if not text:
+            # The model's text was ONLY media/URL content and the cleaner
+            # stripped it all — never send an empty reply.
+            text = ResponseGenerator._fallback_text(tool_results, context)
 
         return Response(
             text=text,
@@ -321,11 +334,16 @@ class ResponseGenerator:
                 })
 
         if final_text is None:
-            final_text = ResponseGenerator._fallback_text(all_results)
+            final_text = ResponseGenerator._fallback_text(all_results, context)
 
         images, cards = ResponseGenerator._extract_media(all_results)
         images, cards = ResponseGenerator._media_for_intent(context, images, cards)
         final_text = _clean_media_markdown(final_text or "")
+        if not final_text:
+            # The model's text was ONLY media/URL content (e.g. it quoted the
+            # customer's image URL) and the cleaner stripped it all — never
+            # send an empty reply. Fall back to a tool-summary text.
+            final_text = ResponseGenerator._fallback_text(all_results, context)
 
         return Response(text=final_text, images=images, cards=cards)
 
@@ -589,6 +607,10 @@ Write a natural, {style} reply in the customer's language (default: {language}).
   discounted_price in the results IS the best price. NEVER quote or invent a
   lower price; if the customer insists, offer to place the order at the current
   price.
+- Total-cost questions ("koto ashbe total?", "মোট কত?"): the total MUST be
+  (product price × quantity) + the delivery charge from the 'Store' section
+  (delivery_charge_inside for inside Dhaka, delivery_charge_outside otherwise).
+  Show the breakdown and NEVER quote a total without including delivery.
 - Do NOT end every reply with a question or an order pitch ("আপনি কি অর্ডার
   করতে চান?"). Answer what was asked and stop. Ask a question only when it
   truly helps the conversation: which product the customer wants, or when they
@@ -782,7 +804,7 @@ Write a natural, {style} reply in the customer's language (default: {language}).
         return "Sorry, I didn't catch that. You could ask e.g. 'how much is Amer Achar?' or 'I want to order'."
 
     @staticmethod
-    def _fallback_text(tool_results: list[ToolResult]) -> str:
+    def _fallback_text(tool_results: list[ToolResult], context=None) -> str:
         """Generate a simple text summary when LLM is unavailable."""
         parts = []
         for r in tool_results:
@@ -805,4 +827,33 @@ Write a natural, {style} reply in the customer's language (default: {language}).
                         if content:
                             parts.append(content)
 
-        return "\n".join(parts) if parts else "How can I help you?"
+        if parts:
+            return "\n".join(parts)
+
+        # Nothing usable came back (ERP/catalog hiccup, empty search, …).
+        # Never fall back to a generic English line — acknowledge politely in
+        # the customer's language and hint what to try next.
+        lang = _detect_lang(context) if context is not None else "bn"
+        intent_name = context.intent.name if context is not None and context.intent else ""
+        if lang == "bn":
+            if intent_name in ("ASK_PRICE", "ASK_STOCK", "ASK_DETAILS", "ASK_PAYMENT"):
+                return (
+                    "দুঃখিত, এই মুহূর্তে পণ্যটির তথ্য পাচ্ছি না। "
+                    "একটু পরে আবার জিজ্ঞেস করবেন? অন্য কিছুতে সাহায্য করতে পারি?"
+                )
+            if intent_name in ("SEARCH_PRODUCT", "CATALOG", "RECOMMEND",
+                               "COMPARE_PRODUCTS", "SEND_IMAGES"):
+                return (
+                    "দুঃখিত, এই মুহূর্তে আমাদের ক্যাটালগ লোড হচ্ছে না। "
+                    "অনুগ্রহ করে একটু পরে আবার চেষ্টা করুন।"
+                )
+            return (
+                "দুঃখিত, এই মুহূর্তে উত্তর দিতে পারছি না। "
+                "একটু পরে আবার চেষ্টা করবেন?"
+            )
+        if intent_name in ("ASK_PRICE", "ASK_STOCK", "ASK_DETAILS", "ASK_PAYMENT"):
+            return "Sorry, I can't fetch that product's info right now. Please try again in a moment!"
+        if intent_name in ("SEARCH_PRODUCT", "CATALOG", "RECOMMEND",
+                           "COMPARE_PRODUCTS", "SEND_IMAGES"):
+            return "Sorry, the catalog isn't loading right now. Please try again in a moment."
+        return "Sorry, I can't answer right now. Please try again in a moment."

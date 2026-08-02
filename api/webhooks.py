@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.db import close_old_connections
+from django.db import IntegrityError, close_old_connections
 from django.db.models import Q
 from django.http import HttpResponse
 from django.utils.decorators import method_decorator
@@ -454,14 +454,27 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
 
         if mid_available:
             try:
-                Message.objects.create(
+                # get_or_create is race-safe: two webhook deliveries with the
+                # same mid (Meta retries) can pass the exists-check above
+                # simultaneously; the second insert would hit the unique
+                # constraint. get_or_create turns that into a fetch of the
+                # existing row and the retried payload is dropped below.
+                _, created = Message.objects.get_or_create(
                     mid=mid,
-                    conversation=conv,
-                    sender="customer",
-                    text=msg_text or None,
-                    attachments=attachments if attachments else None,
-                    raw_payload=msg_data.get("raw"),
+                    defaults={
+                        "conversation": conv,
+                        "sender": "customer",
+                        "text": msg_text or None,
+                        "attachments": attachments if attachments else None,
+                        "raw_payload": msg_data.get("raw"),
+                    },
                 )
+                if not created:
+                    logger.info("_persist_message: duplicate mid=%s conv=%s (race)", mid, conv.pk)
+                    return conv.id
+            except IntegrityError:
+                logger.info("_persist_message: mid race dropped mid=%s conv=%s", mid, conv.pk)
+                return conv.id
             except Exception:
                 logger.exception("Failed to create message mid=%s conv=%s", mid, conv.pk)
                 return conv.id

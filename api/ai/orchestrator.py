@@ -156,10 +156,15 @@ class Orchestrator:
         # Step 2a-lite: customers often volunteer their number mid-chat ("amar
         # number 01712345678"). Save it so any later order flow prefills
         # instead of asking. Presence of a phone is NOT buying intent.
+        # Skip URLs / long digit blobs (image URLs, tracking codes) — they are
+        # never volunteered phone numbers.
         if not getattr(conversation, "customer_phone", ""):
             digits = _re.sub(r"\D", "", customer_text)
-            if len(digits) >= 10:
-                phone = digits[:15]
+            if len(digits) >= 10 and "http" not in customer_text.lower() and len(_re.sub(r"\D", "", customer_text)) <= 15:
+                # Prefer a Bangladeshi mobile shape (01XXXXXXXXX / +880…) when
+                # visible; otherwise take the first 15 digits as before.
+                m = _re.search(r"(\+?88)?0?1\d{9}\b", customer_text)
+                phone = m.group(0).lstrip("+88") if m else digits[:15]
                 try:
                     Conversation.objects.filter(pk=conversation.pk).update(customer_phone=phone)
                     conversation.customer_phone = phone

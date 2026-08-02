@@ -494,10 +494,12 @@ def _focus_match_for_query(query, conversation):
 
 
 def _external_row(r):
+    eff = r.get("discounted_price") or r.get("price")
     row = {
         "pid": r["external_id"],
         "name": r["name"],
-        "price": r["price"],
+        "price": eff,
+        "original_price": r.get("price") if r.get("discounted_price") else None,
         "discounted_price": r.get("discounted_price"),
         "in_stock": r.get("in_stock", True),
         "stock": r.get("stock", 0),
@@ -515,7 +517,8 @@ def _external_row(r):
             {
                 "variation_id": v.get("variation_id"),
                 "name": v.get("name"),
-                "price": v.get("price"),
+                "price": v.get("promotion_price") or v.get("price"),
+                "original_price": v.get("price") if v.get("promotion_price") else None,
                 "in_stock": v.get("in_stock", True),
             }
             for v in variations
@@ -1132,7 +1135,8 @@ def tool_get_product_details(user, pid, conversation=None):
                 details = {
                     "pid": r.get("sku") or r["external_id"],
                     "name": r["name"],
-                    "price": r["price"],
+                    "price": r.get("discounted_price") or r["price"],
+                    "original_price": r.get("price") if r.get("discounted_price") else None,
                     "discounted_price": r.get("discounted_price"),
                     "stock": r.get("stock", 0),
                     "in_stock": r.get("in_stock", True),
@@ -1148,7 +1152,8 @@ def tool_get_product_details(user, pid, conversation=None):
                         {
                             "variation_id": v.get("variation_id"),
                             "name": v.get("name"),
-                            "price": v.get("price"),
+                            "price": v.get("promotion_price") or v.get("price"),
+                            "original_price": v.get("price") if v.get("promotion_price") else None,
                             "in_stock": v.get("in_stock", True),
                         }
                         for v in variations
@@ -1268,6 +1273,7 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
         name = ""
         images = []
         price = ""
+        original_price = ""
         discounted_price = ""
         sku = ""
 
@@ -1284,7 +1290,8 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                 if r:
                     name = r.get("name") or ""
                     images = r.get("images") or ([r["image"]] if r.get("image") else [])
-                    price = str(r.get("price") or "")
+                    price = str(r.get("discounted_price") or r.get("price") or "")
+                    original_price = str(r.get("price") or "") if r.get("discounted_price") else ""
                     discounted_price = str(r.get("discounted_price") or "")
                     sku = r.get("sku") or ""
             except Exception:
@@ -1314,6 +1321,7 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                 "name": name,
                 "images": images,
                 "price": price,
+                "original_price": original_price,
                 "discounted_price": discounted_price,
                 "sku": sku,
             })

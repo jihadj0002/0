@@ -1289,14 +1289,29 @@ class WorkflowEngine:
         from context.models import StoreConfig
 
         unit = Decimal("0")
-        try:
-            product = Product.objects.filter(
-                user=conversation.user, pid=collected.get("pid", ""), status=True
-            ).first()
-            if product:
-                unit = product.discounted_price or product.price or Decimal("0")
-        except Exception:
-            pass
+        pid = collected.get("pid", "")
+        # External/live products aren't in the local Product table — resolve
+        # the effective price from the focus-products cache (carries the same
+        # price create_order will charge) without a slow live ERP call.
+        if not unit and pid:
+            try:
+                from .tools import parse_focus_products
+                focus = parse_focus_products(getattr(conversation, "current_product", "") or "")
+                for fp in focus:
+                    if fp.get("pid") == pid:
+                        unit = Decimal(str(fp.get("price") or 0))
+                        break
+            except Exception:
+                pass
+        if not unit:
+            try:
+                product = Product.objects.filter(
+                    user=conversation.user, pid=pid, status=True
+                ).first()
+                if product:
+                    unit = product.discounted_price or product.price or Decimal("0")
+            except Exception:
+                pass
         delivery = Decimal("0")
         try:
             store = StoreConfig.objects.filter(user=conversation.user).first()
@@ -1425,14 +1440,31 @@ class WorkflowEngine:
                     )
                 except Exception as exc:
                     logger.warning("update_customer persist failed conv=%s: %s", conversation.pk, exc)
-            # Workflow completed -> reset for the next flow
+                # Workflow completed -> reset for the next flow
+                reset_session(conversation)
+                return result
+            # Product-resolution failures ("Product 'X' not found" — ERP hiccup,
+            # stale pid) must NOT kill the flow: drop back to product selection
+            # so the customer can re-pick and retry instead of losing the order.
+            msg = str(result.get("details") or result.get("error", ""))
+            if "not found" in msg.lower():
+                lang = _lang(conversation)
+                session.state = "awaiting_product_selection"
+                session.save()
+                return {
+                    "error": "product_not_found",
+                    "text": (
+                        "দুঃখিত, পণ্যটি এই মুহূর্তে পাওয়া যাচ্ছে না। আবার কোন পণ্যটা নেবেন, একটার নাম বলুন?"
+                        if lang == "bn" else
+                        "Sorry, that product is unavailable right now. Which product would you like?"
+                    ),
+                }
             reset_session(conversation)
             return result
         except Exception as exc:
             logger.exception("create_order tool failed conv=%s", conversation.pk)
             reset_session(conversation)
             return {"error": str(exc)}
-
     @classmethod
     def _order_created_response(cls, result, context, lang) -> dict:
         if result.get("error") == "duplicate":
@@ -1449,6 +1481,8 @@ class WorkflowEngine:
                 f"total {amount}). Should I finalize that one, or cancel it and "
                 f"place a new one?"
             )}
+        if result.get("error") == "product_not_found":
+            return {"text": result.get("text", "")}
         if result.get("error"):
             details = result.get("details")
             msg = str(details if details else result["error"])
