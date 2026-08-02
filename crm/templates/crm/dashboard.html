@@ -1,0 +1,100 @@
+{% extends "crm/base.html" %}
+{% block title %}Dashboard — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Dashboard</h1>
+    <div class="page-sub">Overview of your sales pipeline</div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <span class="icon-float">◎</span>
+    <div class="label">Total Leads</div>
+    <div class="value">{{ total_leads }}</div>
+    <div class="sub">{{ open_leads }} open · {{ won }} won · {{ lost }} lost</div>
+  </div>
+  <div class="card">
+    <span class="icon-float">🔥</span>
+    <div class="label">Hot Leads</div>
+    <div class="value stat-red">{{ hot_leads }}</div>
+    <div class="sub">score ≥ 70</div>
+  </div>
+  <div class="card">
+    <span class="icon-float">🏆</span>
+    <div class="label">Won Deals</div>
+    <div class="value stat-green">{{ won }}</div>
+    <div class="sub">{{ lost }} lost</div>
+  </div>
+  <div class="card">
+    <span class="icon-float">⏱</span>
+    <div class="label">Due Follow-ups</div>
+    <div class="value stat-amber">{{ todays_followups|length }}</div>
+    <div class="sub">{{ overdue_followups|length }} overdue</div>
+  </div>
+</div>
+
+<div class="grid-3">
+  <div class="panel">
+    <div class="panel-title">Pipeline <span class="flex-spacer"></span><a class="btn btn-soft btn-sm" href="{% url 'crm:pipeline' %}">Open board</a></div>
+    {% for item in pipeline_counts %}
+    <div class="lead-mini">
+      <div class="lm-name">{{ item.stage.name }}</div>
+      <div class="lm-right"><span class="pill pill-blue">{{ item.count }} leads</span></div>
+    </div>
+    {% empty %}
+    <div class="empty-state"><div class="es-title">No stages configured</div><div class="es-sub">Run <code>seed_demo_crm</code> to create pipeline stages.</div></div>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Recent Activity</div>
+    <div class="timeline">
+      {% for act in recent_activities %}
+      <div class="tl-item">
+        <div class="tl-title">{{ act.lead.name }} — {{ act.get_type_display }}</div>
+        <div class="tl-body">{{ act.description|default:""|truncatechars:140 }}</div>
+        <div class="tl-meta">{{ act.created_by|default:"System" }} · {{ act.timestamp|timesince }} ago</div>
+      </div>
+      {% empty %}
+      <div class="empty-state"><div class="es-title">No activity yet</div></div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Today's Follow-ups</div>
+    {% for f in todays_followups %}
+    <div class="lead-mini">
+      <a class="avatar" href="{% url 'crm:lead_detail' f.lead.pk %}">{{ f.lead.name|first|upper }}</a>
+      <div>
+        <div class="lm-name"><a href="{% url 'crm:lead_detail' f.lead.pk %}">{{ f.lead.name }}</a></div>
+        <div class="lm-sub">{{ f.get_kind_display }} · {{ f.due|date:"g:i A" }}{% if f.note %} · {{ f.note }}{% endif %}</div>
+      </div>
+      <div class="lm-right"><button class="btn btn-soft btn-sm" onclick="Crm.api('/crm/ajax/followups/{{ f.pk }}/done','POST').then(()=>location.reload())">Done</button></div>
+    </div>
+    {% empty %}
+    <div class="empty-state"><div class="es-title">Nothing due today 🎉</div></div>
+    {% endfor %}
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Upcoming Meetings &amp; Demos</div>
+    {% for m in upcoming_meetings %}
+    <div class="lead-mini">
+      <a class="avatar" href="{% url 'crm:lead_detail' m.lead.pk %}">{{ m.lead.name|first|upper }}</a>
+      <div>
+        <div class="lm-name"><a href="{% url 'crm:lead_detail' m.lead.pk %}">{{ m.lead.name }}</a></div>
+        <div class="lm-sub">{{ m.get_platform_display }} · {{ m.datetime|date:"D, M j · g:i A" }}</div>
+      </div>
+      <div class="lm-right"><span class="pill {% if m.status == 'scheduled' %}pill-blue{% else %}pill-gray{% endif %}">{{ m.get_status_display }}</span></div>
+    </div>
+    {% empty %}
+    <div class="empty-state"><div class="es-title">No upcoming meetings</div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

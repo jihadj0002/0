@@ -1,0 +1,46 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ company.name }} — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ company.name }}</h1>
+    <div class="page-sub">{{ company.industry|default:"No industry" }} · {{ company.website|default:"No website" }}</div>
+  </div>
+  <div class="page-actions"><a class="btn btn-soft" href="{% url 'crm:companies' %}">← All companies</a></div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Company Details</div>
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      <div class="form-group full"><label>Name</label><input name="name" value="{{ company.name }}" required></div>
+      <div class="form-group"><label>Industry</label><input name="industry" value="{{ company.industry }}"></div>
+      <div class="form-group"><label>Website</label><input name="website" value="{{ company.website }}"></div>
+      <div class="form-group"><label>Employees</label><input name="employees" value="{{ company.employees }}"></div>
+      <div class="form-group full"><label>Address</label><input name="address" value="{{ company.address }}"></div>
+      <div class="form-group full"><label>Notes</label><textarea name="notes" rows="4">{{ company.notes }}</textarea></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Linked Leads ({{ leads.count }})</div>
+    {% for l in leads %}
+    <div class="lead-mini">
+      <a class="avatar" href="{% url 'crm:lead_detail' l.pk %}">{{ l.name|first|upper }}</a>
+      <div>
+        <div class="lm-name"><a href="{% url 'crm:lead_detail' l.pk %}">{{ l.name }}</a></div>
+        <div class="lm-sub">{{ l.phone|default:"" }}</div>
+      </div>
+      <div class="lm-right">
+        {% if l.is_won %}<span class="pill pill-won">Won</span>
+        {% elif l.is_lost %}<span class="pill pill-lost">Lost</span>
+        {% elif l.stage %}<span class="pill pill-blue">{{ l.stage.name }}</span>{% endif %}
+      </div>
+    </div>
+    {% empty %}
+    <div class="empty-state"><div class="es-title">No leads linked</div></div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

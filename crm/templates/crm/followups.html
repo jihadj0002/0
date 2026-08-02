@@ -1,0 +1,45 @@
+{% extends "crm/base.html" %}
+{% block title %}Follow-ups — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Follow-ups</h1>
+    <div class="page-sub">Everything that needs your attention</div>
+  </div>
+  <div class="page-actions"><a class="btn btn-soft" href="{% url 'crm:calendar' %}">Open calendar</a></div>
+</div>
+
+{% for label, items, color in groups %}
+<div class="panel">
+  <div class="panel-title"><span class="pill {% if color %}pill-hot{% else %}pill-gray{% endif %}">{{ label }}</span> <span class="flex-spacer"></span><span class="form-help">{{ items|length }} item{{ items|pluralize }}</span></div>
+  {% for f in items %}
+  <div class="lead-mini">
+    <a class="avatar" href="{% url 'crm:lead_detail' f.lead.pk %}">{{ f.lead.name|first|upper }}</a>
+    <div>
+      <div class="lm-name"><a href="{% url 'crm:lead_detail' f.lead.pk %}">{{ f.lead.name }}</a>
+        {% if f.lead.score >= 70 %}<span class="pill pill-hot">Hot</span>{% endif %}</div>
+      <div class="lm-sub">{{ f.get_kind_display }} · due {{ f.due|date:"M j, Y · g:i A" }}{% if f.note %} · {{ f.note }}{% endif %}</div>
+    </div>
+    <div class="lm-right row-actions">
+      <a class="btn btn-soft btn-sm" href="tel:{{ f.lead.phone }}" {% if not f.lead.phone %}onclick="Crm.toast('No phone number on lead','warning'); return false;"{% endif %}>☏ Call</a>
+      {% if f.lead.phone %}<a class="btn btn-soft btn-sm" href="https://wa.me/{{ f.lead.phone|cut:'+'|cut:' ' }}" target="_blank">WhatsApp</a>{% endif %}
+      {% if f.lead.email %}<a class="btn btn-soft btn-sm" href="mailto:{{ f.lead.email }}">Email</a>{% endif %}
+      <button class="btn btn-outline btn-sm" onclick="doneFollowup({{ f.pk }})">✓ Done</button>
+    </div>
+  </div>
+  {% empty %}
+  <div class="empty-state"><div class="es-title">Nothing {{ label|lower }}</div></div>
+  {% endfor %}
+</div>
+{% endfor %}
+
+<script>
+async function doneFollowup(pk) {
+  try {
+    await Crm.api('/crm/ajax/followups/' + pk + '/done', 'POST', {});
+    Crm.toast('Follow-up completed', 'success');
+    setTimeout(() => location.reload(), 300);
+  } catch (err) { Crm.toast(err.message, 'error'); }
+}
+</script>
+{% endblock %}

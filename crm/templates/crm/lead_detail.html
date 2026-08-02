@@ -1,0 +1,164 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ lead.name }} — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ lead.name }}</h1>
+    <div class="page-sub">
+      {% if lead.company %}<a href="{% url 'crm:company_detail' lead.company.pk %}">{{ lead.company.name }}</a> · {% endif %}
+      {{ lead.phone|default:"No phone" }} · {{ lead.email|default:"" }}
+      {% for t in lead.tags %}<span class="pill pill-gray">#{{ t }}</span> {% endfor %}
+    </div>
+  </div>
+  <div class="page-actions">
+    {% if can_edit %}<a class="btn btn-soft" href="{% url 'crm:lead_edit' lead.pk %}">Edit</a>{% endif %}
+    {% if role == 'owner' or role == 'manager' %}
+    <button class="btn btn-outline" onclick="convertOpen()">🏆 Mark Won & Convert</button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="grid-3">
+  <div class="panel">
+    <div class="panel-title">Lead Info</div>
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="update">
+      <div class="form-group"><label>Stage</label>
+        <select name="stage" {% if not can_edit %}disabled{% endif %}>
+          {% for s in stages %}<option value="{{ s.pk }}" {% if lead.stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Score (0–100)</label>
+        <input type="number" name="score" min="0" max="100" value="{{ lead.score }}" {% if not can_edit %}disabled{% endif %}>
+      </div>
+      <div class="form-group"><label>Assigned To</label>
+        <select name="assigned_to" {% if not can_edit %}disabled{% endif %}>
+          <option value="">— Unassigned —</option>
+          {% for sp in staff_users %}<option value="{{ sp.user.pk }}" {% if lead.assigned_to_id == sp.user.pk %}selected{% endif %}>{{ sp.user.get_full_name|default:sp.user.username }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Source</label>
+        <select name="source" {% if not can_edit %}disabled{% endif %}>
+          {% for value, label in lead_sources %}<option value="{{ value }}" {% if lead.source == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Budget (৳)</label><input name="budget" value="{{ lead.budget|default:'' }}" {% if not can_edit %}disabled{% endif %}></div>
+      <div class="form-group"><label>Expected Value (৳)</label><input name="expected_value" value="{{ lead.expected_value|default:'' }}" {% if not can_edit %}disabled{% endif %}></div>
+      <div class="form-group"><label>Next Follow-up</label><input name="next_followup" data-datepicker value="{{ lead.next_followup|date:'Y-m-d H:i'|default:'' }}" {% if not can_edit %}disabled{% endif %}></div>
+      <div class="form-group"><label>Status</label>
+        {% if lead.is_won %}<span class="pill pill-won">Won</span>
+        {% elif lead.is_lost %}<span class="pill pill-lost">Lost</span>
+        {% elif lead.score >= 70 %}<span class="pill pill-hot">Hot</span>
+        {% elif lead.score >= 40 %}<span class="pill pill-warm">Warm</span>
+        {% else %}<span class="pill pill-cold">Cold</span>{% endif %}
+      </div>
+      <div class="form-group full"><label>Notes</label><textarea name="notes" rows="4" {% if not can_edit %}disabled{% endif %}>{{ lead.notes }}</textarea></div>
+      {% if can_edit %}<div class="form-group full"><button class="btn btn-primary" type="submit">Save Lead</button></div>{% endif %}
+    </form>
+  </div>
+
+  <div>
+    <div class="panel">
+      <div class="panel-title">Activity Timeline</div>
+      <div class="timeline">
+        {% for act in activities %}
+        <div class="tl-item">
+          <div class="tl-title">{{ act.get_type_display }}</div>
+          <div class="tl-body">{{ act.description|default:"—" }}</div>
+          <div class="tl-meta">{{ act.created_by|default:"System" }} · {{ act.timestamp|date:"M j, Y · g:i A" }}</div>
+        </div>
+        {% empty %}
+        <div class="empty-state"><div class="es-title">No activity yet</div></div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Add Note</div>
+      <form method="post" class="form-group">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="note">
+        <textarea name="note" rows="3" placeholder="Type a note / call summary..."></textarea>
+        <button class="btn btn-soft" type="submit">Add Note</button>
+      </form>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Quick Actions</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <button class="btn btn-outline" onclick="callOpen()">☏ Log a Call</button>
+        <button class="btn btn-outline" onclick="Crm.openModal('Schedule Meeting', demoForm())">▶ Schedule Demo/Meeting</button>
+        {% if lead.followups.all %}
+        <div class="form-help" style="margin-top:8px;">Follow-ups: {% for f in lead.followups.all %}{% if not f.done %}<span class="pill pill-warm">{{ f.due|date:"M j" }} {{ f.get_kind_display }}</span> {% endif %}{% endfor %}</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const leadId = {{ lead.pk }};
+function convertOpen() {
+  Crm.openModal('Convert to Customer', `
+    <form id="convertForm" class="form-grid" action="/crm/ajax/leads/${leadId}/convert" method="post">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <div class="form-group full"><label>Package / Plan</label><input name="package" placeholder="e.g. Pro" value="free"></div>
+      <div class="form-group"><label>Monthly Value (৳)</label><input name="monthly_value"></div>
+      <div class="form-group"><label>Renewal Date</label><input name="renewal" data-datepicker></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Convert</button></div>
+    </form>`);
+  document.getElementById('convertForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const res = await Crm.api('/crm/ajax/leads/' + leadId + '/convert', 'POST',
+        Object.fromEntries(new FormData(e.target)));
+      Crm.toast('Customer created!', 'success');
+      setTimeout(() => location.href = res.url, 400);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
+}
+function callOpen() {
+  Crm.openModal('Log a Call', `
+    <form id="callForm" class="form-grid">
+      <input type="hidden" name="lead" value="${leadId}">
+      <div class="form-group"><label>Duration (minutes)</label><input type="number" name="duration" min="0" value="5"></div>
+      <div class="form-group"><label>Outcome</label>
+        <select name="outcome">
+          <option value="no_answer">No Answer</option><option value="busy">Busy</option>
+          <option value="interested">Interested</option><option value="not_interested">Not Interested</option>
+          <option value="wrong_number">Wrong Number</option><option value="call_later">Call Later</option>
+          <option value="meeting_scheduled">Meeting Scheduled</option><option value="demo_scheduled">Demo Scheduled</option>
+        </select>
+      </div>
+      <div class="form-group full"><label>Summary</label><textarea name="summary" rows="3"></textarea></div>
+      <div class="form-group"><label>Next Follow-up</label><input name="next_followup" data-datepicker></div>
+      <div class="form-group full"><label>Tags (comma separated)</label><input name="tags" placeholder="e.g. budget-conscious"></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save Call</button></div>
+    </form>`);
+  document.getElementById('callForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await Crm.api('/crm/ajax/calls/log', 'POST', Object.fromEntries(new FormData(e.target)));
+      Crm.toast('Call logged', 'success');
+      Crm.closeModal();
+      setTimeout(() => location.reload(), 350);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
+}
+function demoForm() {
+  return `
+    <form id="demoForm" method="post" action="/crm/demos/">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <input type="hidden" name="lead" value="${leadId}">
+      <div class="form-group"><label>Date & Time</label><input name="datetime" data-datepicker required></div>
+      <div class="form-group"><label>Platform</label>
+        <select name="platform"><option value="zoom">Zoom</option><option value="google_meet">Google Meet</option><option value="offline">Offline</option></select>
+      </div>
+      <div class="form-group"><label>Link</label><input name="link"></div>
+      <div class="form-group"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <button class="btn btn-primary" type="submit">Schedule</button>
+    </form>`;
+}
+</script>
+{% endblock %}

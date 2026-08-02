@@ -1,0 +1,92 @@
+{% extends "crm/base.html" %}
+{% block title %}Reports — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Reports</h1>
+    <div class="page-sub">Sales performance analytics</div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card"><div class="label">Conversion Rate</div><div class="value stat-green">{{ conversion }}%</div><div class="sub">{{ total_won }} won / {{ total_leads }} total</div></div>
+  <div class="card"><div class="label">Total Won</div><div class="value">{{ total_won }}</div><div class="sub">deals closed</div></div>
+  <div class="card"><div class="label">Open Leads</div><div class="value">{{ total_leads|add:"-"|add:total_won }}</div><div class="sub">in pipeline</div></div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Monthly Revenue (৳)</div>
+    <canvas id="revenueChart" height="220"></canvas>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Lead Sources</div>
+    <canvas id="sourceChart" height="220"></canvas>
+  </div>
+</div>
+
+<div class="grid-2">
+  <div class="panel">
+    <div class="panel-title">Pipeline Distribution</div>
+    {% for s in stage_counts %}
+    <div class="lead-mini">
+      <div class="lm-name">{{ s.name }}</div>
+      <div class="lm-right"><span class="pill pill-blue">{{ s.count }}</span></div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="panel">
+    <div class="panel-title">Top Performers</div>
+    <table class="crm-table">
+      <thead><tr><th>#</th><th>Staff</th><th>Won</th><th>Revenue</th></tr></thead>
+      <tbody>
+        {% for p in top_performers %}
+        <tr><td>{{ forloop.counter }}</td><td><b>{{ p.staff.user.get_full_name|default:p.staff.user.username }}</b></td><td>{{ p.won }}</td><td>৳{{ p.revenue|floatformat:0 }}</td></tr>
+        {% empty %}
+        <tr><td colspan="4"><div class="empty-state"><div class="es-title">No data</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Lost Reasons</div>
+  <table class="crm-table">
+    <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+    <tbody>
+      {% for r in lost_reasons %}
+      <tr><td>{{ r.reason }}</td><td>{{ r.count }}</td></tr>
+      {% empty %}
+      <tr><td colspan="2"><div class="empty-state"><div class="es-title">No lost deals recorded</div></div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+const monthly = {{ monthly_revenue_json|safe }};
+const sources = {{ sources_json|safe }};
+document.addEventListener('DOMContentLoaded', () => {
+  new Chart(document.getElementById('revenueChart'), {
+    type: 'bar',
+    data: {
+      labels: monthly.map(m => m.label),
+      datasets: [{ label: 'Revenue (৳)', data: monthly.map(m => m.value), backgroundColor: '#2563eb', borderRadius: 6 }]
+    },
+    options: { plugins: { legend: { display: false } } }
+  });
+  new Chart(document.getElementById('sourceChart'), {
+    type: 'pie',
+    data: {
+      labels: sources.map(s => s.label),
+      datasets: [{ data: sources.map(s => s.value), backgroundColor: ['#2563eb', '#7c3aed', '#0891b2', '#d97706', '#16a34a', '#dc2626', '#64748b'] }]
+    }
+  });
+});
+</script>
+{% endblock %}

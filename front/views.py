@@ -50,6 +50,13 @@ def forumm(request):
             social_page=social_page,
         )
 
+        from crm.services import create_lead
+        lead, created = create_lead(
+            None, name=name, phone=phone or "", email=email or "",
+            source="website", industry=business_type or "",
+            notes=f"Survey: business '{business_name or ''}' · customer range {customer_range or ''} · social page {social_page or ''}",
+        )
+
         return redirect('front:home')
 
     return render(request, "front/forum.html")
@@ -65,6 +72,12 @@ def contact(request):
 
         # 🔹 Option 2: Save into DB (make a model)
         Contact.objects.create(name=name, email=email, business=business)
+
+        from crm.services import create_lead
+        lead, created = create_lead(
+            None, name=name, phone="", email=email or "",
+            source="website", notes=f"Contact form — business: {business or ''}",
+        )
 
         # 🔹 Option 3: Send email notification
         # send_mail(
@@ -103,6 +116,12 @@ def login_view(request):
     print("Login open")
     
     if request.user.is_authenticated:
+        # Staff go to the CRM, tenants go to their dashboard
+        try:
+            if request.user.staff_profile.is_active:
+                return redirect('crm:dashboard')
+        except Exception:
+            pass
         return redirect('back:dashboard')  # Redirect if already logged in
     
     # Always get next URL from GET parameter
@@ -120,9 +139,14 @@ def login_view(request):
                 login(request, user)
                 messages.success(request, f"Welcome back, {username}!")
                 
-                # Redirect to next_url if provided, else dashboard
+                # Redirect to next_url if provided, else CRM (staff) or dashboard
                 if next_url:
                     return redirect(next_url)
+                try:
+                    if request.user.staff_profile.is_active:
+                        return redirect('crm:dashboard')
+                except Exception:
+                    pass
                 return redirect('back:dashboard')
             else:
                 messages.error(request, "Invalid username or password.")

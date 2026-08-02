@@ -1,0 +1,72 @@
+{% extends "crm/base.html" %}
+{% block title %}Pipeline — Matrix CRM{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.css" media="print" onload="this.media='all'">
+{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Pipeline</h1>
+    <div class="page-sub">Drag leads between stages</div>
+  </div>
+</div>
+
+<div class="kanban" id="kanban">
+  {% for col in columns %}
+  <div class="kanban-col" data-stage="{{ col.stage.pk }}">
+    <div class="kanban-col-head">
+      <span class="dot" style="background: {{ col.stage.color }};"></span>
+      {{ col.stage.name }}
+      <span class="kc-count">{{ col.total }}</span>
+    </div>
+    <div class="kanban-cards">
+      {% for lead in col.leads %}
+      <div class="kanban-card" data-lead="{{ lead.pk }}">
+        <a class="kb-name" href="{% url 'crm:lead_detail' lead.pk %}">{{ lead.name }}</a>
+        <div class="kb-sub">{{ lead.phone|default:"" }}{% if lead.company %} · {{ lead.company.name }}{% endif %}</div>
+        <div class="kb-foot">
+          {% if lead.score >= 70 %}<span class="pill pill-hot">Hot</span>
+          {% elif lead.score >= 40 %}<span class="pill pill-warm">Warm</span>
+          {% else %}<span class="pill pill-cold">Cold</span>{% endif %}
+          <span class="kb-score">{{ lead.score }}</span>
+        </div>
+      </div>
+      {% empty %}
+      <div class="kanban-empty">No leads</div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<script>
+document.querySelectorAll('.kanban-col').forEach(col => {
+  Sortable.create(col.querySelector('.kanban-cards'), {
+    group: 'kanban',
+    animation: 150,
+    ghostClass: 'dragging',
+    onEnd: async (evt) => {
+      const leadId = evt.item.dataset.lead;
+      const stageId = evt.to.closest('.kanban-col').dataset.stage;
+      if (evt.from === evt.to) return;
+      try {
+        const res = await Crm.api('/crm/ajax/leads/' + leadId + '/move', 'POST', { stage: stageId });
+        if (res.won) Crm.toast('Deal won! Convert it from the lead page.', 'success');
+        updateCounts();
+      } catch (err) {
+        Crm.toast('Move failed: ' + err.message, 'error');
+        evt.from.appendChild(evt.item);
+      }
+    }
+  });
+});
+function updateCounts() {
+  document.querySelectorAll('.kanban-col').forEach(col => {
+    col.querySelector('.kc-count').textContent = col.querySelectorAll('.kanban-card').length;
+  });
+}
+</script>
+{% endblock %}

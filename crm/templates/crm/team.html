@@ -1,0 +1,28 @@
+{% extends "crm/base.html" %}
+{% block title %}Team — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Team Dashboard</h1>
+    <div class="page-sub">Per-staff performance — this month</div>
+  </div>
+</div>
+
+<div class="cards">
+  {% for m in members %}
+  <div class="card">
+    <span class="icon-float">🥇{% if forloop.counter0 == 1 %}🥈{% elif forloop.counter0 == 2 %}🥉{% endif %}</span>
+    <div class="label">{{ m.title|default:m.role|title }}</div>
+    <div class="value" style="font-size:1.15rem;">{{ m.user_first|default:"—" }}</div>
+    <div class="sub">{{ m.role|capfirst }}</div>
+    <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px; font-size:.8rem;">
+      <div><b>{{ m.won }}</b> won · <b>{{ m.open }}</b> open · <b>{{ m.assigned }}</b> assigned</div>
+      <div>☏ {{ m.calls_today }} today · {{ m.calls_month }} this month</div>
+      <div>🎥 {{ m.meetings_month }} demos · 💰 ৳{{ m.revenue|floatformat:0 }}</div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="empty-state"><div class="es-title">No staff members</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

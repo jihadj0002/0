@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     "context",
     "billing",
     "blog",
+    "crm",
 
     "django_ckeditor_5",
     "django.contrib.sitemaps",
@@ -111,6 +112,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "crm.permissions.CrmStaffGuardMiddleware",
 ]
 
 ROOT_URLCONF = "theMatrixAi.urls"

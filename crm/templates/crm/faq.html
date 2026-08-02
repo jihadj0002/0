@@ -1,0 +1,55 @@
+{% extends "crm/base.html" %}
+{% block title %}FAQ — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>FAQ</h1>
+    <div class="page-sub">Common questions, answered instantly</div>
+  </div>
+  {% if role == 'owner' or role == 'manager' %}
+  <div class="page-actions"><button class="btn btn-primary" onclick="faqModal()">+ New FAQ</button></div>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <form class="table-toolbar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search questions & answers..." style="flex:1;">
+    <button class="btn btn-primary" type="submit">Search</button>
+    <a class="btn btn-outline" href="{% url 'crm:faq' %}">Reset</a>
+  </form>
+</div>
+
+<div class="grid-2">
+  {% for f in faqs %}
+  <div class="panel">
+    <div class="panel-title">{{ f.question }}
+      {% if f.category %}<span class="pill pill-blue">{{ f.category }}</span>{% endif %}
+      <span class="flex-spacer"></span>
+      <button class="btn btn-sm btn-soft" onclick="copyFaq(this)">📋 Copy</button>
+    </div>
+    <div class="faq-answer" style="font-size:.88rem; color:#334155;">{{ f.answer|linebreaksbr }}</div>
+  </div>
+  {% empty %}
+  <div class="panel"><div class="empty-state"><div class="es-title">No FAQs found</div></div></div>
+  {% endfor %}
+</div>
+
+<script>
+function faqModal() {
+  Crm.openModal('New FAQ', `
+    <form method="post" action="{% url 'crm:faq' %}" class="form-grid">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <div class="form-group full"><label>Question</label><input name="question" required></div>
+      <div class="form-group full"><label>Answer</label><textarea name="answer" rows="5"></textarea></div>
+      <div class="form-group full"><label>Category</label><input name="category" list="faqCats">
+        <datalist id="faqCats">{% for c in categories %}<option value="{{ c }}">{% endfor %}</datalist></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save FAQ</button></div>
+    </form>`);
+}
+function copyFaq(btn) {
+  const q = btn.closest('.panel').querySelector('.panel-title').childNodes[0].textContent.trim();
+  const a = btn.closest('.panel').querySelector('.faq-answer').innerText;
+  navigator.clipboard.writeText('Q: ' + q + '\nA: ' + a).then(() => Crm.toast('FAQ copied', 'success'));
+}
+</script>
+{% endblock %}

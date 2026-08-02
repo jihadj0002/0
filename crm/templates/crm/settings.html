@@ -1,0 +1,104 @@
+{% extends "crm/base.html" %}
+{% block title %}Settings — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <div class="page-sub">Pipeline stages and staff management</div>
+  </div>
+</div>
+
+<div class="tab-nav">
+  <a class="tab active" href="#stages" data-tab="stages">Pipeline Stages</a>
+  {% if role == 'owner' %}<a class="tab" href="#staff" data-tab="staff">Staff</a>{% endif %}
+</div>
+
+<div class="tab-pane" data-pane="stages">
+  <div class="panel">
+    <div class="panel-title">Stages</div>
+    <table class="crm-table">
+      <thead><tr><th>Name</th><th>Order</th><th>Color</th><th>Won</th><th>Lost</th><th></th></tr></thead>
+      <tbody>
+        {% for s in stages %}
+        <tr>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="stage">
+            <input type="hidden" name="stage_id" value="{{ s.pk }}">
+            <td><input name="name" value="{{ s.name }}" style="width:160px;"></td>
+            <td><input name="order" type="number" value="{{ s.order }}" style="width:70px;"></td>
+            <td><input name="color" type="color" value="{{ s.color }}"></td>
+            <td><input type="checkbox" name="is_won" {% if s.is_won %}checked{% endif %}></td>
+            <td><input type="checkbox" name="is_lost" {% if s.is_lost %}checked{% endif %}></td>
+            <td><button class="btn btn-sm btn-primary" type="submit">Save</button></td>
+          </form>
+        </tr>
+        {% endfor %}
+        <tr>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="stage">
+            <td><input name="name" placeholder="New stage name" style="width:160px;"></td>
+            <td><input name="order" type="number" value="99" style="width:70px;"></td>
+            <td><input name="color" type="color" value="#2563eb"></td>
+            <td><input type="checkbox" name="is_won"></td>
+            <td><input type="checkbox" name="is_lost"></td>
+            <td><button class="btn btn-sm btn-soft" type="submit">Add</button></td>
+          </form>
+        </tr>
+      </tbody>
+    </table>
+    <div class="form-help" style="margin-top:8px;">Tip: exactly one stage should be marked <b>Won</b> and one <b>Lost</b> for conversion to work.</div>
+  </div>
+</div>
+
+{% if role == 'owner' %}
+<div class="tab-pane" data-pane="staff" hidden>
+  <div class="panel">
+    <div class="panel-title">Staff Members</div>
+    <table class="crm-table">
+      <thead><tr><th>User</th><th>Role</th><th>Title</th><th>Phone</th></tr></thead>
+      <tbody>
+        {% for m in staff_members %}
+        <tr>
+          <td><b>{{ m.user.username }}</b><div class="form-help">{{ m.user.get_full_name }}</div></td>
+          <td><span class="pill pill-blue">{{ m.get_role_display }}</span></td>
+          <td>{{ m.title }}</td>
+          <td>{{ m.phone }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Add Staff Member</div>
+    <form method="post" class="form-grid">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="staff">
+      <div class="form-group"><label>Username *</label><input name="username" required></div>
+      <div class="form-group"><label>Password (blank = keep)</label><input name="password"></div>
+      <div class="form-group"><label>First Name</label><input name="first_name"></div>
+      <div class="form-group"><label>Email</label><input name="email" type="email"></div>
+      <div class="form-group"><label>Role</label>
+        <select name="role"><option value="staff">Sales Staff</option><option value="manager">Sales Manager</option><option value="support">Support</option></select>
+      </div>
+      <div class="form-group"><label>Phone</label><input name="phone"></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save Staff</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<script>
+document.querySelectorAll('.tab-nav .tab').forEach(tab => {
+  tab.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.tab-nav .tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.hidden = true);
+    tab.classList.add('active');
+    const pane = document.querySelector('[data-pane="' + tab.dataset.tab + '"]');
+    if (pane) pane.hidden = false;
+  });
+});
+</script>
+{% endblock %}

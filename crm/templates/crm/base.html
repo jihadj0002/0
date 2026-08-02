@@ -1,0 +1,154 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}CRM — MatrixAI{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'crm/css/crm.css' %}">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  {% block extra_css %}{% endblock %}
+</head>
+<body>
+<div class="crm-app">
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="crm-sidebar" id="crmSidebar">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div class="brand-text">Matrix CRM</div>
+    </div>
+    <nav class="nav">
+      <div class="nav-section">Overview</div>
+      <a href="{% url 'crm:dashboard' %}" class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+        <span class="ni">▦</span> Dashboard
+      </a>
+
+      <div class="nav-section">Sales</div>
+      <a href="{% url 'crm:leads' %}" class="nav-item {% if request.resolver_match.url_name in 'leads,lead_new,lead_detail,lead_edit' %}active{% endif %}">
+        <span class="ni">◎</span> Leads
+      </a>
+      <a href="{% url 'crm:pipeline' %}" class="nav-item {% if request.resolver_match.url_name == 'pipeline' %}active{% endif %}">
+        <span class="ni">⬚</span> Pipeline
+      </a>
+      <a href="{% url 'crm:customers' %}" class="nav-item {% if request.resolver_match.url_name in 'customers,customer_detail' %}active{% endif %}">
+        <span class="ni">●</span> Customers
+      </a>
+      <a href="{% url 'crm:companies' %}" class="nav-item {% if request.resolver_match.url_name in 'companies,company_detail' %}active{% endif %}">
+        <span class="ni">🏢</span> Companies
+      </a>
+
+      <div class="nav-section">Activities</div>
+      <a href="{% url 'crm:calls' %}" class="nav-item {% if request.resolver_match.url_name == 'calls' %}active{% endif %}">
+        <span class="ni">☏</span> Calls
+      </a>
+      <a href="{% url 'crm:demos' %}" class="nav-item {% if request.resolver_match.url_name == 'demos' %}active{% endif %}">
+        <span class="ni">▶</span> Meetings &amp; Demos
+      </a>
+      <a href="{% url 'crm:followups' %}" class="nav-item {% if request.resolver_match.url_name == 'followups' %}active{% endif %}">
+        <span class="ni">⏱</span> Follow-ups
+      </a>
+      <a href="{% url 'crm:calendar' %}" class="nav-item {% if request.resolver_match.url_name == 'calendar' %}active{% endif %}">
+        <span class="ni">📅</span> Calendar
+      </a>
+      <a href="{% url 'crm:tasks' %}" class="nav-item {% if request.resolver_match.url_name == 'tasks' %}active{% endif %}">
+        <span class="ni">☑</span> Tasks
+      </a>
+
+      <div class="nav-section">Resources</div>
+      <a href="{% url 'crm:scripts' %}" class="nav-item {% if request.resolver_match.url_name == 'scripts' %}active{% endif %}">
+        <span class="ni">✎</span> Sales Scripts
+      </a>
+      <a href="{% url 'crm:faq' %}" class="nav-item {% if request.resolver_match.url_name == 'faq' %}active{% endif %}">
+        <span class="ni">?</span> FAQ
+      </a>
+
+      {% if role in 'manager,owner' %}
+      <div class="nav-section">Manage</div>
+      <a href="{% url 'crm:team' %}" class="nav-item {% if request.resolver_match.url_name == 'team' %}active{% endif %}">
+        <span class="ni">👥</span> Team
+      </a>
+      <a href="{% url 'crm:reports' %}" class="nav-item {% if request.resolver_match.url_name == 'reports' %}active{% endif %}">
+        <span class="ni">📊</span> Reports
+      </a>
+      <a href="{% url 'crm:settings' %}" class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
+        <span class="ni">⚙</span> Settings
+      </a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      <a href="{% url 'crm:logout' %}" class="nav-item">↪ Logout</a>
+    </div>
+  </aside>
+  <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+  <!-- ===================== MAIN ===================== -->
+  <div class="crm-main">
+    <header class="crm-topbar">
+      <button class="burger" id="burger" aria-label="Menu">☰</button>
+      <div class="topbar-search">
+        <input type="text" id="globalSearch" placeholder="Search leads, companies, FAQ..." autocomplete="off">
+        <div class="search-results" id="searchResults"></div>
+      </div>
+      <div class="topbar-right">
+        <div class="bell-wrap">
+          <button class="bell" id="bellBtn" aria-label="Notifications">
+            <span class="bell-icon">🔔</span>
+            {% if unread_notifications %}<span class="bell-dot" id="bellCount">{{ unread_notifications }}</span>{% endif %}
+          </button>
+          <div class="bell-panel" id="bellPanel">
+            <div class="bell-panel-title">Notifications</div>
+            <div id="bellList"><div class="bell-empty">No notifications</div></div>
+          </div>
+        </div>
+        <div class="profile-wrap">
+          <button class="profile-btn" id="profileBtn">
+            <span class="avatar">{{ request.user.first_name|default:request.user.username|first|upper }}</span>
+            <span class="pname">{{ request.user.get_full_name|default:request.user.username }}</span>
+            <span class="role-pill">{{ role|default:'—' }}</span>
+          </button>
+          <div class="profile-panel" id="profilePanel">
+            <a class="pp-item" href="{% url 'crm:dashboard' %}">Dashboard</a>
+            {% if role == 'owner' %}<a class="pp-item" href="/db/">Owner Dashboard</a>{% endif %}
+            <a class="pp-item" href="{% url 'crm:logout' %}">Logout</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <main class="crm-content">
+      {% if messages %}
+        <div class="toast-stack">
+          {% for message in messages %}
+            <div class="crm-toast toast-{{ message.tags|default:'info' }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="crmModalBackdrop" hidden></div>
+<div class="crm-modal" id="crmModal" role="dialog" aria-modal="true" aria-labelledby="crmModalTitle" hidden>
+  <div class="modal-head">
+    <h3 id="crmModalTitle"></h3>
+    <button class="modal-close" data-close-modal aria-label="Close dialog">✕</button>
+  </div>
+  <div class="modal-body" id="crmModalBody"></div>
+</div>
+<div class="drawer-backdrop" id="crmDrawerBackdrop" hidden></div>
+<aside class="crm-drawer" id="crmDrawer" role="dialog" aria-modal="true" aria-labelledby="crmDrawerTitle" hidden>
+  <div class="drawer-head">
+    <h3 id="crmDrawerTitle"></h3>
+    <button class="modal-close" data-close-drawer aria-label="Close panel">✕</button>
+  </div>
+  <div class="drawer-body" id="crmDrawerBody"></div>
+</aside>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="{% static 'crm/js/crm.js' %}"></script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

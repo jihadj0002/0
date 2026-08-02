@@ -1,0 +1,80 @@
+{% extends "crm/base.html" %}
+{% block title %}Calls — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Call Logs</h1>
+    <div class="page-sub">{{ page_obj.paginator.count }} calls logged</div>
+  </div>
+  <div class="page-actions"><button class="btn btn-primary" onclick="callModal()">☏ Log a Call</button></div>
+</div>
+
+<div class="panel">
+  <form class="table-toolbar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search lead...">
+    <select name="outcome">
+      <option value="">All outcomes</option>
+      {% for value, label in call_outcomes %}<option value="{{ value }}" {% if outcome == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    <a class="btn btn-outline" href="{% url 'crm:calls' %}">Reset</a>
+  </form>
+  <div class="table-wrap">
+    <table class="crm-table">
+      <thead><tr><th>Lead</th><th>Staff</th><th>Outcome</th><th>Duration</th><th>Summary</th><th>Next Follow-up</th><th>Date</th></tr></thead>
+      <tbody>
+        {% for call in calls %}
+        <tr>
+          <td><a href="{% url 'crm:lead_detail' call.lead.pk %}"><b>{{ call.lead.name }}</b></a></td>
+          <td>{% if call.staff %}{{ call.staff.get_full_name|default:call.staff.username }}{% else %}—{% endif %}</td>
+          <td><span class="pill {% if call.outcome == 'interested' %}pill-won{% elif call.outcome == 'not_interested' %}pill-lost{% else %}pill-blue{% endif %}">{{ call.get_outcome_display }}</span></td>
+          <td>{{ call.duration }}m</td>
+          <td class="form-help">{{ call.summary|default:"—"|truncatechars:80 }}</td>
+          <td>{% if call.next_followup %}{{ call.next_followup|date:"M j, g:i A" }}{% else %}—{% endif %}</td>
+          <td>{{ call.created_at|date:"M j, Y" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7"><div class="empty-state"><div class="es-title">No calls logged</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% endif %}
+    <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+const allLeads = {{ leads_json|safe }};
+function callModal() {
+  Crm.openModal('Log a Call', `
+    <form id="callForm" class="form-grid">
+      <div class="form-group full"><label>Lead</label>
+        <select name="lead" required><option value="">Select lead...</option>
+        ${allLeads.map(l => `<option value="${l.id}">${l.name} — ${l.phone || ''}</option>`).join('')}
+        </select></div>
+      <div class="form-group"><label>Duration (minutes)</label><input type="number" name="duration" min="0" value="5"></div>
+      <div class="form-group"><label>Outcome</label>
+        <select name="outcome">
+          {% for value, label in call_outcomes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="form-group full"><label>Summary</label><textarea name="summary" rows="3"></textarea></div>
+      <div class="form-group"><label>Next Follow-up</label><input name="next_followup" data-datepicker></div>
+      <div class="form-group"><label>Tags</label><input name="tags" placeholder="comma, separated"></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save Call</button></div>
+    </form>`);
+  document.getElementById('callForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await Crm.api('/crm/ajax/calls/log', 'POST', Object.fromEntries(new FormData(e.target)));
+      Crm.toast('Call logged', 'success');
+      setTimeout(() => location.reload(), 300);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
+}
+</script>
+{% endblock %}

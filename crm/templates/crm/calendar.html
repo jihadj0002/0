@@ -1,0 +1,44 @@
+{% extends "crm/base.html" %}
+{% block title %}Calendar — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Calendar</h1>
+    <div class="page-sub">Meetings, demos, follow-ups and tasks</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div id="crmCalendar"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const calendarEl = document.getElementById('crmCalendar');
+  if (!calendarEl) return;
+  const calendar = new FullCalendar.Calendar(calendarEl, {
+    initialView: 'dayGridMonth',
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,listWeek'
+    },
+    height: 'auto',
+    events: {
+      url: '/crm/ajax/calendar/events',
+      method: 'GET'
+    },
+    eventClick: (info) => {
+      if (info.event.url) {
+        info.jsEvent.preventDefault();
+        window.location.href = info.event.url;
+      }
+    }
+  });
+  calendar.render();
+});
+</script>
+{% endblock %}

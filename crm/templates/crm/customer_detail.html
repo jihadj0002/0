@@ -1,0 +1,163 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ customer.lead.name }} — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ customer.lead.name }}</h1>
+    <div class="page-sub">
+      {{ customer.lead.phone|default:"" }} · {{ customer.lead.email|default:"" }}
+      · Package: <b>{{ customer.package|default:"—" }}</b>
+      {% if customer.platform_user %}· Platform: <b>@{{ customer.platform_user.username }}</b>{% endif %}
+    </div>
+  </div>
+  <div class="page-actions">
+    {% if customer.status == 'active' %}<span class="pill pill-won">Active</span>{% else %}<span class="pill pill-lost">Churned</span>{% endif %}
+  </div>
+</div>
+
+<div class="tab-nav">
+  <a class="tab active" href="#overview" data-tab="overview">Overview</a>
+  <a class="tab" href="#ai" data-tab="ai">AI Setup</a>
+  <a class="tab" href="#conversations" data-tab="conversations">Conversations</a>
+  <a class="tab" href="#orders" data-tab="orders">Orders</a>
+  <a class="tab" href="#timeline" data-tab="timeline">Timeline</a>
+</div>
+
+<div class="tab-pane" data-pane="overview">
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-title">Customer Details</div>
+      <form method="post" class="form-grid">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update">
+        <div class="form-group"><label>Package</label><input name="package" value="{{ customer.package }}"></div>
+        <div class="form-group"><label>Monthly Value (৳)</label><input name="monthly_value" value="{{ customer.monthly_value|default:'' }}"></div>
+        <div class="form-group"><label>Renewal Date</label><input name="renewal" data-datepicker value="{{ customer.renewal|date:'Y-m-d' }}"></div>
+        <div class="form-group"><label>Status</label>
+          <select name="status"><option value="active" {% if customer.status == 'active' %}selected{% endif %}>Active</option><option value="churned" {% if customer.status == 'churned' %}selected{% endif %}>Churned</option></select>
+        </div>
+        <div class="form-group full"><label>Notes</label><textarea name="notes" rows="3">{{ customer.notes }}</textarea></div>
+        <div class="form-group full"><button class="btn btn-primary" type="submit">Save</button></div>
+      </form>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Onboarding</div>
+      {% if customer.platform_user %}
+      <div class="lead-mini"><div class="lm-name">Platform account</div><div class="lm-right"><span class="pill pill-won">@{{ customer.platform_user.username }}</span></div></div>
+      <div class="lead-mini"><div class="lm-name">Email</div><div class="lm-right">{{ customer.platform_user.email|default:"—" }}</div></div>
+      <div class="lead-mini"><div class="lm-name">Joined</div><div class="lm-right">{{ customer.platform_user.date_joined|date:"M j, Y" }}</div></div>
+      {% else %}
+      <div class="empty-state"><div class="es-title">No platform account</div><div class="es-sub">Account is created automatically when converting a lead with an email.</div></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="tab-pane" data-pane="ai" hidden>
+  <div class="panel">
+    <div class="panel-title">Integration Status</div>
+    <table class="crm-table">
+      <thead><tr><th>Platform</th><th>Connected</th><th>AI Enabled</th><th>Model</th></tr></thead>
+      <tbody>
+        {% for i in integrations %}
+        <tr>
+          <td><b>{{ i.get_platform_display }}</b></td>
+          <td>{% if i.access_token %}<span class="pill pill-won">Connected</span>{% else %}<span class="pill pill-lost">Not connected</span>{% endif %}</td>
+          <td>{% if i.is_enabled %}<span class="pill pill-won">Enabled</span>{% else %}<span class="pill pill-gray">Disabled</span>{% endif %}</td>
+          <td>{{ i.ai_model|default:"default" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4"><div class="empty-state"><div class="es-title">No integrations yet</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if usage %}
+  <div class="panel">
+    <div class="panel-title">Credits Usage (last 30 days)</div>
+    <div class="table-wrap"><table class="crm-table">
+      <thead><tr><th>Date</th><th>Messages</th><th>Credits</th><th>Tokens</th></tr></thead>
+      <tbody>
+        {% for u in usage %}
+        <tr><td>{{ u.date }}</td><td>{{ u.messages }}</td><td>{{ u.credits }}</td><td>{{ u.tokens }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="tab-pane" data-pane="conversations" hidden>
+  <div class="panel">
+    <div class="panel-title">Recent Conversations</div>
+    <table class="crm-table">
+      <thead><tr><th>Platform</th><th>Customer</th><th>AI Enabled</th><th>Messages</th><th>Updated</th></tr></thead>
+      <tbody>
+        {% for c in conversations %}
+        <tr>
+          <td><span class="pill pill-blue">{{ c.get_platform_display }}</span></td>
+          <td>{{ c.customer_name|default:c.customer_id }}</td>
+          <td>{% if c.is_ai_enabled %}<span class="pill pill-won">Yes</span>{% else %}<span class="pill pill-gray">No</span>{% endif %}</td>
+          <td>{{ c.bot_sent_count|add:c.customer_sent_count }}</td>
+          <td>{{ c.updated_at|timesince }} ago</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5"><div class="empty-state"><div class="es-title">No conversations yet</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-pane" data-pane="orders" hidden>
+  <div class="panel">
+    <div class="panel-title">Orders</div>
+    <table class="crm-table">
+      <thead><tr><th>Order</th><th>Amount</th><th>Status</th><th>Date</th></tr></thead>
+      <tbody>
+        {% for s in sales %}
+        <tr><td>{{ s.oid }}</td><td>৳{{ s.amount|floatformat:0 }}</td><td><span class="pill pill-{% if s.status == 'completed' %}won{% else %}blue{% endif %}">{{ s.get_status_display }}</span></td><td>{{ s.created_at|date:"M j, Y" }}</td></tr>
+        {% empty %}
+        <tr><td colspan="4"><div class="empty-state"><div class="es-title">No orders yet</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="tab-pane" data-pane="timeline" hidden>
+  <div class="panel">
+    <div class="panel-title">Timeline</div>
+    <div class="timeline">
+      {% for act in lead.activities.all %}
+      <div class="tl-item">
+        <div class="tl-title">{{ act.get_type_display }}</div>
+        <div class="tl-body">{{ act.description|default:"—" }}</div>
+        <div class="tl-meta">{{ act.created_by|default:"System" }} · {{ act.timestamp|date:"M j, Y · g:i A" }}</div>
+      </div>
+      {% empty %}
+      <div class="empty-state"><div class="es-title">No activity</div></div>
+      {% endfor %}
+    </div>
+    <form method="post" class="form-group" style="margin-top:16px;">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="note">
+      <textarea name="note" rows="3" placeholder="Internal note about this customer..."></textarea>
+      <button class="btn btn-soft" type="submit">Add Note</button>
+    </form>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.tab-nav .tab').forEach(tab => {
+  tab.addEventListener('click', (e) => {
+    e.preventDefault();
+    document.querySelectorAll('.tab-nav .tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.hidden = true);
+    tab.classList.add('active');
+    const pane = document.querySelector('[data-pane="' + tab.dataset.tab + '"]');
+    if (pane) pane.hidden = false;
+  });
+});
+</script>
+{% endblock %}

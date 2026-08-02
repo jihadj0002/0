@@ -1,0 +1,63 @@
+{% extends "crm/base.html" %}
+{% block title %}Companies — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Companies</h1>
+    <div class="page-sub">{{ page_obj.paginator.count }} companies</div>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="companyQuick()">+ New Company</button>
+  </div>
+</div>
+
+<div class="panel">
+  <form class="table-toolbar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search companies...">
+    <button class="btn btn-primary" type="submit">Search</button>
+    <a class="btn btn-outline" href="{% url 'crm:companies' %}">Reset</a>
+  </form>
+  <div class="table-wrap">
+    <table class="crm-table">
+      <thead><tr><th>Name</th><th>Industry</th><th>Website</th><th>Leads</th><th>Employees</th></tr></thead>
+      <tbody>
+        {% for c in companies %}
+        <tr>
+          <td><a href="{% url 'crm:company_detail' c.pk %}"><b>{{ c.name }}</b></a></td>
+          <td>{{ c.industry|default:"—" }}</td>
+          <td>{% if c.website %}<a href="{{ c.website }}" target="_blank">{{ c.website }}</a>{% else %}—{% endif %}</td>
+          <td><span class="pill pill-blue">{{ c.leads.count }}</span></td>
+          <td>{{ c.employees|default:"—" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5"><div class="empty-state"><div class="es-title">No companies yet</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}">«</a>{% endif %}
+    <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}">»</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function companyQuick() {
+  Crm.openModal('New Company', `
+    <form id="companyForm" method="post" action="/crm/companies/new/">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <div class="form-grid">
+        <div class="form-group full"><label>Name *</label><input name="name" required></div>
+        <div class="form-group"><label>Industry</label><input name="industry"></div>
+        <div class="form-group"><label>Website</label><input name="website"></div>
+        <div class="form-group"><label>Employees</label><input name="employees"></div>
+        <div class="form-group full"><label>Address</label><input name="address"></div>
+      </div>
+      <button class="btn btn-primary" type="submit">Create</button>
+    </form>`);
+}
+</script>
+{% endblock %}

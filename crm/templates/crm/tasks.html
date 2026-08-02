@@ -1,0 +1,81 @@
+{% extends "crm/base.html" %}
+{% block title %}Tasks — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Tasks</h1>
+    <div class="page-sub">{{ page_obj.paginator.count }} tasks</div>
+  </div>
+  <div class="page-actions"><button class="btn btn-primary" onclick="taskModal()">+ New Task</button></div>
+</div>
+
+<div class="panel">
+  <form class="table-toolbar" method="get">
+    <select name="status">
+      <option value="">All statuses</option>
+      <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
+      <option value="doing" {% if status == 'doing' %}selected{% endif %}>In Progress</option>
+      <option value="done" {% if status == 'done' %}selected{% endif %}>Done</option>
+      <option value="cancelled" {% if status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    <a class="btn btn-outline" href="{% url 'crm:tasks' %}">Reset</a>
+  </form>
+  <div class="table-wrap">
+    <table class="crm-table">
+      <thead><tr><th></th><th>Title</th><th>Lead</th><th>Assigned To</th><th>Priority</th><th>Deadline</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for t in tasks %}
+        <tr>
+          <td><input type="checkbox" {% if t.status == 'done' %}checked{% endif %} onchange="toggleTask({{ t.pk }})"></td>
+          <td><b>{{ t.title }}</b></td>
+          <td>{% if t.lead %}<a href="{% url 'crm:lead_detail' t.lead.pk %}">{{ t.lead.name }}</a>{% else %}—{% endif %}</td>
+          <td>{% if t.assigned_to %}{{ t.assigned_to.get_full_name|default:t.assigned_to.username }}{% else %}—{% endif %}</td>
+          <td><span class="pill {% if t.priority == 'high' %}pill-hot{% elif t.priority == 'medium' %}pill-warm{% else %}pill-cold{% endif %}">{{ t.get_priority_display }}</span></td>
+          <td>{% if t.deadline %}{{ t.deadline|date:"M j, g:i A" }}{% else %}—{% endif %}</td>
+          <td><span class="pill pill-blue">{{ t.get_status_display }}</span></td>
+          <td class="row-actions">
+            <button class="btn btn-sm btn-outline" onclick="if(confirm('Delete task?')){Crm.api('/crm/tasks/{{ t.pk }}/delete/','POST',{}).then(()=>location.reload())}">✕</button>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="8"><div class="empty-state"><div class="es-title">No tasks</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">«</a>{% endif %}
+    <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">»</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+const taskLeads = {{ leads_json|safe }};
+const taskStaff = {{ staff_json|safe }};
+function taskModal() {
+  Crm.openModal('New Task', `
+    <form id="taskForm" method="post" action="/crm/tasks/" class="form-grid">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <div class="form-group full"><label>Title *</label><input name="title" required></div>
+      <div class="form-group"><label>Lead</label>
+        <select name="lead"><option value="">— None —</option>${taskLeads.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Assigned To</label>
+        <select name="assigned_to"><option value="">— Me —</option>${taskStaff.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Priority</label>
+        <select name="priority"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
+      <div class="form-group"><label>Deadline</label><input name="deadline" data-datepicker></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Create</button></div>
+    </form>`);
+}
+async function toggleTask(pk) {
+  try {
+    await Crm.api('/crm/ajax/tasks/' + pk + '/toggle', 'POST', {});
+    setTimeout(() => location.reload(), 250);
+  } catch (err) { Crm.toast(err.message, 'error'); }
+}
+</script>
+{% endblock %}

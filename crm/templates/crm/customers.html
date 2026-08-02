@@ -1,0 +1,51 @@
+{% extends "crm/base.html" %}
+{% block title %}Customers — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Customers</h1>
+    <div class="page-sub">{{ page_obj.paginator.count }} won deals onboarded</div>
+  </div>
+</div>
+
+<div class="panel">
+  <form class="table-toolbar" method="get">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name, phone, email...">
+    <select name="status">
+      <option value="">All statuses</option>
+      <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+      <option value="churned" {% if status == 'churned' %}selected{% endif %}>Churned</option>
+    </select>
+    <button class="btn btn-primary" type="submit">Filter</button>
+    <a class="btn btn-outline" href="{% url 'crm:customers' %}">Reset</a>
+  </form>
+  <div class="table-wrap">
+    <table class="crm-table">
+      <thead><tr><th>Customer</th><th>Package</th><th>Monthly Value</th><th>Renewal</th><th>Status</th><th>Owner</th><th>Platform User</th></tr></thead>
+      <tbody>
+        {% for c in customers %}
+        <tr>
+          <td><a href="{% url 'crm:customer_detail' c.pk %}"><b>{{ c.lead.name }}</b></a>
+            <div class="form-help">{{ c.lead.phone|default:"" }}</div></td>
+          <td><span class="pill pill-blue">{{ c.package|default:"—" }}</span></td>
+          <td>{% if c.monthly_value %}৳{{ c.monthly_value|floatformat:0 }}{% else %}—{% endif %}</td>
+          <td>{{ c.renewal|date:"M j, Y"|default:"—" }}</td>
+          <td>{% if c.status == 'active' %}<span class="pill pill-won">Active</span>{% else %}<span class="pill pill-lost">Churned</span>{% endif %}</td>
+          <td>{% if c.owner %}{{ c.owner.get_full_name|default:c.owner.username }}{% else %}—{% endif %}</td>
+          <td>{% if c.platform_user %}<span class="pill pill-gray">@{{ c.platform_user.username }}</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7"><div class="empty-state"><div class="es-title">No customers yet</div><div class="es-sub">Convert a won lead to onboard your first customer.</div></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if page_obj.paginator.num_pages > 1 %}
+  <div class="pagination">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}{% if q %}&q={{ q }}{% endif %}">«</a>{% endif %}
+    <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if q %}&q={{ q }}{% endif %}">»</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

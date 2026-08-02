@@ -1,0 +1,40 @@
+{% extends "crm/base.html" %}
+{% block title %}{% if lead %}Edit Lead{% else %}New Lead{% endif %} — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{% if lead %}Edit Lead — {{ lead.name }}{% else %}New Lead{% endif %}</h1>
+    {% if lead %}<div class="page-sub"><a href="{% url 'crm:lead_detail' lead.pk %}">← Back to lead</a></div>{% endif %}
+  </div>
+</div>
+
+<div class="panel" style="max-width: 760px;">
+  <form method="post" class="form-grid">
+    {% csrf_token %}
+    <div class="form-group"><label>Name *</label><input name="name" value="{{ lead.name|default:'' }}" required></div>
+    <div class="form-group"><label>Phone</label><input name="phone" value="{{ lead.phone|default:'' }}"></div>
+    <div class="form-group"><label>Email</label><input name="email" type="email" value="{{ lead.email|default:'' }}"></div>
+    <div class="form-group"><label>Source</label>
+      <select name="source">
+        {% for value, label in lead_sources %}<option value="{{ value }}" {% if lead.source == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group"><label>Company</label>
+      <select name="company">
+        <option value="">— None —</option>
+        {% for c in companies %}<option value="{{ c.pk }}" {% if lead.company_id == c.pk %}selected{% endif %}>{{ c.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="form-group"><label>Website</label><input name="website" value="{{ lead.website|default:'' }}"></div>
+    <div class="form-group"><label>Industry</label><input name="industry" value="{{ lead.industry|default:'' }}"></div>
+    <div class="form-group"><label>Budget (৳)</label><input name="budget" value="{{ lead.budget|default:'' }}"></div>
+    <div class="form-group"><label>Expected Value (৳)</label><input name="expected_value" value="{{ lead.expected_value|default:'' }}"></div>
+    <div class="form-group"><label>Next Follow-up</label><input name="next_followup" data-datepicker value="{{ lead.next_followup|date:'Y-m-d H:i'|default:'' }}"></div>
+    <div class="form-group full"><label>Notes</label><textarea name="notes" rows="4">{{ lead.notes|default:'' }}</textarea></div>
+    <div class="form-group full"><label>Tags (comma separated)</label><input name="tags" value="{{ lead.tags|join:', ' }}"></div>
+    <div class="form-group full">
+      <button class="btn btn-primary" type="submit">{% if lead %}Save Changes{% else %}Create Lead{% endif %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

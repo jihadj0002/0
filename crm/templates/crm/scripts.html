@@ -1,0 +1,64 @@
+{% extends "crm/base.html" %}
+{% block title %}Sales Scripts — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Sales Scripts</h1>
+    <div class="page-sub">Your playbook for every stage of the sale</div>
+  </div>
+  {% if role == 'owner' or role == 'manager' %}
+  <div class="page-actions"><button class="btn btn-primary" onclick="scriptModal()">+ New Script</button></div>
+  {% endif %}
+</div>
+
+<div class="table-toolbar">
+  {% for value, label in categories %}
+  <a class="btn btn-sm {% if category == value %}btn-primary{% else %}btn-outline{% endif %}" href="{% url 'crm:scripts' %}{% if value %}?category={{ value }}{% endif %}">{{ label }}</a>
+  {% endfor %}
+</div>
+
+<div class="grid-2">
+  {% for s in scripts %}
+  <div class="panel">
+    <div class="panel-title">
+      {{ s.title }}
+      <span class="pill {% if s.active %}pill-won{% else %}pill-lost{% endif %}">{{ s.active|yesno:"Active,Inactive" }}</span>
+      <span class="flex-spacer"></span>
+      {% if role == 'owner' or role == 'manager' %}
+      <button class="btn btn-sm btn-outline" onclick="toggleScript({{ s.pk }})">{{ s.active|yesno:"Deactivate,Activate" }}</button>
+      {% endif %}
+    </div>
+    <pre class="script-content" style="white-space:pre-wrap; font-family:inherit; font-size:.88rem; color:#334155; margin:0;">{{ s.content }}</pre>
+    <button class="btn btn-soft btn-sm" style="margin-top:12px;" onclick="copyScript(this)">📋 Copy</button>
+  </div>
+  {% empty %}
+  <div class="panel"><div class="empty-state"><div class="es-title">No scripts in this category</div></div></div>
+  {% endfor %}
+</div>
+
+<script>
+function scriptModal() {
+  Crm.openModal('New Script', `
+    <form method="post" action="{% url 'crm:scripts' %}" class="form-grid">
+      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+      <div class="form-group full"><label>Title</label><input name="title" required></div>
+      <div class="form-group full"><label>Category</label>
+        <select name="category">
+          {% for value, label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select></div>
+      <div class="form-group full"><label>Content</label><textarea name="content" rows="10" placeholder="1. Opening&#10;2. Qualify&#10;3. Close"></textarea></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save Script</button></div>
+    </form>`);
+}
+async function toggleScript(pk) {
+  try {
+    await Crm.api('/crm/scripts/' + pk + '/toggle', 'POST', {});
+    setTimeout(() => location.reload(), 250);
+  } catch (err) { Crm.toast(err.message, 'error'); }
+}
+function copyScript(btn) {
+  const text = btn.closest('.panel').querySelector('.script-content').innerText;
+  navigator.clipboard.writeText(text).then(() => Crm.toast('Script copied', 'success'));
+}
+</script>
+{% endblock %}
