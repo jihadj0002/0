@@ -1,3 +1,4 @@
+import json
 import logging
 
 import requests
@@ -7,6 +8,30 @@ from back.models import Integration
 logger = logging.getLogger(__name__)
 
 GRAPH_API_BASE = "https://graph.facebook.com/v19.0"
+
+# ERP/3rd-party CDNs are often unreachable from the platform's fetch servers
+# (Facebook's URL fetcher, WhatsApp/Telegram servers) even though the URL works
+# from our own network. Reliable path: download the bytes ourselves and upload
+# them as binary media. Fall back to URL payloads only when the download fails.
+_IMAGE_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+             "Chrome/120.0 Safari/537.36")
+_MAX_IMAGE_BYTES = 15 * 1024 * 1024
+
+
+def _download_image(url, timeout=25):
+    """Download image bytes for binary upload. Returns (bytes|None, error|None)."""
+    try:
+        resp = requests.get(
+            url, timeout=timeout,
+            headers={"User-Agent": _IMAGE_UA, "Accept": "image/*"},
+        )
+        if resp.status_code != 200:
+            return None, f"download {resp.status_code}"
+        if len(resp.content) > _MAX_IMAGE_BYTES:
+            return None, "image too large"
+        return resp.content, None
+    except requests.RequestException as exc:
+        return None, str(exc)[:100]
 
 
 def _normalize_texts(text):
@@ -100,7 +125,22 @@ def _whatsapp(conversation, integration, texts, image_urls, product_cards=None):
         if ok:
             sent["images"] += 1
         else:
-            errors.append(err)
+            media_id, media_err = _whatsapp_upload_media(url, headers, img_url)
+            if media_id:
+                ok2, err2 = _post(url, headers, {
+                    "messaging_product": "whatsapp",
+                    "to": to,
+                    "type": "image",
+                    "image": {"id": media_id},
+                })
+                if ok2:
+                    sent["images"] += 1
+                else:
+                    errors.append(err2)
+            else:
+                errors.append(err)
+                if media_err:
+                    errors.append(media_err)
 
     for text in texts:
         ok, err = _post(url, headers, {
@@ -169,10 +209,7 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
                 errors.append(err)
 
     for img_url in _public_urls(image_urls)[:5]:
-        ok, err = _post(url, headers, {
-            "recipient": recipient,
-            "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
-        })
+        ok, err = _messenger_send_image(url, headers, recipient, img_url)
         if ok:
             sent["images"] += 1
         else:
@@ -186,6 +223,51 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
             errors.append(err)
 
     return {"ok": not errors, "sent": sent, "errors": errors}
+
+
+def _messenger_send_image(url, headers, recipient, img_url):
+    """Send one image to Messenger. Binary upload first (the platform cannot
+    fetch many external CDNs — ERP etc. — by URL), URL payload as fallback."""
+    data, err = _download_image(img_url)
+    if data is not None:
+        try:
+            resp = requests.post(
+                url,
+                headers=headers,
+                params={"access_token": _bearer_token(headers)},
+                timeout=45,
+                files={"filedata": ("image.jpg", data, "image/jpeg")},
+                data={
+                    "recipient": json.dumps(recipient),
+                    "message": json.dumps({
+                        "attachment": {"type": "image", "payload": {"is_reusable": True}},
+                    }),
+                },
+            )
+            if resp.ok:
+                return True, None
+            msg = f"{url} binary upload: {resp.text[:200]}"
+            logger.warning("Platform send failed %s", msg)
+            return False, msg
+        except requests.RequestException as exc:
+            msg = f"{url} binary upload request error: {exc}"
+            logger.warning("Platform send request error: %s", exc)
+            return False, msg
+
+    msg = f"{url} image download failed ({err}) — falling back to URL payload"
+    logger.warning("%s", msg)
+    return _post(url, headers, {
+        "recipient": recipient,
+        "message": {"attachment": {"type": "image", "payload": {"url": img_url, "is_reusable": True}}},
+    })
+
+
+def _bearer_token(headers):
+    """Extract the bearer token from a headers dict ('Bearer xxx')."""
+    auth = (headers or {}).get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[7:]
+    return ""
 
 
 def _telegram(conversation, integration, texts, image_urls, product_cards=None):
@@ -211,7 +293,7 @@ def _telegram(conversation, integration, texts, image_urls, product_cards=None):
             errors.append(err)
 
     for img_url in _public_urls(image_urls)[:5]:
-        ok, err = _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
+        ok, err = _telegram_send_photo(base, chat_id, img_url)
         if ok:
             sent["images"] += 1
         else:
@@ -225,6 +307,49 @@ def _telegram(conversation, integration, texts, image_urls, product_cards=None):
             errors.append(err)
 
     return {"ok": not errors, "sent": sent, "errors": errors}
+
+
+def _whatsapp_upload_media(url, headers, img_url):
+    """Download an image and upload it to WhatsApp as reusable media.
+    Returns (media_id|None, error|None)."""
+    data, err = _download_image(img_url)
+    if data is None:
+        return None, err or "download failed"
+    try:
+        import re as _re
+        mime = "image/png" if img_url.lower().endswith(".png") else "image/jpeg"
+        upload_url = _re.sub(r"/messages$", "/media", url)
+        resp = requests.post(
+            upload_url, headers=headers, timeout=45,
+            files={"file": ("image.jpg", data, mime)},
+            data={"messaging_product": "whatsapp", "type": mime},
+        )
+        if resp.ok:
+            return (resp.json().get("id") or None), None
+        return None, f"WA media upload: {resp.text[:150]}"
+    except (requests.RequestException, ValueError) as exc:
+        return None, f"WA media upload error: {exc}"
+
+
+def _telegram_send_photo(base, chat_id, img_url):
+    """Send one photo to Telegram. Binary upload first, URL as fallback."""
+    data, err = _download_image(img_url)
+    if data is not None:
+        try:
+            resp = requests.post(
+                f"{base}/sendPhoto",
+                timeout=45,
+                data={"chat_id": chat_id},
+                files={"photo": ("photo.jpg", data, "image/jpeg")},
+            )
+            if resp.ok:
+                return True, None
+            return False, f"sendPhoto binary: {resp.text[:200]}"
+        except requests.RequestException as exc:
+            return False, f"sendPhoto binary request error: {exc}"
+
+    logger.warning("%s image download failed (%s) — URL fallback", img_url, err)
+    return _post(f"{base}/sendPhoto", {}, {"chat_id": chat_id, "photo": img_url})
 
 
 def _card_caption(card):
