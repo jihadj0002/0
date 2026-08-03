@@ -49,10 +49,35 @@
   const drawerEl = document.getElementById('crmDrawer');
   const drawerBackdrop = document.getElementById('crmDrawerBackdrop');
   let restoreFocusEl = null;
+  let scrollYPos = 0;
 
-  function lockScroll() { document.body.style.overflow = 'hidden'; }
+  /* Lock scrolling on BOTH <html> and <body> plus a position:fixed fallback —
+     body{overflow:hidden} alone does NOT stop iOS Safari from scrolling, which
+     made fixed modal/drawer elements appear off-screen on mobile. */
+  function lockScroll() {
+    if (document.body.dataset.crmLocked) return;
+    document.body.dataset.crmLocked = '1';
+    scrollYPos = window.scrollY;
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+    document.body.style.position = 'fixed';
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.top = '-' + scrollYPos + 'px';
+  }
   function unlockScroll() {
-    if (modalEl.hidden && drawerEl.hidden) document.body.style.overflow = '';
+    if (!document.body.dataset.crmLocked) return;
+    delete document.body.dataset.crmLocked;
+    const y = scrollYPos || 0;
+    document.documentElement.style.overflow = '';
+    document.body.style.overflow = '';
+    document.body.style.overscrollBehavior = '';
+    document.body.style.position = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.top = '';
+    window.scrollTo(0, y);
   }
   function focusFirst(el) {
     const f = el.querySelector('input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');

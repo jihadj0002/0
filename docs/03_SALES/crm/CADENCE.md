@@ -1,6 +1,8 @@
 # Follow-Up Cadence Playbook
 
 **Rule**: Every prospect gets touched until they say yes, no, or stop replying after 5 touches.
+**Pricing**: `00_CONTEXT/pricing.md` (999 / 2499 / 4999). NEVER quote "zero cost" or "1 taka" — that was pre-launch wording and is no longer true.
+**Scripts**: `call_faq/call-script.md` + `call_faq/text-script.md`.
 
 ---
 
@@ -57,7 +59,7 @@
 - "দেখেছেন? কোনো প্রশ্ন থাকলে বলবেন। আমরা setup করে দিতে পারি ১০ মিনিটে।"
 
 **Day 3 after demo if no response**:
-- "একটা special offer আছে — প্রথম মাস ফ্রি। আজই শুরু করতে পারেন।"
+- "আমাদের একটা অফার আছে — মালিকের কাছ থেকে কনফার্ম করে জানাচ্ছি। আপনার কী মনে হলো ডেমোটা?"
 
 ---
 
@@ -81,7 +83,7 @@
 |-------|--------|--------|
 | 1 | 48h after last message | "দেখেছেন? কোনো প্রশ্ন থাকলে বলবেন।" |
 | 2 | Day 5 | Share a relevant tip/insight (value-add, no pitch) |
-| 3 | Day 10 | "আমরা launch offer দিচ্ছি — first 10 customers পাচ্ছেন lifetime discount. Interested?" |
+| 3 | Day 10 | "আমরা launch offer দিচ্ছি — প্রথম ১০ কাস্টমারের জন্য বিশেষ অফার (Jihad-অনুমোদিত)। Interested?" |
 | 4 | Day 14 | "এখনো সময় আছে। জানাবেন।" → move to Lost |
 
 ---
@@ -105,5 +107,5 @@
 | Opening | "আপনার পেজে customers message দিলে কতক্ষণের মধ্যে reply পান?" |
 | Pain | "অনেক seller বলেন, reply দিতে দেরি হলে customer চলে যায়" |
 | Solution | "MatrixAI instant reply দেয় — আপনার customer কে product দেখায়, কথা বলে, অর্ডার নেয়" |
-| Price | "প্রায় zero cost — 1 taka max per customer" |
+| Price | "মাসে ৯৯৯ টাকা থেকে শুরু — দিনে মাত্র ৩৩ টাকা। ডেমোটা দেখেন তো?" |
 | Close | "চলুন ১০ মিনিটে setup করে দিই, আপনি নিজেই দেখুন" |

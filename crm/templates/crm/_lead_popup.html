@@ -54,6 +54,22 @@
   </div>
   {% endif %}
 
+  {% if can_edit %}
+  <div class="popup-block">
+    <div class="popup-label">Change Stage</div>
+    <form class="stage-form" data-lead-id="{{ lead.pk }}">
+      <div class="stage-form-row">
+        <select name="stage" class="stage-select">
+          {% for s in stages %}
+          <option value="{{ s.pk }}" {% if lead.stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
+          {% endfor %}
+        </select>
+        <button class="btn btn-primary btn-sm" type="submit">Update</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   {% if recent_activities %}
   <div class="popup-block">
     <div class="popup-label">Recent Activity</div>

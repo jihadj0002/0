@@ -153,6 +153,23 @@ Enforcement: `@crm_role_required("manager", "owner")` decorator + a small middle
 - [x] 4.6 Tests: services, permissions, lead lifecycle, stage transitions + full suite run (16/16 OK)
 - [x] 4.7 Polish: empty states, toasts, responsive, final seed pass
 
+### Phase 5 — Follow-up round (2026-08-03)
+- [x] 5.1 Mobile fixes: Quick-add modal becomes a bottom sheet ≤960px; "Save Lead" button sticky (`.quick-save`); drawer uses explicit `100dvh` height; `lockScroll()` hardened (html+body overflow + `position:fixed` fallback) so fixed modal/drawer no longer render off-screen on iOS Safari
+- [x] 5.2 Lead drawer stage change: `_lead_popup.html` gets a "Change Stage" select (owner/manager or assigned staff only via `can_edit`); `ajax_quick_update` accepts `field=stage` (resolves PipelineStage → `update_lead` → activity log + won/lost auto-convert); drawer + table stage pill refresh via JS
+- [x] 5.3 Learn hub (Resources → Learn): `LearningTopic` + `LearningArticle` (CKEditor5 rich content), `/crm/learn/` + `/crm/learn/<slug>/` two-column layout (sticky topic sidebar), admin-registered, `seed_learn` management command converts `docs/sales-enablement` markdown → HTML (7 training modules + overview + playbook + video demo plan + master scripts: call script, cadence, pipeline, contact log = 14 articles)
+- [x] 5.4 Tests: DrawerStageTests (6) + LearnTests (6); full suite 45/45 OK (run with `POSTGRES_LOCALLY=False` for speed — remote Postgres adds ~0.3s/query)
+- [x] 5.5 Learn UX redesign v2: topic sidebar/accordion removed entirely — navigation is only a styled jump dropdown (`.learn-jump-wrap` label + `.learn-jump` select, optgroups per topic, `font-size:16px` to prevent iOS zoom, navigates on change). Mobile tables ≤560px render as stacked cards: `thead` hidden, each `tr` = rounded card, each `td` = flex row with `td::before { content: attr(data-label) }` label column (thinner, bold, left) + value right-aligned — no more horizontal overflow or column mixing
+- [x] 5.6 Seed parser fix: `seed_learn` markdown table parser flushed per row (each `|` line became its own 1-row table with data row misread as headers — the "text going vertical / tables mixed up" bug on mobile); fixed to only flush when no table in progress; re-seeded local SQLite **and** remote Railway Postgres (14 articles, tables now one `<table>` with real `<thead>/<tbody>` rows). Static `crm.css`/`crm.js` re-uploaded to Cloudflare R2 (CDN verified: `.learn-jump-wrap` live, `.learn-side` gone)
+
+### Phase 6 — Content overhaul (2026-08-04)
+- [x] 6.1 Created missing canonical docs: `00_CONTEXT/pricing.md` (plan table 999/2499/4999 + plan-picker + daily-cost anchors + no-discount rules + commission ref) and `00_CONTEXT/features_bengali.md` (10 features benefit-first, channels, setup, compliance, demo vocabulary) — both were referenced by 5 docs but didn't exist
+- [x] 6.2 FAQ v3.0 (`call_faq/faq.md`): TL;DR quick-answers table for the 7 most-asked questions, 4 new Q&As (post-signup onboarding, test-before-pay, bot-averse customers, tech skills), expanded agent Answer Bank (setup time, discounts, plan picker)
+- [x] 6.3 Scripts: `call-script.md` v2.1 — added Call Types (cold/callback/demo openers), guarantee scoped to first-week money-back (Jihad-confirmed, no Enterprise promises); `text-script.md` v2.1 — BD send-time window (Tue-Thu, 10-14h & 19-22h), "every message ends with a question" rule, silent-objection handling
+- [x] 6.4 Fixed contradictions: CADENCE.md "1 taka max per customer" (pre-launch wording) → 999/month daily-cost anchor; "প্রথম মাস ফ্রি" → Jihad-approved offer wording; launch offer tagged "first 10, Jihad-approved"
+- [x] 6.5 Training: playbook curriculum 7 → 9 modules (Day 8 qualification + Day 9 psychology checks); module-01 "5 plans" → 4 plans + daily anchors; module-03 opening aligned with call-script v2; module-07 added bonus Section F quiz (Q21-24); TRAINING-INDEX broken `../scripts/` links → `../../call_faq/`
+- [x] 6.6 Consolidated duplicates: deleted `00_CONTEXT/faq.md` + `03_SALES/scripts/*` (identical copies); canonical = `call_faq/`; seed + all doc links point there
+- [x] 6.7 `seed_learn` now also seeds the CRM FAQ page (`/crm/faq/`) from `call_faq/faq.md` (numbered `###` questions → FAQ rows with section categories; 44 rows, `tenant__isnull=True`, idempotent) + 2 new Learn articles (`product-features`, `product-pricing`); 20 articles total; junk "T" topic deleted; re-seeded local SQLite + remote Postgres (20 articles / 46 FAQs both); crm suite 31/31 OK
+
 ## 7. Verification
 
 - `python manage.py makemigrations crm && python manage.py migrate`

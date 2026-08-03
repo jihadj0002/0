@@ -1,0 +1,62 @@
+{% extends "crm/base.html" %}
+{% block title %}{% if article %}{{ article.title }} — Learn{% else %}Learn — Matrix CRM{% endif %}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Learn</h1>
+    <div class="page-sub">Sales training hub — study one module per day</div>
+  </div>
+  {% if role == 'owner' or role == 'manager' %}
+  <div class="page-actions">
+    <a class="btn btn-soft" href="/admin/crm/learningarticle/add/">+ New Article</a>
+    {% if article %}<a class="btn btn-outline" href="/admin/crm/learningarticle/{{ article.pk }}/change/">Edit</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{% if article %}
+  {% if topics %}
+  <div class="learn-jump-wrap">
+    <label class="learn-jump-label" for="learnJump">Jump to topic or article</label>
+    <select class="learn-jump" id="learnJump" aria-label="Jump to a topic or article">
+      <option value="" disabled selected>Go to article…</option>
+      {% for topic in topics %}
+      <optgroup label="{{ topic.name }}">
+        {% for a in topic.articles.all %}
+          {% if a.active %}
+          <option value="{{ a.slug }}" {% if article.pk == a.pk %}selected{% endif %}>{{ a.title }}</option>
+          {% endif %}
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+  <article class="panel learn-article">
+    <h1 class="learn-title">{{ article.title }}</h1>
+    {% if article.summary %}<div class="learn-summary">{{ article.summary }}</div>{% endif %}
+    <div class="learn-content">{{ article_content|safe }}</div>
+    <div class="learn-foot">
+      <span class="pill pill-gray">{{ article.topic.name }}</span>
+      <span class="flex-spacer"></span>
+      <a class="btn btn-soft btn-sm" href="{% url 'crm:learn' %}">All articles</a>
+    </div>
+  </article>
+{% else %}
+<div class="panel empty-state">
+  <div class="es-icon">📘</div>
+  <div class="es-title">No learning content yet</div>
+  <div class="es-sub">Seed it with <code>python manage.py seed_learn</code> or add articles from Django admin.</div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  const jump = document.getElementById('learnJump');
+  if (!jump) return;
+  jump.addEventListener('change', () => {
+    if (jump.value) location.href = '/crm/learn/' + jump.value + '/';
+  });
+})();
+</script>
+{% endblock %}

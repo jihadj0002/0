@@ -21,6 +21,7 @@ Context.__copy__ = _safe_context_copy
 from crm.models import (
     StaffProfile, PipelineStage, Lead, Company, Activity, Customer,
     CallLog, Meeting, Task, Followup, Notification,
+    LearningTopic, LearningArticle,
 )
 from crm.services import (
     create_lead, update_lead, add_note, convert_lead, complete_followup,
@@ -232,3 +233,144 @@ class ViewSmokeTests(CrmBaseTestCase):
         resp = c.get("/crm/ajax/search?q=Ajax")
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(resp.json()["results"])
+
+
+class DrawerStageTests(CrmBaseTestCase):
+    """Stage change from the lead drawer via ajax_quick_update(field=stage)."""
+
+    def test_assigned_staff_can_change_stage(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Mine", phone="+8801788", assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "stage", "value": self.won_stage.pk})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["stage_name"], "Won")
+        self.assertTrue(data["won"])
+        lead.refresh_from_db()
+        self.assertEqual(lead.stage, self.won_stage)
+        self.assertTrue(lead.activities.filter(type="status_change").exists())
+
+    def test_staff_can_change_stage_on_unassigned_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Open", phone="+8801799")
+        self.assertIsNone(lead.assigned_to)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "stage", "value": self.won_stage.pk})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+
+    def test_staff_cannot_change_stage_on_others_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        other = User.objects.create_user(username="other_staff", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        lead, _ = create_lead(self.owner, name="Theirs", phone="+8801800", assigned_to=other)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "stage", "value": self.won_stage.pk})
+        self.assertEqual(resp.status_code, 404)  # invisible to unrelated staff
+        lead.refresh_from_db()
+        self.assertNotEqual(lead.stage, self.won_stage)
+
+    def test_invalid_stage_returns_404(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Bad Stage", phone="+8801811", assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "stage", "value": 99999})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_popup_includes_stage_selector_for_assigned_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Popup Stage", phone="+8801822", assigned_to=self.staff)
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn("Change Stage", body)
+        self.assertIn(f'value="{self.new_stage.pk}"', body)
+
+    def test_popup_hides_stage_selector_from_unrelated_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        other = User.objects.create_user(username="other_staff2", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        lead, _ = create_lead(self.owner, name="Hidden", phone="+8801833", assigned_to=other)
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        self.assertEqual(resp.status_code, 404)
+
+
+class LearnTests(CrmBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.topic = LearningTopic.objects.create(name="Training", slug="training", order=1)
+        self.article = LearningArticle.objects.create(
+            topic=self.topic, slug="test-module", title="Test Module",
+            summary="A summary",
+            content="<h2>Heading</h2><table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>",
+            order=1,
+        )
+        self.article2 = LearningArticle.objects.create(
+            topic=self.topic, slug="test-module-2", title="Test Module 2",
+            content="<p>Second</p>", order=2,
+        )
+
+    def test_learn_index_redirects_to_first_article(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/learn/")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/crm/learn/test-module/", resp.url)
+
+    def test_learn_article_renders_content_for_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get("/crm/learn/test-module/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn("Test Module", body)
+        self.assertIn("<h2>Heading</h2>", body)
+        self.assertIn('id="learnJump"', body)  # jump dropdown is the only nav
+        self.assertNotIn("learn-side", body)  # sidebar removed
+
+    def test_learn_tables_wrapped_with_cell_labels(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get("/crm/learn/test-module/")
+        body = resp.content.decode()
+        self.assertIn('<div class="tbl-scroll"><table>', body)
+        self.assertNotIn("<h2>Heading</h2><table>", body)  # table not bare inside content
+        self.assertIn('data-label="A"', body)  # cell labels from header row
+        self.assertIn('data-label="B"', body)
+
+    def test_learn_requires_login(self):
+        from django.test import Client
+        c = Client()
+        resp = c.get("/crm/learn/test-module/")
+        self.assertEqual(resp.status_code, 302)
+        self.assertIn("/login", resp.url)
+
+    def test_inactive_article_404(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        self.article2.active = False
+        self.article2.save()
+        resp = c.get("/crm/learn/test-module-2/")
+        self.assertEqual(resp.status_code, 404)
+
+    def test_seed_learn_is_idempotent(self):
+        from django.core.management import call_command
+        call_command("seed_learn")
+        first_count = LearningArticle.objects.filter(active=True).count()
+        self.assertGreaterEqual(first_count, 14)
+        call_command("seed_learn")
+        self.assertEqual(LearningArticle.objects.filter(active=True).count(), first_count)

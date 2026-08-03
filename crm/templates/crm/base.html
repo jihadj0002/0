@@ -40,15 +40,17 @@
       </a>
 
       <div class="nav-section">Activities</div>
+      <a href="{% url 'crm:followups' %}" class="nav-item {% if request.resolver_match.url_name == 'followups' %}active{% endif %}">
+        <span class="ni">⏱</span> Follow-ups
+      </a>
+      
       <a href="{% url 'crm:calls' %}" class="nav-item {% if request.resolver_match.url_name == 'calls' %}active{% endif %}">
         <span class="ni">☏</span> Calls
       </a>
       <a href="{% url 'crm:demos' %}" class="nav-item {% if request.resolver_match.url_name == 'demos' %}active{% endif %}">
         <span class="ni">▶</span> Meetings &amp; Demos
       </a>
-      <a href="{% url 'crm:followups' %}" class="nav-item {% if request.resolver_match.url_name == 'followups' %}active{% endif %}">
-        <span class="ni">⏱</span> Follow-ups
-      </a>
+      
       <a href="{% url 'crm:calendar' %}" class="nav-item {% if request.resolver_match.url_name == 'calendar' %}active{% endif %}">
         <span class="ni">📅</span> Calendar
       </a>
@@ -62,6 +64,9 @@
       </a>
       <a href="{% url 'crm:faq' %}" class="nav-item {% if request.resolver_match.url_name == 'faq' %}active{% endif %}">
         <span class="ni">?</span> FAQ
+      </a>
+      <a href="{% url 'crm:learn' %}" class="nav-item {% if request.resolver_match.url_name|slice:':5' == 'learn' %}active{% endif %}">
+        <span class="ni">📘</span> Learn
       </a>
 
       {% if role in 'manager,owner' %}

@@ -3,6 +3,7 @@ from django.contrib import admin
 from .models import (
     StaffProfile, PipelineStage, Company, Lead, Activity, CallLog, Meeting,
     Task, Followup, SalesScript, FAQ, Customer, Notification, CrmSetting,
+    LearningTopic, LearningArticle,
 )
 
 
@@ -92,3 +93,21 @@ class NotificationAdmin(admin.ModelAdmin):
 @admin.register(CrmSetting)
 class CrmSettingAdmin(admin.ModelAdmin):
     list_display = ["key", "value"]
+
+
+@admin.register(LearningTopic)
+class LearningTopicAdmin(admin.ModelAdmin):
+    list_display = ["name", "slug", "order", "description"]
+    list_editable = ["order"]
+    prepopulated_fields = {"slug": ["name"]}
+    search_fields = ["name"]
+
+
+@admin.register(LearningArticle)
+class LearningArticleAdmin(admin.ModelAdmin):
+    list_display = ["title", "topic", "order", "active", "updated_at"]
+    list_filter = ["topic", "active"]
+    list_editable = ["order", "active"]
+    prepopulated_fields = {"slug": ["title"]}
+    search_fields = ["title", "summary"]
+    autocomplete_fields = ["topic"]

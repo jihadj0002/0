@@ -1,6 +1,8 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.utils.text import slugify
+from django_ckeditor_5.fields import CKEditor5Field
 from shortuuid.django_fields import ShortUUIDField
 
 # -----------------------
@@ -429,3 +431,56 @@ class CrmSetting(models.Model):
 
     def __str__(self):
         return self.key
+
+
+# -----------------------
+# Learn (sales training hub)
+# -----------------------
+class LearningTopic(models.Model):
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=140, unique=True)
+    description = models.CharField(max_length=300, blank=True, default="")
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "name"]
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+
+class LearningArticle(models.Model):
+    topic = models.ForeignKey(
+        LearningTopic, on_delete=models.CASCADE, related_name="articles"
+    )
+    title = models.CharField(max_length=200)
+    slug = models.SlugField(max_length=220, unique=True)
+    summary = models.TextField(blank=True, default="")
+    content = CKEditor5Field(config_name="blog")
+    order = models.PositiveIntegerField(default=0)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["topic__order", "order", "title"]
+
+    def __str__(self):
+        return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base_slug = slugify(self.title)
+            slug = base_slug
+            counter = 1
+            while LearningArticle.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                slug = f"{base_slug}-{counter}"
+                counter += 1
+            self.slug = slug
+        super().save(*args, **kwargs)

@@ -8,6 +8,7 @@ from django.views.decorators.http import require_POST, require_GET
 from django.core.paginator import Paginator
 from django.contrib import messages
 import json
+import re
 
 from .permissions import staff_required, crm_role_required
 from .services import (
@@ -17,6 +18,7 @@ from .services import (
 from .models import (
     Lead, Activity, Followup, Meeting, Task, CallLog, Company, Customer,
     PipelineStage, SalesScript, FAQ, Notification, StaffProfile,
+    LearningTopic, LearningArticle,
 )
 
 
@@ -399,10 +401,17 @@ def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
     field = request.POST.get("field")
     value = request.POST.get("value")
-    allowed = {"score", "budget", "expected_value", "next_followup"}
-    if field in allowed and (can_manage(request.user) or lead.assigned_to_id == request.user.id):
+    allowed = {"score", "budget", "expected_value", "next_followup", "stage"}
+    if field in allowed and (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
         if field == "score":
             value = max(0, min(100, int(value or 0)))
+        if field == "stage":
+            stage = get_object_or_404(PipelineStage, pk=value, tenant__isnull=True)
+            update_lead(request.user, lead, stage=stage)
+            return JsonResponse({
+                "ok": True, "stage_name": stage.name,
+                "won": lead.is_won(), "lost": lead.is_lost(),
+            })
         update_lead(request.user, lead, **{field: value or None})
         return JsonResponse({"ok": True})
     return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
@@ -428,7 +437,16 @@ def ajax_lead_popup(request, pk):
         pk=pk,
     )
     recent_activities = lead.activities.select_related("created_by")[:4]
-    return render(request, "crm/_lead_popup.html", {"lead": lead, "recent_activities": recent_activities})
+    can_edit = (
+        can_manage(request.user)
+        or lead.assigned_to_id == request.user.id
+        or lead.assigned_to_id is None
+    )
+    stages = PipelineStage.objects.filter(tenant__isnull=True).order_by("order")
+    return render(request, "crm/_lead_popup.html", {
+        "lead": lead, "recent_activities": recent_activities,
+        "stages": stages, "can_edit": can_edit,
+    })
 
 
 @staff_required
@@ -845,6 +863,77 @@ def faq(request):
         "role": get_role(request.user),
     }
     return render(request, "crm/faq.html", context)
+
+
+# ============================================================
+# LEARN (training hub)
+# ============================================================
+_TABLE_WRAP_RE = re.compile(r"(<table[^>]*>.*?</table>)", re.S)
+
+
+def _responsive_tables(html):
+    """Wrap tables for horizontal scroll and tag every <td> with a data-label
+    taken from its header cell so mobile can render stacked card rows."""
+    from html import escape
+
+    def handle_table(match):
+        table = match.group(0)
+        headers = []
+        thead = re.search(r"<thead[^>]*>(.*?)</thead>", table, re.S)
+        if thead:
+            headers = [re.sub(r"<[^>]+>", " ", h) for h in re.findall(r"<th[^>]*>(.*?)</th>", thead.group(1), re.S)]
+        if not headers:
+            first_tr = re.search(r"<tr[^>]*>(.*?)</tr>", table, re.S)
+            if first_tr:
+                headers = [re.sub(r"<[^>]+>", " ", h) for h in re.findall(r"<th[^>]*>(.*?)</th>", first_tr.group(1), re.S)]
+        if not headers:
+            return table
+        headers = [" ".join(h.split()) for h in headers]
+
+        def handle_row(row_match):
+            row = row_match.group(0)
+            cells = list(re.finditer(r"<td([^>]*)>(.*?)</td>", row, re.S))
+            if not cells:
+                return row
+            out = []
+            for i, cell in enumerate(cells):
+                attrs, inner = cell.group(1), cell.group(2)
+                label = escape(headers[i] if i < len(headers) else "", quote=True)
+                out.append(f'<td{attrs} data-label="{label}">{inner}</td>')
+            return re.sub(r"<td[^>]*>.*?</td>", lambda _: out.pop(0), row, flags=re.S)
+
+        return re.sub(r"<tr[^>]*>.*?</tr>", handle_row, table, flags=re.S)
+
+    wrapped = _TABLE_WRAP_RE.sub(r'<div class="tbl-scroll">\1</div>', html)
+    return re.sub(r"<table[^>]*>.*?</table>", handle_table, wrapped, flags=re.S)
+
+
+@staff_required
+def learn(request, slug=None):
+    topics = (
+        LearningTopic.objects
+        .annotate(active_count=Count("articles", filter=Q(articles__active=True)))
+        .prefetch_related("articles")
+        .order_by("order", "name")
+    )
+    article = None
+    article_content = ""
+    if slug:
+        article = get_object_or_404(
+            LearningArticle.objects.select_related("topic").filter(active=True), slug=slug
+        )
+        article_content = _responsive_tables(article.content)
+    else:
+        first = LearningArticle.objects.filter(active=True).order_by("topic__order", "order", "id").first()
+        if first:
+            return redirect("crm:learn_article", slug=first.slug)
+    context = {
+        "article": article,
+        "article_content": article_content,
+        "topics": topics,
+        "role": get_role(request.user),
+    }
+    return render(request, "crm/learn.html", context)
 
 
 # ============================================================

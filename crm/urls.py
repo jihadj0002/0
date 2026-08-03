@@ -38,6 +38,8 @@ urlpatterns = [
     path("scripts/", views.scripts, name="scripts"),
     path("scripts/<int:pk>/toggle/", views.script_toggle, name="script_toggle"),
     path("faq/", views.faq, name="faq"),
+    path("learn/", views.learn, name="learn"),
+    path("learn/<slug:slug>/", views.learn, name="learn_article"),
 
     # Manage
     path("team/", views.team, name="team"),
