@@ -49,6 +49,7 @@ urlpatterns = [
     path("ajax/notifications", views.ajax_notifications, name="ajax_notifications"),
     path("ajax/notifications/mark-read", views.ajax_notifications_mark_read, name="ajax_notifications_mark_read"),
     path("ajax/leads/quick-create", views.ajax_quick_create_lead, name="ajax_quick_create_lead"),
+    path("ajax/leads/<int:pk>/popup", views.ajax_lead_popup, name="ajax_lead_popup"),
     path("ajax/leads/<int:pk>/update", views.ajax_quick_update, name="ajax_quick_update"),
     path("ajax/leads/<int:pk>/move", views.ajax_kanban_move, name="ajax_kanban_move"),
     path("ajax/leads/<int:pk>/convert", views.ajax_convert_customer, name="ajax_convert_customer"),

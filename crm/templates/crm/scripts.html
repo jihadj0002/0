@@ -19,17 +19,20 @@
 
 <div class="grid-2">
   {% for s in scripts %}
-  <div class="panel">
+  <div class="panel script-card" data-title="{{ s.title }}" data-content="{{ s.content|escapejs }}">
     <div class="panel-title">
       {{ s.title }}
       <span class="pill {% if s.active %}pill-won{% else %}pill-lost{% endif %}">{{ s.active|yesno:"Active,Inactive" }}</span>
+    </div>
+    <div class="script-preview">{{ s.content|truncatechars:180 }}</div>
+    <div class="script-card-foot">
+      <span class="pill pill-gray">{{ s.get_category_display }}</span>
       <span class="flex-spacer"></span>
+      <button class="btn btn-soft btn-sm" onclick="event.stopPropagation(); viewScript(this)">👁 View</button>
       {% if role == 'owner' or role == 'manager' %}
-      <button class="btn btn-sm btn-outline" onclick="toggleScript({{ s.pk }})">{{ s.active|yesno:"Deactivate,Activate" }}</button>
+      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); toggleScript({{ s.pk }})">{{ s.active|yesno:"Deactivate,Activate" }}</button>
       {% endif %}
     </div>
-    <pre class="script-content" style="white-space:pre-wrap; font-family:inherit; font-size:.88rem; color:#334155; margin:0;">{{ s.content }}</pre>
-    <button class="btn btn-soft btn-sm" style="margin-top:12px;" onclick="copyScript(this)">📋 Copy</button>
   </div>
   {% empty %}
   <div class="panel"><div class="empty-state"><div class="es-title">No scripts in this category</div></div></div>
@@ -50,15 +53,41 @@ function scriptModal() {
       <div class="form-group full"><button class="btn btn-primary" type="submit">Save Script</button></div>
     </form>`);
 }
+function viewScript(el) {
+  const card = el.closest('.script-card');
+  const title = card.dataset.title;
+  const content = card.dataset.content;
+  Crm.openDrawer(title, `
+    <div class="script-viewer">
+      <div class="script-viewer-body">${content}</div>
+      <div class="script-viewer-foot">
+        <button class="btn btn-primary btn-block" onclick="copyViewer(this)">📋 Copy Script</button>
+      </div>
+    </div>`);
+}
+document.querySelectorAll('.script-card').forEach(card => {
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button, a')) return;
+    const title = card.dataset.title;
+    const content = card.dataset.content;
+    Crm.openDrawer(title, `
+      <div class="script-viewer">
+        <div class="script-viewer-body">${content}</div>
+        <div class="script-viewer-foot">
+          <button class="btn btn-primary btn-block" onclick="copyViewer(this)">📋 Copy Script</button>
+        </div>
+      </div>`);
+  });
+});
+function copyViewer(btn) {
+  const text = btn.closest('.script-viewer').querySelector('.script-viewer-body').innerText;
+  navigator.clipboard.writeText(text).then(() => Crm.toast('Script copied', 'success'));
+}
 async function toggleScript(pk) {
   try {
     await Crm.api('/crm/scripts/' + pk + '/toggle', 'POST', {});
     setTimeout(() => location.reload(), 250);
   } catch (err) { Crm.toast(err.message, 'error'); }
-}
-function copyScript(btn) {
-  const text = btn.closest('.panel').querySelector('.script-content').innerText;
-  navigator.clipboard.writeText(text).then(() => Crm.toast('Script copied', 'success'));
 }
 </script>
 {% endblock %}

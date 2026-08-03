@@ -138,10 +138,11 @@ def lead_new(request):
         else:
             stage = PipelineStage.objects.filter(pk=request.POST.get("stage")).first() if request.POST.get("stage") else None
             assigned = User_or_None(request.POST.get("assigned_to"))
+            company = Company.objects.filter(pk=request.POST.get("company")).first() if request.POST.get("company") else None
             lead, created = create_lead(
                 user, name=name, phone=request.POST.get("phone", ""),
                 email=request.POST.get("email", ""), source=request.POST.get("source", "manual"),
-                stage=stage, assigned_to=assigned, company=Company.objects.filter(pk=request.POST.get("company")).first(),
+                stage=stage, assigned_to=assigned, company=company,
                 website=request.POST.get("website", ""), industry=request.POST.get("industry", ""),
                 notes=request.POST.get("notes", ""), budget=request.POST.get("budget") or None,
                 expected_value=request.POST.get("expected_value") or None,
@@ -418,6 +419,16 @@ def ajax_quick_create_lead(request):
         email=request.POST.get("email", ""), source=request.POST.get("source", "manual"),
     )
     return JsonResponse({"ok": True, "created": created, "url": f"/crm/leads/{lead.pk}/"})
+
+
+@staff_required
+def ajax_lead_popup(request, pk):
+    lead = get_object_or_404(
+        lead_queryset_for(request.user).select_related("stage", "assigned_to", "company"),
+        pk=pk,
+    )
+    recent_activities = lead.activities.select_related("created_by")[:4]
+    return render(request, "crm/_lead_popup.html", {"lead": lead, "recent_activities": recent_activities})
 
 
 @staff_required

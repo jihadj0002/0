@@ -85,6 +85,17 @@ class Migration(migrations.Migration):
         ),
         RunIfPostgres(
             sql=(
+                "CREATE TABLE IF NOT EXISTS back_toolcalllog ("
+                "id bigserial NOT NULL PRIMARY KEY, "
+                "reply_id varchar(255) NOT NULL, "
+                "iteration integer NOT NULL, "
+                "tool_name varchar(100) NOT NULL, "
+                "arguments jsonb NOT NULL, "
+                "result_summary text NOT NULL, "
+                "execution_time_ms integer NOT NULL, "
+                "timestamp timestamptz NOT NULL, "
+                "conversation_id bigint NOT NULL, "
+                "user_id integer NOT NULL);"
                 "ALTER TABLE back_toolcalllog "
                 "DROP CONSTRAINT IF EXISTS back_toolcalllog_conversation_id_13331510_fk_back_conv, "
                 "ADD CONSTRAINT back_toolcalllog_conversation_id_13331510_fk_back_conv "

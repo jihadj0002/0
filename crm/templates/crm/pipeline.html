@@ -43,12 +43,15 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 <script>
+let justDragged = false;
 document.querySelectorAll('.kanban-col').forEach(col => {
   Sortable.create(col.querySelector('.kanban-cards'), {
     group: 'kanban',
     animation: 150,
     ghostClass: 'dragging',
+    onChoose: () => { justDragged = true; },
     onEnd: async (evt) => {
+      setTimeout(() => { justDragged = false; }, 250);
       const leadId = evt.item.dataset.lead;
       const stageId = evt.to.closest('.kanban-col').dataset.stage;
       if (evt.from === evt.to) return;
@@ -61,6 +64,18 @@ document.querySelectorAll('.kanban-col').forEach(col => {
         evt.from.appendChild(evt.item);
       }
     }
+  });
+});
+document.querySelectorAll('.kanban-card').forEach(card => {
+  card.addEventListener('click', (e) => {
+    if (justDragged) return;
+    if (e.target.closest('a')) return;
+    const leadId = card.dataset.lead;
+    Crm.openDrawer('Lead', '<div class="popup-loading">Loading…</div>');
+    fetch('/crm/ajax/leads/' + leadId + '/popup', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(html => document.getElementById('crmDrawerBody').innerHTML = html)
+      .catch(err => { document.getElementById('crmDrawerBody').innerHTML = '<div class="empty-state">Failed to load lead.</div>'; Crm.toast(err.message, 'error'); });
   });
 });
 function updateCounts() {

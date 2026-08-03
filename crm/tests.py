@@ -184,6 +184,37 @@ class ViewSmokeTests(CrmBaseTestCase):
         lead.refresh_from_db()
         self.assertEqual(lead.score, 80)
 
+    def test_lead_new_with_empty_company_ok(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post(
+            "/crm/leads/new/",
+            {"name": "No Company", "phone": "01711-123456", "company": "", "stage": "", "source": "manual"},
+        )
+        self.assertEqual(resp.status_code, 302)
+        lead = Lead.objects.get(name="No Company")
+        self.assertIsNone(lead.company)
+        self.assertEqual(lead.phone, "+8801711123456")
+
+    def test_lead_popup_endpoint(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        lead, _ = create_lead(self.owner, name="Popup", phone="01712-654321")
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn(lead.name, body)
+        self.assertIn("+8801712654321", body)
+
+    def test_normalize_phone(self):
+        from crm.services import normalize_phone
+        self.assertEqual(normalize_phone("01345-693054"), "+8801345693054")
+        self.assertEqual(normalize_phone("+880 1731-676263"), "+8801731676263")
+        self.assertEqual(normalize_phone("8801759215525"), "+8801759215525")
+        self.assertEqual(normalize_phone("0179727"), "0179727")
+
     def test_ajax_endpoints(self):
         from django.test import Client
         c = Client()

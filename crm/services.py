@@ -8,6 +8,30 @@ from .models import (
 )
 
 
+def normalize_phone(phone):
+    """Normalize a Bangladeshi mobile number to +8801XXXXXXXXX form.
+
+    Accepts 01XXXXXXXXX, 1XXXXXXXXX, 8801XXXXXXXXX, +8801XXXXXXXXX or
+    space/dash/(dot) separated variants; returns the value unchanged if it
+    can't be recognized.
+    """
+    import re
+
+    if not phone:
+        return ""
+    digits = re.sub(r"[\s\-\(\)\.\+]", "", str(phone).strip())
+    m = re.match(r"^0(1[3-9]\d{8})$", digits)
+    if m:
+        return "+880" + m.group(1)
+    m = re.match(r"^(1[3-9]\d{8})$", digits)
+    if m:
+        return "+880" + m.group(1)
+    m = re.match(r"^(?:880)?(1[3-9]\d{8})$", digits)
+    if m:
+        return "+880" + m.group(1)
+    return phone
+
+
 def setting(key, default=None):
     try:
         return CrmSetting.objects.get(key=key).value
@@ -74,6 +98,7 @@ def create_lead(user, *, name, phone="", email="", source="manual",
                 next_followup=None, tags=None, conversation=None,
                 tenant=None, score=0, log=True):
     """Create a lead with phone dedupe. Returns (lead, created)."""
+    phone = normalize_phone(phone)
     phone_clean = (phone or "").strip()
     existing = internal_queryset(Lead.objects.all())
     if phone_clean:
@@ -82,6 +107,10 @@ def create_lead(user, *, name, phone="", email="", source="manual",
             return dup, False
     elif email:
         dup = existing.filter(email=email).exclude(converted=True).first()
+        if dup:
+            return dup, False
+    if not phone_clean and not email:
+        dup = existing.filter(name__iexact=name.strip()).exclude(converted=True).first()
         if dup:
             return dup, False
 
@@ -112,6 +141,8 @@ def update_lead(user, lead, changed_by=None, **fields):
         "next_followup": lead.next_followup,
     }
     for key, value in fields.items():
+        if key == "phone":
+            value = normalize_phone(value)
         if hasattr(lead, key):
             setattr(lead, key, value)
     lead.save(update_fields=list(fields.keys()) + ["updated_at"])

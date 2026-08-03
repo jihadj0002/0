@@ -1,0 +1,76 @@
+{% load crm_extras %}
+<div class="popup-lead">
+  <div class="popup-head">
+    <h2>{{ lead.name }}</h2>
+    {% if lead.company %}<div class="popup-sub">{{ lead.company.name }}</div>{% endif %}
+  </div>
+
+  <div class="popup-badges">
+    {% if lead.stage %}<span class="pill pill-blue">{{ lead.stage.name }}</span>{% endif %}
+    {% if lead.is_won %}<span class="pill pill-won">Won</span>
+    {% elif lead.is_lost %}<span class="pill pill-lost">Lost</span>
+    {% elif lead.score >= 70 %}<span class="pill pill-hot">Hot</span>
+    {% elif lead.score >= 40 %}<span class="pill pill-warm">Warm</span>
+    {% else %}<span class="pill pill-cold">Cold</span>{% endif %}
+    {% if lead.source %}<span class="pill pill-gray">{{ lead.get_source_display }}</span>{% endif %}
+    <span class="pill pill-gray">Score {{ lead.score }}</span>
+    {% for t in lead.tags %}<span class="pill pill-gray">#{{ t }}</span>{% endfor %}
+  </div>
+
+  {% if lead.phone or lead.email %}
+  <div class="popup-contact">
+    {% if lead.phone %}
+    <div class="popup-phone">
+      <div class="popup-label">Phone</div>
+      <div class="popup-value">{{ lead.phone|bd_phone }}</div>
+      <div class="popup-actions">
+        <a class="btn btn-primary btn-sm" href="tel:{{ lead.phone|bd_phone }}">📞 Call</a>
+        <a class="btn btn-soft btn-sm" target="_blank" rel="noopener"
+           href="https://wa.me/{{ lead.phone|wa_digits }}">💬 WhatsApp</a>
+      </div>
+    </div>
+    {% endif %}
+    {% if lead.email %}
+    <div class="popup-email">
+      <div class="popup-label">Email</div>
+      <div class="popup-value">{{ lead.email }}</div>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if lead.website or lead.industry %}
+  <div class="popup-row"><span class="popup-label">Website</span><span class="popup-value">{{ lead.website|default:"—" }}</span></div>
+  <div class="popup-row"><span class="popup-label">Industry</span><span class="popup-value">{{ lead.industry|default:"—" }}</span></div>
+  {% endif %}
+  <div class="popup-row"><span class="popup-label">Assigned To</span><span class="popup-value">{% if lead.assigned_to %}{{ lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}Unassigned{% endif %}</span></div>
+  {% if lead.next_followup %}<div class="popup-row"><span class="popup-label">Next Follow-up</span><span class="popup-value">{{ lead.next_followup|date:"M j, Y · g:i A" }}</span></div>{% endif %}
+  {% if lead.expected_value %}<div class="popup-row"><span class="popup-label">Expected Value</span><span class="popup-value">৳{{ lead.expected_value|floatformat:0 }}</span></div>{% endif %}
+
+  {% if lead.notes %}
+  <div class="popup-block">
+    <div class="popup-label">Notes</div>
+    <div class="popup-notes">{{ lead.notes }}</div>
+  </div>
+  {% endif %}
+
+  {% if recent_activities %}
+  <div class="popup-block">
+    <div class="popup-label">Recent Activity</div>
+    <div class="timeline">
+      {% for act in recent_activities %}
+      <div class="tl-item">
+        <div class="tl-title">{{ act.get_type_display }}</div>
+        <div class="tl-body">{{ act.description|default:"—" }}</div>
+        <div class="tl-meta">{{ act.timestamp|date:"M j, Y" }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="popup-footer">
+    <a class="btn btn-primary" href="{% url 'crm:lead_detail' lead.pk %}">Open Lead</a>
+    <a class="btn btn-soft" href="{% url 'crm:lead_edit' lead.pk %}">Edit</a>
+  </div>
+</div>
