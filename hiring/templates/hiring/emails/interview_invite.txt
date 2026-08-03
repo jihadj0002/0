@@ -1,0 +1,18 @@
+Hi {{ candidate.name }},
+
+You've been invited to join an interview for the {{ candidate.get_position_display }} role at MatrixAi.
+
+Meeting: {{ meeting.title }}
+Date & time: {{ meeting.datetime|date:"D, d M Y" }} at {{ meeting.datetime|time:"H:i" }}
+Platform: {{ meeting.get_platform_display }}
+{% if meeting.link %}Link: {{ meeting.link }}{% endif %}
+{% if meeting.location %}Location: {{ meeting.location }}{% endif %}
+
+{% if meeting.notes %}
+Notes:
+{{ meeting.notes }}
+{% endif %}
+
+Please confirm your attendance by replying to this email.
+
+— The MatrixAi Team

@@ -69,6 +69,9 @@
       <a href="{% url 'crm:team' %}" class="nav-item {% if request.resolver_match.url_name == 'team' %}active{% endif %}">
         <span class="ni">👥</span> Team
       </a>
+      <a href="{% url 'hiring_admin:index' %}" class="nav-item {% if request.resolver_match.namespace == 'hiring_admin' %}active{% endif %}">
+        <span class="ni">🔎</span> Hiring
+      </a>
       <a href="{% url 'crm:reports' %}" class="nav-item {% if request.resolver_match.url_name == 'reports' %}active{% endif %}">
         <span class="ni">📊</span> Reports
       </a>

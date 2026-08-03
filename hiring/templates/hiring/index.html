@@ -1,0 +1,108 @@
+{% extends "crm/base.html" %}
+{% block title %}Hiring — Matrix CRM{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Hiring</h1>
+    <div class="page-sub">Sales applications & interviews</div>
+  </div>
+  <a class="btn btn-primary" href="{% url 'hiring_admin:meeting_new' %}" style="align-self:center;">+ Schedule meeting</a>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Total</div>
+    <div class="value">{{ stats.total }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Applied</div>
+    <div class="value">{{ stats.applied }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Shortlisted</div>
+    <div class="value">{{ stats.shortlisted }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Interviews</div>
+    <div class="value">{{ stats.interview }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Hired</div>
+    <div class="value" style="color:var(--green);">{{ stats.hired }}</div>
+  </div>
+</div>
+
+{% if upcoming %}
+<div class="panel" style="margin-top:22px;">
+  <div class="panel-title">Upcoming meetings</div>
+  <table class="crm-table">
+    <tbody>
+      {% for m in upcoming %}
+      <tr>
+        <td><b>{{ m.title }}</b></td>
+        <td>{{ m.datetime|date:"D d M Y · H:i" }}</td>
+        <td>{{ m.get_platform_display }}</td>
+        <td><span class="pill pill-blue">{{ m.invited_count }} invited</span></td>
+        <td><a href="{% url 'hiring_admin:meetings' %}">View →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="panel" style="margin-top:22px;">
+  <div class="panel-title">Candidates
+    <span class="flex-spacer"></span>
+    <form method="get" style="display:flex; gap:8px; align-items:center;">
+      <select name="status" onchange="this.form.submit()" style="padding:6px 10px;">
+        <option value="">All statuses</option>
+        {% for k, v in status_choices %}
+        <option value="{{ k }}" {% if status == k %}selected{% endif %}>{{ v }}</option>
+        {% endfor %}
+      </select>
+      <input type="text" name="q" value="{{ q }}" placeholder="Search name / skills / phone…" style="padding:6px 10px; min-width:220px;">
+      <button class="btn btn-soft btn-sm" type="submit">Search</button>
+    </form>
+  </div>
+
+  <table class="crm-table">
+    <thead>
+      <tr>
+        <th>Candidate</th>
+        <th>Position</th>
+        <th>Experience</th>
+        <th>Skills</th>
+        <th>Status</th>
+        <th>Received</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in applications %}
+      <tr>
+        <td>
+          {% if a.photo %}<img src="{{ a.photo.url }}" alt="" style="width:30px;height:30px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-right:6px;">{% endif %}
+          <b>{{ a.name }}</b>
+          <div class="sub" style="font-size:.78rem;">{{ a.phone }} · {{ a.email }}</div>
+        </td>
+        <td>{{ a.get_position_display }}</td>
+        <td>{{ a.experience_years }} yrs</td>
+        <td>
+          {% for s in a.skills_list|slice:":3" %}<span class="pill pill-gray">{{ s }}</span>{% empty %}—{% endfor %}
+        </td>
+        <td>
+          <span class="pill pill-{{ a.status_pill }}">{% if a.status == 'hired' and a.hired_user %}<a href="{% url 'crm:team' %}" style="text-decoration:none;">{% endif %}{{ a.get_status_display }}{% if a.status == 'hired' and a.hired_user %}</a>{% endif %}</span>
+        </td>
+        <td>{{ a.created_at|date:"d M Y" }}</td>
+        <td class="row-actions">
+          <a class="btn btn-soft btn-sm" href="{% url 'hiring_admin:candidate_detail' a.uid %}">View</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7"><div class="empty-state"><div class="es-title">No applications yet</div><div class="es-sub">Share the careers link: /careers/</div></div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

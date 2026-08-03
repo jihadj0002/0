@@ -1,0 +1,69 @@
+{% extends "crm/base.html" %}
+{% block title %}New Meeting — Hiring{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Schedule a group meeting</h1>
+    <div class="page-sub">Invite candidates — one meeting, bulk invite</div>
+  </div>
+  <a class="btn btn-outline" href="{% url 'hiring_admin:meetings' %}" style="align-self:center;">← Meetings</a>
+</div>
+
+<form method="post">
+  {% csrf_token %}
+  <div class="cards" style="align-items:flex-start;">
+    <div class="panel" style="flex:1;min-width:320px;">
+      <div class="panel-title">Meeting details</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label class="form-help">Title</label>
+          <input type="text" name="title" required value="Sales Team Interview" style="width:100%;">
+        </div>
+        <div>
+          <label class="form-help">Date &amp; time</label>
+          <input type="datetime-local" name="datetime" required style="width:100%;">
+        </div>
+        <div style="display:flex;gap:10px;">
+          <div style="flex:1;">
+            <label class="form-help">Platform</label>
+            <select name="platform" style="width:100%;">
+              {% for k, v in platforms %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label class="form-help">Meeting link (optional)</label>
+            <input type="url" name="link" placeholder="https://meet.google.com/…" style="width:100%;">
+          </div>
+        </div>
+        <div>
+          <label class="form-help">Location (for offline)</label>
+          <input type="text" name="location" style="width:100%;">
+        </div>
+        <div>
+          <label class="form-help">Notes (optional)</label>
+          <textarea name="notes" rows="3" style="width:100%;"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" style="flex:1;min-width:320px;">
+      <div class="panel-title">Invite candidates</div>
+      <div class="form-help" style="margin-bottom:10px;">Invited candidates are automatically marked "Interview Scheduled".</div>
+      <div style="max-height:340px;overflow:auto;border:1px solid var(--border);border-radius:12px;padding:10px;">
+        {% for c in candidates %}
+        <label style="display:flex;gap:8px;align-items:center;padding:6px 2px;cursor:pointer;">
+          <input type="checkbox" name="candidates" value="{{ c.pk }}">
+          <span>{{ c.name }} <span class="form-help">· {{ c.get_position_display }} · {{ c.experience_years }} yrs</span></span>
+        </label>
+        {% empty %}
+        <div class="form-help">No available candidates — add candidates first.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px;">
+    <button class="btn btn-primary" type="submit">Create meeting & invite</button>
+  </div>
+</form>
+{% endblock %}

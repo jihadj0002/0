@@ -1,0 +1,53 @@
+{% extends "crm/base.html" %}
+{% block title %}Meetings — Hiring{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Interviews & Meetings</h1>
+    <div class="page-sub">Group hiring sessions</div>
+  </div>
+  <a class="btn btn-primary" href="{% url 'hiring_admin:meeting_new' %}" style="align-self:center;">+ New meeting</a>
+</div>
+
+<div class="cards">
+  {% for m in meetings %}
+  <div class="panel" style="width:100%;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <b>{{ m.title }}</b>
+        <div class="sub">{{ m.datetime|date:"D d M Y · H:i" }} · {{ m.get_platform_display }}</div>
+        {% if m.location %}<div class="sub">📍 {{ m.location }}</div>{% endif %}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span class="pill pill-{% if m.status == 'scheduled' %}blue{% elif m.status == 'completed' %}won{% else %}lost{% endif %}">{{ m.get_status_display }}</span>
+        {% if m.link and m.status == 'scheduled' %}<a class="btn btn-soft btn-sm" href="{{ m.link }}" target="_blank">Join ↗</a>{% endif %}
+        <form method="post" action="{% url 'hiring_admin:meeting_status' m.pk %}">
+          {% csrf_token %}
+          {% if m.status == 'scheduled' %}
+          <button class="btn btn-outline btn-sm" name="status" value="completed">Mark completed</button>
+          <button class="btn btn-danger btn-sm" name="status" value="cancelled">Cancel</button>
+          {% else %}
+          <button class="btn btn-soft btn-sm" name="status" value="scheduled">Re-schedule</button>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+    {% if m.notes %}<p style="margin-top:10px;white-space:pre-wrap;">{{ m.notes }}</p>{% endif %}
+    <div style="margin-top:12px;">
+      <div class="panel-title" style="font-size:.9rem;">Invited ({{ m.invited_count }})</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;">
+{% for att in m.attendees.all %}
+        <span class="pill pill-{% if att.rsvp == 'attended' %}blue{% elif att.rsvp == 'no_show' %}lost{% else %}gray{% endif %}">
+          <a href="{% url 'hiring_admin:candidate_detail' att.candidate.uid %}" style="text-decoration:none;">{{ att.candidate.name }}</a>
+        </span>
+        {% empty %}
+        <span class="form-help">No candidates invited.</span>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% empty %}
+  <div class="empty-state" style="width:100%;"><div class="es-icon">📅</div><div class="es-title">No meetings yet</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -33,6 +33,8 @@ urlpatterns = [
     path("db", include("back.urls")),
     path("api/", include("api.urls")),
     path("crm/", include("crm.urls")),
+    path("crm/hiring/", include("hiring.admin_urls")),
+    path("careers/", include("hiring.urls")),
     path("msg/", include("msg.urls")),
     path("blog/", include("blog.urls")),
     path("ckeditor5/", include("django_ckeditor_5.urls")),

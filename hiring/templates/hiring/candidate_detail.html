@@ -1,0 +1,138 @@
+{% extends "crm/base.html" %}
+{% block title %}{{ candidate.name }} — Hiring{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>{{ candidate.name }}</h1>
+    <div class="page-sub">
+      {{ candidate.get_position_display }}
+      · <a href="mailto:{{ candidate.email }}">{{ candidate.email }}</a>
+      · {{ candidate.phone }}
+      · <span class="pill pill-{{ candidate.status_pill }}">{{ candidate.get_status_display }}</span>
+    </div>
+  </div>
+  <a class="btn btn-outline" href="{% url 'hiring_admin:index' %}" style="align-self:center;">← Candidates</a>
+</div>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Experience</div>
+    <div class="value">{{ candidate.experience_years }} yrs</div>
+  </div>
+  <div class="card">
+    <div class="label">Expected salary</div>
+    <div class="value" style="font-size:1rem;">{{ candidate.expected_salary|default:"—" }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Availability</div>
+    <div class="value" style="font-size:1rem;">{{ candidate.availability|default:"—" }}</div>
+  </div>
+  <div class="card">
+    <div class="label">City</div>
+    <div class="value" style="font-size:1rem;">{{ candidate.city|default:"—" }}</div>
+  </div>
+  <div class="card">
+    <div class="label">Source</div>
+    <div class="value" style="font-size:1rem;">{{ candidate.get_source_display }}</div>
+  </div>
+</div>
+
+<div class="cards">
+  {% if candidate.photo %}
+  <div class="panel" style="width:220px;">
+    <div class="panel-title">Photo</div>
+    <img src="{{ candidate.photo.url }}" alt="Photo" style="width:100%;border-radius:10px;">
+  </div>
+  {% endif %}
+  {% if candidate.cv %}
+  <div class="panel" style="flex:1;min-width:260px;">
+    <div class="panel-title">CV / Resume</div>
+    <a class="btn btn-primary" href="{{ candidate.cv.url }}" target="_blank" download>⬇ Download CV</a>
+    <div class="form-help" style="margin-top:8px;">Download to review before scheduling an interview.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="cards" style="margin-top:18px;">
+  <div class="panel" style="flex:1;min-width:320px;">
+    <div class="panel-title">Skills</div>
+    <div>
+      {% for s in candidate.skills_list %}<span class="pill pill-blue">{{ s }}</span>{% empty %}<span class="form-help">No skills listed.</span>{% endfor %}
+    </div>
+    {% if candidate.cover_letter %}
+    <div style="margin-top:16px;"><b>Cover letter</b></div>
+    <p style="margin-top:6px;white-space:pre-wrap;">{{ candidate.cover_letter }}</p>
+    {% endif %}
+  </div>
+
+  <div class="panel" style="flex:1;min-width:320px;">
+    <div class="panel-title">Internal notes</div>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="notes">
+      <textarea name="notes" rows="5" style="width:100%;">{{ candidate.notes }}</textarea>
+      <button class="btn btn-soft btn-sm" type="submit" style="margin-top:8px;">Save notes</button>
+    </form>
+  </div>
+</div>
+
+{% if candidate.status != 'hired' and candidate.status != 'rejected' %}
+<div class="panel" style="margin-top:18px;">
+  <div class="panel-title">Actions</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+    {% if candidate.status == 'applied' %}
+    <form method="post" action="{% url 'hiring_admin:candidate_action' candidate.uid %}">
+      {% csrf_token %}<input type="hidden" name="action" value="shortlist">
+      <button class="btn btn-soft" type="submit">✓ Shortlist</button>
+    </form>
+    {% endif %}
+
+    <form method="post" action="{% url 'hiring_admin:candidate_action' candidate.uid %}">
+      {% csrf_token %}<input type="hidden" name="action" value="reject">
+      <button class="btn btn-outline" type="submit" onclick="return confirm('Reject {{ candidate.name }}?');">✕ Reject</button>
+    </form>
+
+    <form method="post" action="{% url 'hiring_admin:candidate_action' candidate.uid %}" style="display:flex;gap:8px;align-items:center;">
+      {% csrf_token %}<input type="hidden" name="action" value="hire">
+      <label style="font-size:.85rem;">Role
+        <select name="role">
+          <option value="staff">Sales Staff</option>
+          <option value="sales_executive">Sales Executive</option>
+          <option value="manager">Sales Manager</option>
+          <option value="support">Support</option>
+        </select>
+      </label>
+      <label style="font-size:.85rem;">Temp password
+        <input type="text" name="password" placeholder="(auto-generated)" style="width:160px;">
+      </label>
+      <button class="btn btn-primary" type="submit" onclick="return confirm('Hire {{ candidate.name }} and create their CRM account?');">🎉 Hire & create account</button>
+    </form>
+
+    <form method="post" action="{% url 'hiring_admin:candidate_action' candidate.uid %}">
+      {% csrf_token %}<input type="hidden" name="action" value="delete">
+      <button class="btn btn-danger" type="submit" onclick="return confirm('Delete this application permanently?');">Delete</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if candidate.meetings.all %}
+<div class="panel" style="margin-top:18px;">
+  <div class="panel-title">Interviews</div>
+  <table class="crm-table">
+    <thead><tr><th>Meeting</th><th>When</th><th>Platform</th><th>RSVP</th><th>Link</th></tr></thead>
+    <tbody>
+      {% for att in candidate.meetings.all %}
+      <tr>
+        <td>{{ att.meeting.title }}</td>
+        <td>{{ att.meeting.datetime|date:"D d M Y · H:i" }}</td>
+        <td>{{ att.meeting.get_platform_display }}</td>
+        <td><span class="pill pill-{{ att.rsvp }}">{{ att.get_rsvp_display }}</span></td>
+        <td>{% if att.meeting.link %}<a href="{{ att.meeting.link }}" target="_blank">Join →</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

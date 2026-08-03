@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     "billing",
     "blog",
     "crm",
+    "hiring",
 
     "django_ckeditor_5",
     "django.contrib.sitemaps",
@@ -288,6 +289,21 @@ else:
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = 'front:login'
+
+# --------------------
+# EMAIL (optional — enabled only when SMTP env vars are set)
+# --------------------
+if os.environ.get("EMAIL_HOST"):
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+    EMAIL_HOST = os.environ.get("EMAIL_HOST")
+    EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+    EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+    EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+    EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
+    DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER) or "noreply@thematrixai.xyz"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+    DEFAULT_FROM_EMAIL = "noreply@thematrixai.xyz"
 
 
 # REST_FRAMEWORK = {

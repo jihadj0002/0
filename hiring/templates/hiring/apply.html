@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Careers — Join the MatrixAi Sales Team</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-white via-purple-50 to-indigo-50 text-gray-900 overflow-x-hidden">
+  <div class="pointer-events-none fixed inset-0 -z-10">
+    <div class="absolute left-[-20%] top-[10%] w-[700px] h-[700px] rounded-full bg-purple-300/20 blur-[130px]"></div>
+    <div class="absolute right-[-20%] bottom-[-10%] w-[800px] h-[800px] rounded-full bg-cyan-300/20 blur-[150px]"></div>
+  </div>
+
+  <main class="flex items-center justify-center py-16 px-6">
+    <div class="w-full max-w-4xl bg-white/60 backdrop-blur-2xl border border-white/40 shadow-2xl rounded-3xl p-10">
+      <div class="text-center mb-8">
+        <h1 class="text-4xl font-bold text-purple-800">MatrixAi</h1>
+        <h2 class="text-3xl font-bold text-purple-900 mt-4">We're Hiring Sales Champions</h2>
+        <p class="text-gray-600 mt-2 text-sm">Join the MatrixAi sales team — fill the form and our hiring team will review your application.</p>
+      </div>
+
+      <form method="post" enctype="multipart/form-data" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {% csrf_token %}
+        <input type="text" name="company_website" class="hidden" tabindex="-1" autocomplete="off" aria-hidden="true">
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Full Name *</label>
+          <input name="name" type="text" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="Your full name" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Email Address *</label>
+          <input name="email" type="email" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="you@example.com" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Phone / WhatsApp *</label>
+          <input name="phone" type="tel" required class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="01XXXXXXXXX" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Position</label>
+          <select name="position" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3">
+            {% for k, v in positions %}
+            <option value="{{ k }}">{{ v }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Years of Sales Experience</label>
+          <input name="experience_years" type="number" min="0" value="0" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Expected Salary</label>
+          <input name="expected_salary" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="e.g. ৳25,000/month" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Availability</label>
+          <input name="availability" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="e.g. Immediate / 2 weeks notice" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">City</label>
+          <input name="city" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="e.g. Dhaka" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium mb-1">Skills</label>
+          <input name="skills" type="text" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="e.g. cold calling, lead closing, WhatsApp sales, negotiation" />
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-medium mb-1">Why should we hire you? (cover letter)</label>
+          <textarea name="cover_letter" rows="4" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" placeholder="Tell us a little about yourself and your sales achievements."></textarea>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">Profile Photo (optional)</label>
+          <input name="photo" type="file" accept="image/*" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" />
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium mb-1">CV / Resume (PDF)</label>
+          <input name="cv" type="file" accept=".pdf,.doc,.docx" class="w-full bg-white border border-gray-300 rounded-xl px-4 py-3" />
+        </div>
+
+        <div class="md:col-span-2">
+          <button class="w-full mt-2 py-4 bg-purple-700 hover:bg-purple-800 text-white text-lg rounded-2xl transition">Submit Application</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>
