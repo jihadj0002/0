@@ -7,6 +7,7 @@ from crm.permissions import crm_role_required
 
 from .models import CandidateApplication, HiringMeeting, MeetingAttendee
 from .services import (
+    build_candidate_message,
     create_application,
     hire_candidate,
     notify_candidate,
@@ -130,20 +131,20 @@ def candidate_action(request, uid):
         application.status = "shortlisted"
         application.save(update_fields=["status", "updated_at"])
         messages.success(request, f"{application.name} shortlisted.")
-        notify_candidate(
-            application,
-            "You've been shortlisted — MatrixAi Sales",
-            f"Hi {application.name},\n\nGreat news — you've been shortlisted for the {application.get_position_display()} role at MatrixAi. We'll be in touch for the interview.\n\n",
-        )
+        subject, body = build_candidate_message(application)
+        if notify_candidate(application, subject, body):
+            messages.success(request, "Email sent to candidate.")
+        else:
+            messages.warning(request, "No email sent (SMTP not configured) — use Export to send manually.")
     elif action == "reject":
         application.status = "rejected"
         application.save(update_fields=["status", "updated_at"])
         messages.success(request, f"{application.name} rejected.")
-        notify_candidate(
-            application,
-            "Application update",
-            f"Hi {application.name},\n\nThank you for applying to MatrixAi. After careful review, we've decided not to move forward at this time.\n\n",
-        )
+        subject, body = build_candidate_message(application)
+        if notify_candidate(application, subject, body):
+            messages.success(request, "Email sent to candidate.")
+        else:
+            messages.warning(request, "No email sent (SMTP not configured) — use Export to send manually.")
     elif action == "hire":
         role = request.POST.get("role", "staff")
         temp_password = request.POST.get("password", "") or None
@@ -155,11 +156,16 @@ def candidate_action(request, uid):
             f"Hired! Account created — username: {user.username}"
             + (f" · temp password: {password}" if password else ""),
         )
-        notify_candidate(
-            application,
-            "You're hired — Welcome to MatrixAi!",
-            f"Hi {application.name},\n\nWelcome to the MatrixAi team! Your CRM access will be arranged shortly.\n\n",
+        subject, body = build_candidate_message(
+            application, login_url=request.build_absolute_uri("/crm/"),
         )
+        if notify_candidate(application, subject, body):
+            messages.success(request, "Welcome email with login details sent to candidate.")
+        else:
+            messages.warning(
+                request,
+                "No email sent (SMTP not configured) — credentials shown above; use Export to send manually.",
+            )
     elif action == "delete":
         application.delete()
         messages.success(request, "Application deleted.")
@@ -209,6 +215,11 @@ def meeting_new(request):
             candidates=candidates,
         )
         messages.success(request, f"Meeting created — {meeting.invited_count()} candidate(s) invited.")
+        sent = getattr(meeting, "emails_sent", 0)
+        if sent:
+            messages.success(request, f"Invite emails sent to {sent} candidate(s).")
+        else:
+            messages.warning(request, "No invite emails sent (SMTP not configured) — use Export to send manually.")
         return redirect("hiring_admin:meetings")
 
     candidate_qs = CandidateApplication.objects.exclude(status__in=["rejected", "hired"])
@@ -217,3 +228,78 @@ def meeting_new(request):
         "platforms": HiringMeeting.PLATFORM_CHOICES,
     }
     return render(request, "hiring/meeting_form.html", context)
+
+
+# ============================================================
+# MANUAL EXPORT (send via WhatsApp/email yourself)
+# ============================================================
+def _filtered_applications(request):
+    q = request.GET.get("q", "").strip()
+    status = request.GET.get("status", "").strip()
+    qs = CandidateApplication.objects.select_related("hired_user").order_by("-created_at")
+    if status:
+        qs = qs.filter(status=status)
+    if q:
+        qs = qs.filter(
+            Q(name__icontains=q) | Q(phone__icontains=q) | Q(email__icontains=q)
+            | Q(skills__icontains=q) | Q(city__icontains=q)
+        )
+    return qs
+
+
+@crm_role_required("owner", "manager")
+def export_messages(request):
+    """Ready-to-send .txt blocks — one per candidate, honoring current filters."""
+    from django.http import HttpResponse
+
+    login_url = request.build_absolute_uri("/crm/")
+    blocks = []
+    for app in _filtered_applications(request):
+        meeting = app.meetings.filter(meeting__status="scheduled").select_related("meeting").first()
+        subject, body = build_candidate_message(app, meeting=meeting.meeting if meeting else None, login_url=login_url)
+        blocks.append(
+            "=" * 60
+            + "\n%s · %s · %s\n" % (app.name, app.get_position_display(), app.get_status_display())
+            + "Phone: %s · Email: %s\n" % (app.phone or "—", app.email or "—")
+            + "=" * 60
+            + "\nSubject: %s\n\n%s\n\n" % (subject, body)
+        )
+
+    response = HttpResponse("\n".join(blocks) or "No candidates match the current filters.\n", content_type="text/plain; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="hiring_messages.txt"'
+    return response
+
+
+@crm_role_required("owner", "manager")
+def export_csv(request):
+    """Spreadsheet with credentials + per-candidate message for mail-merge."""
+    import csv
+
+    from django.http import HttpResponse
+
+    login_url = request.build_absolute_uri("/crm/")
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = 'attachment; filename="hiring_candidates.csv"'
+    writer = csv.writer(response)
+    writer.writerow([
+        "Name", "Phone", "Email", "Position", "Status",
+        "Username", "Password", "Login URL", "Meeting Title", "Meeting Date", "Message",
+    ])
+    for app in _filtered_applications(request):
+        meeting = app.meetings.filter(meeting__status="scheduled").select_related("meeting").first()
+        m = meeting.meeting if meeting else None
+        subject, body = build_candidate_message(app, meeting=m, login_url=login_url)
+        writer.writerow([
+            app.name,
+            app.phone or "",
+            app.email or "",
+            app.get_position_display(),
+            app.get_status_display(),
+            app.login_username,
+            app.temp_password,
+            login_url if app.status == "hired" else "",
+            m.title if m else "",
+            m.datetime.strftime("%Y-%m-%d %H:%M") if m else "",
+            "%s\n%s" % (subject, body),
+        ])
+    return response

@@ -1,7 +1,6 @@
 from datetime import datetime
 
 from django.contrib.auth.models import User
-from django.template.loader import render_to_string
 
 from back.models import UserProfile
 from crm.models import StaffProfile
@@ -95,7 +94,9 @@ def hire_candidate(*, candidate, role="staff", username=None, temp_password=None
 
     candidate.hired_user = user
     candidate.status = "hired"
-    candidate.save(update_fields=["hired_user", "status", "updated_at"])
+    if temp_password is not None:
+        candidate.temp_password = temp_password
+    candidate.save(update_fields=["hired_user", "status", "updated_at"] + (["_temp_password"] if temp_password is not None else []))
 
     StaffProfile.objects.update_or_create(
         user=user,
@@ -128,24 +129,109 @@ def notify_candidate(application, subject, message):
         return False
 
 
+def build_candidate_message(candidate, meeting=None, login_url=""):
+    """Single source of truth for candidate updates — used by both email and exports.
+
+    Returns (subject, body) for the candidate's current status.
+    """
+    name = candidate.name or "there"
+    position = candidate.get_position_display()
+
+    if candidate.status == "hired":
+        subject = "You're hired — Welcome to MatrixAi!"
+        creds = [
+            "Congratulations — you've been hired as %s at MatrixAi!" % position,
+            "",
+        ]
+        if login_url or (candidate.hired_user and candidate.temp_password):
+            creds.append("Here are your CRM login details:")
+            if login_url:
+                creds.append("  Login URL: %s" % login_url)
+            if candidate.login_username:
+                creds.append("  Username: %s" % candidate.login_username)
+            if candidate.temp_password:
+                creds.append("  Password: %s" % candidate.temp_password)
+            creds.append("")
+            creds.append("Please keep them safe and log in to start working.")
+        body = "\n".join([
+            "Hi %s," % name,
+            "",
+            *creds,
+            "",
+            "Welcome aboard — The MatrixAi Team",
+        ])
+        return subject, body
+
+    if candidate.status == "interview_scheduled" and meeting is not None:
+        when = meeting.datetime.strftime("%A, %d %B %Y at %H:%M")
+        lines = [
+            "Hi %s," % name,
+            "",
+            "You've been invited to join an interview for the %s role at MatrixAi." % position,
+            "",
+            "Meeting: %s" % meeting.title,
+            "Date & time: %s" % when,
+            "Platform: %s" % meeting.get_platform_display(),
+        ]
+        if meeting.link:
+            lines.append("Link: %s" % meeting.link)
+        if meeting.location:
+            lines.append("Location: %s" % meeting.location)
+        if meeting.notes:
+            lines += ["", "Notes:", meeting.notes]
+        lines += ["", "Please confirm your attendance by replying to this email.", "", "— The MatrixAi Team"]
+        return "Interview invitation: %s" % meeting.title, "\n".join(lines)
+
+    if candidate.status == "shortlisted":
+        return (
+            "You've been shortlisted — MatrixAi Sales",
+            "\n".join([
+                "Hi %s," % name, "",
+                "Great news — you've been shortlisted for the %s role at MatrixAi." % position,
+                "We'll be in touch for the interview.", "",
+                "— The MatrixAi Team",
+            ]),
+        )
+
+    if candidate.status == "rejected":
+        return (
+            "Application update",
+            "\n".join([
+                "Hi %s," % name, "",
+                "Thank you for applying to MatrixAi. After careful review, we've decided",
+                "not to move forward at this time.", "",
+                "— The MatrixAi Team",
+            ]),
+        )
+
+    return (
+        "Application received — TheMatrixAi Sales Team",
+        "\n".join([
+            "Hi %s," % name, "",
+            "We received your application. Our team will review it and get back to you soon.", "",
+            "— The MatrixAi Team",
+        ]),
+    )
+
+
 def schedule_meeting(*, title, when, platform="zoom", link="", location="",
                      notes="", candidates):
-    """One HiringMeeting, bulk-invite candidates, mark them interview_scheduled."""
+    """One HiringMeeting, bulk-invite candidates, mark them interview_scheduled.
+
+    Sets `meeting.emails_sent` (not persisted) to the number of emails actually sent.
+    """
     meeting = HiringMeeting.objects.create(
         title=title, datetime=when, platform=platform, link=link,
         location=location, notes=notes,
     )
+    emails_sent = 0
     for candidate in candidates:
         MeetingAttendee.objects.get_or_create(meeting=meeting, candidate=candidate)
         if candidate.status in ("applied", "shortlisted"):
             candidate.status = "interview_scheduled"
             candidate.save(update_fields=["status", "updated_at"])
-        notify_candidate(
-            candidate,
-            f"Interview invitation: {meeting.title}",
-            render_to_string("hiring/emails/interview_invite.txt", {
-                "candidate": candidate,
-                "meeting": meeting,
-            }),
-        )
+        subject, body = build_candidate_message(candidate, meeting=meeting)
+        if notify_candidate(candidate, subject, body):
+            emails_sent += 1
+    meeting.emails_sent = emails_sent
     return meeting

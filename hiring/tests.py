@@ -20,6 +20,7 @@ from crm.models import StaffProfile
 
 from .models import CandidateApplication, HiringMeeting, MeetingAttendee
 from .services import (
+    build_candidate_message,
     create_application,
     hire_candidate,
     schedule_meeting,
@@ -78,6 +79,24 @@ class HireServiceTests(HiringBaseTestCase):
         StaffProfile.objects.get(user=user1).refresh_from_db()
         self.assertEqual(StaffProfile.objects.filter(user=user1).count(), 1)
 
+    def test_hire_stores_encrypted_temp_password(self):
+        user, password = hire_candidate(candidate=self.app, role="staff", temp_password="SecretPass1")
+        self.assertEqual(password, "SecretPass1")
+        self.app.refresh_from_db()
+        self.assertTrue(self.app._temp_password)  # ciphertext stored
+        self.assertNotIn("SecretPass1", self.app._temp_password)
+        self.assertEqual(self.app.temp_password, "SecretPass1")  # decrypts back
+        self.assertEqual(self.app.login_username, user.username)
+
+    def test_hire_message_contains_credentials(self):
+        hire_candidate(candidate=self.app, role="staff", temp_password="SecretPass1")
+        self.app.refresh_from_db()
+        subject, body = build_candidate_message(self.app, login_url="https://thematrixai.xyz/crm/")
+        self.assertIn("You're hired", subject)
+        self.assertIn("Login URL: https://thematrixai.xyz/crm/", body)
+        self.assertIn("Username: %s" % self.app.login_username, body)
+        self.assertIn("Password: SecretPass1", body)
+
 
 class MeetingTests(HiringBaseTestCase):
     def setUp(self):
@@ -129,3 +148,47 @@ class PermissionTests(HiringBaseTestCase):
         self.assertEqual(resp.status_code, 200)
         from .models import CandidateApplication
         self.assertTrue(CandidateApplication.objects.filter(email="cand@x.com").exists())
+
+
+class ExportTests(HiringBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.app, _ = create_application(name="Rahim", email="rahim@x.com", phone="01711112222")
+        hire_candidate(candidate=self.app, role="staff", temp_password="ExpPass99")
+
+    def test_export_messages_contains_credentials(self):
+        self.client.login(username="owner1", password="x")
+        resp = self.client.get("/crm/hiring/export/messages/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Rahim", resp.content.decode())
+        self.assertIn("Username: %s" % self.app.login_username, resp.content.decode())
+        self.assertIn("Password: ExpPass99", resp.content.decode())
+        self.assertIn("/crm/", resp.content.decode())
+
+    def test_export_csv_contains_row(self):
+        import csv
+        import io
+
+        self.client.login(username="owner1", password="x")
+        resp = self.client.get("/crm/hiring/export/csv/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp["Content-Type"], "text/csv")
+        rows = list(csv.reader(io.StringIO(resp.content.decode())))
+        header, row = rows[0], rows[1]
+        self.assertIn("Username", header)
+        self.assertIn("Password", header)
+        self.assertEqual(row[0], "Rahim")
+        self.assertEqual(row[5], self.app.login_username)
+        self.assertEqual(row[6], "ExpPass99")
+
+    def test_exports_denied_for_staff(self):
+        self.client.login(username="staff1", password="x")
+        self.assertEqual(self.client.get("/crm/hiring/export/messages/").status_code, 403)
+        self.assertEqual(self.client.get("/crm/hiring/export/csv/").status_code, 403)
+
+    def test_export_respects_status_filter(self):
+        self.client.login(username="owner1", password="x")
+        resp = self.client.get("/crm/hiring/export/messages/?status=applied")
+        self.assertNotIn("Rahim", resp.content.decode())
+        resp = self.client.get("/crm/hiring/export/messages/?status=hired")
+        self.assertIn("Rahim", resp.content.decode())

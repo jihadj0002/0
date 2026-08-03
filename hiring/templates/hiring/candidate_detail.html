@@ -116,6 +116,20 @@
 </div>
 {% endif %}
 
+{% if candidate.status == 'hired' and candidate.hired_user %}
+<div class="panel" style="margin-top:18px;">
+  <div class="panel-title">CRM account</div>
+  <table class="crm-table">
+    <tbody>
+      <tr><td><b>Login URL</b></td><td><a href="/crm/" target="_blank">/crm/</a></td></tr>
+      <tr><td><b>Username</b></td><td>{{ candidate.login_username }}</td></tr>
+      <tr><td><b>Temp password</b></td><td>{{ candidate.temp_password|default:"(auto-generated, shown when hired)" }}</td></tr>
+    </tbody>
+  </table>
+  <div class="form-help" style="margin-top:8px;">Sent to the candidate by email when SMTP is configured — otherwise share manually.</div>
+</div>
+{% endif %}
+
 {% if candidate.meetings.all %}
 <div class="panel" style="margin-top:18px;">
   <div class="panel-title">Interviews</div>

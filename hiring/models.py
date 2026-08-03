@@ -51,6 +51,8 @@ class CandidateApplication(models.Model):
         User, null=True, blank=True, on_delete=models.SET_NULL,
         related_name="hired_candidate", help_text="CRM account created on hire",
     )
+    # Encrypted temp password (Fernet via back.crypto) — use the property below.
+    _temp_password = models.TextField(blank=True, null=True, db_column="temp_password")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -64,6 +66,20 @@ class CandidateApplication(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.get_position_display()})"
+
+    @property
+    def temp_password(self):
+        from back.crypto import decrypt_value
+        return decrypt_value(self._temp_password)
+
+    @temp_password.setter
+    def temp_password(self, value):
+        from back.crypto import encrypt_value
+        self._temp_password = encrypt_value(value or "")
+
+    @property
+    def login_username(self):
+        return self.hired_user.username if self.hired_user else ""
 
     @property
     def skills_list(self):

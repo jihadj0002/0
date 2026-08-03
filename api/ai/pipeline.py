@@ -14,13 +14,24 @@ _IMAGE_URL_RE = re.compile(
 
 
 def _strip_image_urls(text):
-    """Remove image URLs from a reply and tidy the leftover whitespace."""
+    """Remove image URLs from a reply and tidy the leftover whitespace.
+
+    Also strips markdown bold markers and whitespace-only lines so a reply that
+    embedded image URLs doesn't come out with ugly gaps like ``\\n     \\n   Price:``.
+    """
     if not text:
         return text
     cleaned = _IMAGE_URL_RE.sub("", text)
-    # Collapse blank lines / stray spaces left behind by removed URLs.
+    cleaned = cleaned.replace("**", "")
+    # Drop whitespace-only lines; collapse multiple blank lines to one.
+    lines = []
+    for line in cleaned.split("\n"):
+        if line.strip():
+            lines.append(line)
+        elif lines and lines[-1] != "":
+            lines.append("")
+    cleaned = "\n".join(lines)
     cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
 
@@ -30,7 +41,7 @@ def _strip_image_urls(text):
 _IMG_NOUN_RE = re.compile(r"(ছবি|chh?obi|image|photo|picture|\bpic\b)", re.IGNORECASE)
 _SEND_CUE_RE = re.compile(
     r"(পাঠা|দিচ্ছি|দিলাম|পাঠালাম|পাঠাচ্ছি|শেয়ার|patha|dicchi|dilam|"
-    r"send|sending|share|sharing|attach|here (are|is))",
+    r"send|sending|share|sharing|attach|here (are|is)|দেখা|দেখান|দেখাচ্ছি)",
     re.IGNORECASE,
 )
 
@@ -40,6 +51,17 @@ def _promises_images(text):
     if not text:
         return False
     return bool(_IMG_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
+
+
+# The catalog has no videos. Catch replies that claim to send/attach videos.
+_VIDEO_NOUN_RE = re.compile(r"(video|vdo|ভিডিও|clipp?|reels?|reel|film)", re.IGNORECASE)
+
+
+def _promises_videos(text):
+    """True if the reply text implies videos are being sent."""
+    if not text:
+        return False
+    return bool(_VIDEO_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
 
 
 from .context import build_system_prompt, get_conversation_history
@@ -52,11 +74,16 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ITERATIONS = 7
 
 
-def _split_text_messages(text):
+def _split_text_messages(text, max_parts=3):
     if not text:
         return []
     parts = [p.strip() for p in text.split("\n\n") if p.strip()]
-    return parts if len(parts) > 1 else [text]
+    if len(parts) <= 1:
+        return [text] if text.strip() else []
+    if len(parts) <= max_parts:
+        return parts
+    # Cap the number of bubbles — merge overflow into the last part.
+    return parts[: max_parts - 1] + ["\n".join(parts[max_parts - 1:])]
 
 
 
@@ -227,14 +254,44 @@ def run(conversation, incoming_message):
     product_cards = []
     transferred = False
     image_promise_corrected = False
+    video_promise_corrected = False
     search_called = False
     focus_hinted = False
+    # PIDs whose images were already collected this turn — the model sometimes
+    # calls send_images repeatedly for the same product.
+    _turn_sent_pids = set()
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|"
         r"ki.?ki.?ache|কি কি আছে|show|দেখান|want)",
         re.IGNORECASE,
     )
+    _video_keywords = re.compile(
+        r"(video|vdo|ভিডিও|clipp?|reels?|reel|film|dekhano|দেখানো)",
+        re.IGNORECASE,
+    )
+
+    # Cross-turn: images sent in the previous bot message must NOT be resent
+    # unless the customer explicitly asks for more.
+    _requesting_more = bool(
+        re.search(r"(more|আরো|আরও|আবার|again|all|সব|dup|extra)", customer_text or "", re.IGNORECASE)
+    )
+    prev_images = set()
+    try:
+        last_bot = (
+            Message.objects.filter(conversation=conversation, sender="bot")
+            .exclude(attachments=None)
+            .order_by("-timestamp")
+            .first()
+        )
+        if last_bot and last_bot.attachments:
+            prev_images.update(last_bot.attachments.get("images", []) or [])
+            for _card in last_bot.attachments.get("cards", []) or []:
+                _ci = _card.get("images") or []
+                if _ci:
+                    prev_images.add(_ci[0])
+    except Exception:
+        pass
 
     for iteration in range(MAX_TOOL_ITERATIONS):
         try:
@@ -264,7 +321,8 @@ def run(conversation, incoming_message):
 
             # GUARD: force search_products if the query looks like a product request
             is_product_query = bool(_product_keywords.search(customer_text or ""))
-            if is_product_query and not search_called:
+            is_video_request = bool(_video_keywords.search(customer_text or ""))
+            if is_product_query and not is_video_request and not search_called:
                 has_focus = bool(parse_focus_products(conversation.current_product))
                 if has_focus and not focus_hinted:
                     focus_hinted = True
@@ -313,6 +371,22 @@ def run(conversation, incoming_message):
                     ),
                 })
                 continue
+            # Safety net: never let the model claim it sent a video — the catalog
+            # has no videos. Force ONE corrective pass to retract the claim.
+            if (not video_promise_corrected
+                    and _promises_videos(candidate)):
+                video_promise_corrected = True
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "The catalog has NO videos — you must NOT claim to send "
+                        "videos. Resend your reply politely stating videos are not "
+                        "available and offer to send product pictures instead."
+                    ),
+                })
+                continue
+
             final_text = candidate
             break
 
@@ -374,38 +448,74 @@ def run(conversation, incoming_message):
             # a confirmation; visuals are sent separately by send_reply.
             tool_content = result
             if fn_name == "send_images" and isinstance(result, dict):
-                products = result.get("products")
-                if products:
-                    if len(products) > 1:
-                        product_cards.extend(products)
-                        if conversation.platform in ("whatsapp", "telegram"):
-                            for p in products:
-                                imgs = p.get("images") or []
-                                if imgs:
-                                    pending_images.append(imgs[0])
-                        tool_content = {
-                            "products": [
-                                {"pid": p.get("pid"), "name": p.get("name"),
-                                 "price": p.get("price"), "sku": p.get("sku")}
-                                for p in products
-                            ],
-                            "products_count": len(products),
-                            "status": "products sent as a scrollable carousel — briefly mention names and prices in your reply",
-                        }
-                    else:
-                        for p in products:
-                            pending_images.extend(p.get("images", []))
-                        p = products[0]
-                        tool_content = {
-                            "pid": p.get("pid"),
-                            "name": p.get("name"),
-                            "price": p.get("price"),
-                            "sku": p.get("sku"),
-                            "images_sent": len(pending_images),
-                            "status": "product images sent to the customer one by one — you may describe what is shown",
-                        }
+                products = result.get("products") or []
+
+                # Within-turn dedup: skip products whose images were already
+                # collected earlier in this same turn (model sometimes calls
+                # send_images repeatedly with the same pids).
+                fresh = []
+                for p in products:
+                    pid = p.get("pid")
+                    if pid and pid in _turn_sent_pids:
+                        continue
+                    if pid:
+                        _turn_sent_pids.add(pid)
+                    fresh.append(p)
+
+                # Cross-turn dedup: never resend images that were already
+                # delivered in the previous bot message — unless the customer
+                # explicitly asked for more.
+                if not _requesting_more:
+                    kept = []
+                    for p in fresh:
+                        imgs = p.get("images") or []
+                        if imgs and imgs[0] in prev_images:
+                            continue
+                        kept.append(p)
+                    fresh = kept
+
+                if not fresh:
+                    tool_content = {
+                        "status": "images_already_sent",
+                        "note": (
+                            "You already sent these product images (this turn or the "
+                            "previous one). Do NOT resend. Briefly remind the customer "
+                            "the pictures were already shared, or suggest other products."
+                        ),
+                    }
+                elif len(fresh) > 1:
+                    # Multi-product: ONE image per product, max 4 products.
+                    capped = fresh[:4]
+                    for p in capped:
+                        imgs = p.get("images") or []
+                        if imgs:
+                            p["images"] = [imgs[0]]
+                    product_cards.extend(capped)
+                    tool_content = {
+                        "products": [
+                            {"pid": p.get("pid"), "name": p.get("name"),
+                             "price": p.get("price"), "sku": p.get("sku")}
+                            for p in capped
+                        ],
+                        "products_count": len(capped),
+                        "status": "products sent as a scrollable carousel — briefly mention names and prices in your reply",
+                    }
+                elif products:
+                    # Single product: up to 4 images, sent one-by-one.
+                    p = fresh[0]
+                    imgs = (p.get("images") or [])[:4]
+                    pending_images.extend(imgs)
+                    tool_content = {
+                        "pid": p.get("pid"),
+                        "name": p.get("name"),
+                        "price": p.get("price"),
+                        "sku": p.get("sku"),
+                        "images_sent": len(imgs),
+                        "status": "product images sent to the customer one by one — you may describe what is shown",
+                    }
                 else:
-                    imgs = result.get("images", []) or []
+                    # Flat images payload (no product dicts) — cap at 4.
+                    imgs = (result.get("images", []) or [])[:4]
                     pending_images.extend(imgs)
                     tool_content = {
                         "pid": result.get("pid"),
@@ -437,15 +547,27 @@ def run(conversation, incoming_message):
     # send_images. Strip any that slipped through before saving/sending.
     final_text = _strip_image_urls(final_text)
 
-    # Deduplicate image URLs, cap at 5
+    # Deduplicate image URLs, cap at 4 (one per product, max 4 products)
     seen = set()
     unique_images = []
     for img in pending_images:
         if img not in seen:
             seen.add(img)
             unique_images.append(img)
-            if len(unique_images) == 5:
+            if len(unique_images) == 4:
                 break
+
+    # Deduplicate cards by pid (model can ask for the same products repeatedly)
+    seen_pids = set()
+    unique_cards = []
+    for card in product_cards:
+        pid = card.get("pid")
+        if pid and pid in seen_pids:
+            continue
+        if pid:
+            seen_pids.add(pid)
+        unique_cards.append(card)
+    product_cards = unique_cards[:4]
 
     # Persist bot reply
     attachment = {}

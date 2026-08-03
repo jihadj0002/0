@@ -1,6 +1,6 @@
 # MatrixAI Hiring Forum — Implementation Plan & Task Tracker
 
-> Status: **COMPLETE** — 9 hiring tests + full suite green, E2E smoke verified.
+> Status: **COMPLETE** — 15 hiring tests + full suite green, E2E smoke verified.
 > Scope (confirmed with product owner): public careers page where sales applicants submit name/skills/CV/details; owner & managers review applicants, shortlist, hire (create CRM staff accounts → `/crm/` access), and schedule group meetings.
 > Hired members get **CRM staff access only** (no tenant dashboard / integrations).
 > Group meeting = **one meeting record that bulk-invites selected candidates**.
@@ -75,6 +75,26 @@ Position values mirror CRM staff roles: `sales_staff`, `sales_executive`, `sales
 - **Public**: clean Tailwind two-column apply page (matches `front/forum.html` visual language), honeypot spam field, inline success message.
 - **Admin**: extends `crm/base.html` using existing `.panel`, `.crm-table`, `.btn`, `.pill` classes; stat cards on index; detail page shows resume/photo, notes, timeline of status; meeting form uses multi-select candidate list with "every shortlisted" shortcut.
 
+## 5b. Notifications & Manual Export
+
+**Automated emails** (best-effort — only delivered when SMTP env vars are set; otherwise Django prints them to the console and the UI shows a "send manually" warning):
+
+| Event | Email | Body |
+|---|---|---|
+| Application received | immediate | acknowledgment |
+| Shortlisted | "You've been shortlisted" | status message |
+| Rejected | "Application update" | polite rejection |
+| Meeting created | "Interview invitation" | meeting title/date/platform/link + confirm request |
+| Hired | "You're hired — Welcome to MatrixAi!" | **login URL, username, temp password** |
+
+All bodies come from `hiring.services.build_candidate_message()` — single source of truth shared by emails and exports.
+
+**Credentials**: the generated/provided temp password is stored **encrypted** on `CandidateApplication._temp_password` (`back.crypto` Fernet, same pattern as `ProductSource`), decrypted on read. Shown once as a flash after hire, on the candidate detail "CRM account" panel, and included in emails/exports.
+
+**Manual export** (owner/manager, `/crm/hiring/export/…`, honors the current `q`/`status` filters from the index page):
+- **`export/messages/` → `hiring_messages.txt`** — ready-to-copy blocks per candidate: header (name/position/status/phone/email) + subject + message (hired → credentials, interview_scheduled → meeting details). For sending manually via WhatsApp/email.
+- **`export/csv/` → `hiring_candidates.csv`** — Name, Phone, Email, Position, Status, Username, Password, Login URL, Meeting Title, Meeting Date, Message — for mail-merge/spreadsheets.
+
 ## 6. Task Tracker
 
 > **Phase 1 — Foundation**: app skeleton, models, migration
@@ -111,6 +131,14 @@ Position values mirror CRM staff roles: `sales_staff`, `sales_executive`, `sales
 - [x] 5.2 `seed_hiring` management command (sample candidates + a meeting)
 - [x] 5.3 Tests: services (create/dedupe), hire (StaffProfile + /crm/ access), bulk meeting (attendees + status), permissions (staff cannot access)
 - [x] 5.4 Full verification: makemigrations → migrate → check → test; smoke the public form + admin flows
+
+### Phase 6 — Notifications & manual export
+- [x] 6.1 `build_candidate_message()` single source of truth (all 5 statuses, hired → credentials, interview → meeting details)
+- [x] 6.2 Encrypted temp-password storage on `CandidateApplication` (Fernet) + migration
+- [x] 6.3 Hire/shortlist/reject/meeting actions flash email status ("sent" vs "SMTP not configured — use Export")
+- [x] 6.4 Credentials panel on candidate detail page for hired candidates
+- [x] 6.5 `export_messages` (.txt ready-to-send blocks) + `export_csv` (mail-merge) honoring filters, owner/manager only
+- [x] 6.6 Tests: password roundtrip, hire email body contains creds, exports content/permissions/filters
 
 ## 7. Verification
 

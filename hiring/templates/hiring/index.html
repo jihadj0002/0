@@ -6,7 +6,11 @@
     <h1>Hiring</h1>
     <div class="page-sub">Sales applications & interviews</div>
   </div>
-  <a class="btn btn-primary" href="{% url 'hiring_admin:meeting_new' %}" style="align-self:center;">+ Schedule meeting</a>
+  <div style="display:flex;gap:8px;align-self:center;">
+    <a class="btn btn-outline" href="{% url 'hiring_admin:export_messages' %}?{{ request.GET.urlencode }}">⬇ Export .txt</a>
+    <a class="btn btn-outline" href="{% url 'hiring_admin:export_csv' %}?{{ request.GET.urlencode }}">⬇ Export CSV</a>
+    <a class="btn btn-primary" href="{% url 'hiring_admin:meeting_new' %}">+ Schedule meeting</a>
+  </div>
 </div>
 
 <div class="cards">

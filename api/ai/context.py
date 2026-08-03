@@ -348,6 +348,13 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
         "- If multiple options, use send_images(pids=[...]) to send carousel as names and price are already in the carousel.\n"
         "- If you want multiple short messages, separate with a blank line.\n"
         "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
+        "- The catalog has NO videos. If asked for videos/ভিডিও, say they're unavailable "
+        "and offer to send pictures instead. Never claim to send videos.\n"
+        "- Send at most ONE image per product and no more than 4 products per turn. "
+        "Never resend images you already showed in this conversation unless the customer "
+        "explicitly asks for more.\n"
+        "- Reply in 1-2 short sentences, ideally a SINGLE message (max 2). "
+        "No numbered lists, no markdown (**), no image URLs in text.\n"
     )
 
     parts.append(
@@ -356,6 +363,8 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
         "2) search_products with different keywords (Bengali → English).\n"
         "3) Verify names match; if not, search again.\n"
         "4) Respond with genuine matches or say out of stock.\n"
+        "5) If several products match, call send_images ONCE with all pids "
+        "(pids=[...]). NEVER call send_images twice for the same product.\n"
     )
     if external_catalog:
         parts.append("- For images: search SKU first, then name.\n")
