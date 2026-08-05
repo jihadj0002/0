@@ -84,7 +84,7 @@
           </td>
           <td>{{ lead.score }}</td>
           <td><span class="pill pill-gray">{{ lead.get_source_display }}</span></td>
-          <td>{% if lead.assigned_to %}{{ lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}Unassigned{% endif %}</td>
+          <td data-assigned-cell>{% if lead.assigned_to %}{{ lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}Unassigned{% endif %}</td>
           <td>{% if lead.expected_value %}৳{{ lead.expected_value|floatformat:0 }}{% else %}—{% endif %}</td>
           <td>{% if lead.next_followup %}{{ lead.next_followup|date:"M j, g:i A" }}{% else %}—{% endif %}</td>
           <td class="row-actions">
@@ -143,7 +143,10 @@ function openLeadPopup(leadId) {
     .then(html => document.getElementById('crmDrawerBody').innerHTML = html)
     .catch(err => { document.getElementById('crmDrawerBody').innerHTML = '<div class="empty-state">Failed to load lead.</div>'; Crm.toast(err.message, 'error'); });
 }
-window.Crm._openLeadPopup = openLeadPopup;
+window.Crm = window.Crm || {};
+document.addEventListener('DOMContentLoaded', () => {
+  window.Crm._openLeadPopup = openLeadPopup;
+});
 document.querySelectorAll('.row-clickable').forEach(row => {
   row.addEventListener('click', (e) => {
     if (e.target.closest('a, button, input, select, textarea, .row-actions')) return;

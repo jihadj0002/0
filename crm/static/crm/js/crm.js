@@ -231,6 +231,10 @@
         else if (data.lost) { pill.className = 'pill pill-lost'; pill.textContent = 'Lost'; }
       }
     }
+    const assignedCell = row.querySelector('[data-assigned-cell]');
+    if (assignedCell && 'assignee' in data) {
+      assignedCell.textContent = data.assignee || 'Unassigned';
+    }
   }
   document.addEventListener('submit', async (e) => {
     const form = e.target.closest('.stage-form');
