@@ -5,7 +5,7 @@
 
 ---
 
-## Curriculum (9 modules, 9 days)
+## Curriculum (10 modules, 10 days)
 
 | Day | Module | What You'll Learn | Files |
 |-----|--------|-------------------|-------|
@@ -18,8 +18,9 @@
 | 7 | **Roleplay & Quiz** | Practice scenarios + 20-question test (must pass 80%) | `module-07-roleplay-and-quiz.md` |
 | 8 | **Leads & Qualification** | What a lead is, Hot/Warm/Cold scoring, the jackpot signal, speed-to-lead | `module-08-leads-and-qualification.md` |
 | 9 | **Sales Psychology** | The 6 persuasion principles, framing, silence, decision moments | `module-09-sales-psychology.md` |
+| 10 | **CRM Operations (the app)** | Using the CRM: dashboard, leads, pipeline, follow-ups, calls, meetings, customers | `module-10-crm-operations.md` |
 
-> **Note for existing agents**: Modules 1-7 are the required base. Modules 8-9 are the differentiator — read them before your 2nd week live.
+> **Note for existing agents**: Modules 1-7 are the required base. Modules 8-9 are the differentiator — read them before your 2nd week live. **Module 10 is the app manual — read it before your first live day.**
 
 ---
 
@@ -34,6 +35,7 @@
 | 1-line pitch | `Module 1` — "1 sentence that sells" |
 | Objection table | `module-04-objection-handling.md` |
 | Persuasion principles | `module-09-sales-psychology.md` |
+| **How to use the CRM app** | `module-10-crm-operations.md` |
 
 ---
 

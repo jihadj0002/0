@@ -56,7 +56,7 @@ function scriptModal() {
 function viewScript(el) {
   const card = el.closest('.script-card');
   const title = card.dataset.title;
-  const content = card.dataset.content;
+  const content = JSON.parse(card.dataset.content);
   Crm.openDrawer(title, `
     <div class="script-viewer">
       <div class="script-viewer-body">${content}</div>
@@ -69,7 +69,7 @@ document.querySelectorAll('.script-card').forEach(card => {
   card.addEventListener('click', (e) => {
     if (e.target.closest('button, a')) return;
     const title = card.dataset.title;
-    const content = card.dataset.content;
+    const content = JSON.parse(card.dataset.content);
     Crm.openDrawer(title, `
       <div class="script-viewer">
         <div class="script-viewer-body">${content}</div>
@@ -85,7 +85,7 @@ function copyViewer(btn) {
 }
 async function toggleScript(pk) {
   try {
-    await Crm.api('/crm/scripts/' + pk + '/toggle', 'POST', {});
+    await Crm.api('/crm/scripts/' + pk + '/toggle/', 'POST', {});
     setTimeout(() => location.reload(), 250);
   } catch (err) { Crm.toast(err.message, 'error'); }
 }

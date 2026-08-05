@@ -29,6 +29,7 @@ SOURCES = [
     ("Training Modules", 1, "training-modules", 7, "module-07-roleplay-and-quiz", "sales-enablement/training/module-07-roleplay-and-quiz.md"),
     ("Training Modules", 1, "training-modules", 8, "module-08-leads-and-qualification", "sales-enablement/training/module-08-leads-and-qualification.md"),
     ("Training Modules", 1, "training-modules", 9, "module-09-sales-psychology", "sales-enablement/training/module-09-sales-psychology.md"),
+    ("Training Modules", 1, "training-modules", 10, "module-10-crm-operations", "sales-enablement/training/module-10-crm-operations.md"),
     ("Playbook & Plans", 2, "playbook-plans", 1, "sales-team-playbook", "sales-enablement/SALES-TEAM-PLAYBOOK.md"),
     ("Playbook & Plans", 2, "playbook-plans", 2, "video-demo-plan", "sales-enablement/video-demo-plan.md"),
     ("Master Scripts", 3, "master-scripts", 1, "call-script", "call_faq/call-script.md"),

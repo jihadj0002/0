@@ -107,6 +107,7 @@ If you get through all 7 days without skipping a step or saying "না, আপ�
 - [ ] I know: discounts only via Jihad, 🟢 leads → Jihad, 5 touches max
 - [ ] I understand commission rules (25%, 7-day active, Sunday payout)
 - [ ] I've read modules 8-9 (qualification + psychology) before week 2
+- [ ] I've read module 10 (how to use the CRM app) before my first live day
 
 **When you've ticked all boxes → tell Jihad you're ready and get your leads.**
 

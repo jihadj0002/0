@@ -57,6 +57,7 @@ urlpatterns = [
     path("ajax/leads/<int:pk>/convert", views.ajax_convert_customer, name="ajax_convert_customer"),
     path("ajax/followups/<int:pk>/done", views.ajax_followup_done, name="ajax_followup_done"),
     path("ajax/tasks/<int:pk>/toggle", views.ajax_task_toggle, name="ajax_task_toggle"),
+    path("ajax/tasks/<int:pk>/update", views.ajax_task_update, name="ajax_task_update"),
     path("ajax/calls/log", views.ajax_call_log, name="ajax_call_log"),
     path("ajax/meetings/<int:pk>/status", views.ajax_meeting_status, name="ajax_meeting_status"),
     path("ajax/calendar/events", views.ajax_calendar_events, name="ajax_calendar_events"),

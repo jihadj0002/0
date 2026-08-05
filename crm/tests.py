@@ -20,7 +20,7 @@ Context.__copy__ = _safe_context_copy
 
 from crm.models import (
     StaffProfile, PipelineStage, Lead, Company, Activity, Customer,
-    CallLog, Meeting, Task, Followup, Notification,
+    CallLog, Meeting, Task, Followup, Notification, SalesScript,
     LearningTopic, LearningArticle,
 )
 from crm.services import (
@@ -374,3 +374,306 @@ class LearnTests(CrmBaseTestCase):
         self.assertGreaterEqual(first_count, 14)
         call_command("seed_learn")
         self.assertEqual(LearningArticle.objects.filter(active=True).count(), first_count)
+
+
+class AssignToMeTests(CrmBaseTestCase):
+    """Drawer "Assign to Me" (ajax_quick_update field=assigned_to)."""
+
+    def test_staff_can_claim_unassigned_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Free Lead", phone="+8801844")
+        self.assertIsNone(lead.assigned_to)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "assigned_to", "value": "me"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["assignee"], "staff1")
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, self.staff)
+        self.assertTrue(lead.activities.filter(type="assignment").exists())
+        self.assertTrue(Notification.objects.filter(user=self.staff).exists())
+
+    def test_staff_cannot_claim_others_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        other = User.objects.create_user(username="other3", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        lead, _ = create_lead(self.owner, name="Taken", phone="+8801855", assigned_to=other)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "assigned_to", "value": "me"})
+        self.assertEqual(resp.status_code, 404)
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, other)
+
+    def test_staff_cannot_assign_to_specific_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Open2", phone="+8801866")
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "assigned_to", "value": self.manager.pk})
+        self.assertEqual(resp.status_code, 403)
+        lead.refresh_from_db()
+        self.assertIsNone(lead.assigned_to)
+
+    def test_manager_can_assign_specific_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="Assignable", phone="+8801877")
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "assigned_to", "value": self.staff.pk})
+        self.assertEqual(resp.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, self.staff)
+
+    def test_manager_can_unassign(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="Unassign", phone="+8801888", assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "assigned_to", "value": ""})
+        self.assertEqual(resp.status_code, 200)
+        self.assertIsNone(resp.json()["assignee"])
+        lead.refresh_from_db()
+        self.assertIsNone(lead.assigned_to)
+
+    def test_popup_shows_assign_button_when_unassigned(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Popup Free", phone="+8801899")
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Assign to Me", resp.content.decode())
+
+    def test_popup_hides_assign_button_when_assigned_to_me(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Popup Mine", phone="+8801900", assigned_to=self.staff)
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("Assign to Me", resp.content.decode())
+
+    def test_old_quick_update_url_returns_404(self):
+        """Regression: the old /quick-update path must not exist anymore."""
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Old Url", phone="+8801911", assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/quick-update", {"field": "stage", "value": self.won_stage.pk})
+        self.assertEqual(resp.status_code, 404)
+
+
+class ScriptToggleTests(CrmBaseTestCase):
+    def test_script_toggle_with_trailing_slash(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        script = SalesScript.objects.create(title="Cold A", category="cold_call", content="1. Opening")
+        resp = c.post(f"/crm/scripts/{script.pk}/toggle/")
+        self.assertEqual(resp.status_code, 200)
+        script.refresh_from_db()
+        self.assertFalse(script.active)
+        resp = c.post(f"/crm/scripts/{script.pk}/toggle/")
+        self.assertEqual(resp.status_code, 200)
+        script.refresh_from_db()
+        self.assertTrue(script.active)
+
+    def test_script_toggle_without_slash_redirects_for_get(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        script = SalesScript.objects.create(title="Cold B", category="cold_call", content="x")
+        resp = c.get(f"/crm/scripts/{script.pk}/toggle")
+        self.assertIn(resp.status_code, (301, 302))  # APPEND_SLASH redirect
+
+    def test_script_toggle_requires_manager(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        script = SalesScript.objects.create(title="Cold C", category="cold_call", content="x")
+        resp = c.post(f"/crm/scripts/{script.pk}/toggle/")
+        self.assertEqual(resp.status_code, 403)
+        script.refresh_from_db()
+        self.assertTrue(script.active)
+
+    def test_scripts_page_renders_escaped_content_data_attr(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        SalesScript.objects.create(
+            title="Multi Line", category="cold_call",
+            content='1. Opening\n"Quoted" & <b>tags</b>',
+        )
+        resp = c.get("/crm/scripts/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn("data-content=", body)
+        self.assertIn("Multi Line", body)
+
+
+class DemoSchedulingTests(CrmBaseTestCase):
+    def test_demo_post_creates_meeting(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="Demo Lead", phone="+8801922")
+        dt = (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
+        resp = c.post("/crm/demos/", {"lead": lead.pk, "datetime": dt, "platform": "zoom"})
+        self.assertEqual(resp.status_code, 302)
+        meeting = Meeting.objects.get(lead=lead)
+        self.assertEqual(meeting.platform, "zoom")
+        self.assertTrue(lead.activities.filter(type="demo").exists())
+
+    def test_demo_post_invalid_datetime_returns_400(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="Bad Demo", phone="+8801933")
+        resp = c.post("/crm/demos/", {"lead": lead.pk, "datetime": "not-a-date"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(Meeting.objects.filter(lead=lead).exists())
+
+    def test_demo_post_missing_lead_returns_404(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        dt = (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
+        resp = c.post("/crm/demos/", {"lead": "", "datetime": dt})
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(Meeting.objects.count(), 0)
+
+    def test_demo_post_xhr_returns_json(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="XHR Demo", phone="+8801944")
+        dt = (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%d %H:%M")
+        resp = c.post(
+            "/crm/demos/",
+            {"lead": lead.pk, "datetime": dt},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+
+
+class TaskPermissionTests(CrmBaseTestCase):
+    def _make_task(self, assigned_to=None, created_by=None, status="pending"):
+        return Task.objects.create(
+            title="T", assigned_to=assigned_to, priority="medium",
+            status=status, created_by=created_by or self.owner,
+        )
+
+    def test_staff_create_forces_self_assignment(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.post("/crm/tasks/", {"title": "My Task", "assigned_to": self.manager.pk})
+        self.assertEqual(resp.status_code, 302)
+        task = Task.objects.get(title="My Task")
+        self.assertEqual(task.assigned_to, self.staff)
+
+    def test_manager_create_can_assign_other_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post("/crm/tasks/", {"title": "Delegated", "assigned_to": self.staff.pk})
+        self.assertEqual(resp.status_code, 302)
+        task = Task.objects.get(title="Delegated")
+        self.assertEqual(task.assigned_to, self.staff)
+
+    def test_staff_cannot_update_others_task(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        other = User.objects.create_user(username="other4", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        task = self._make_task(assigned_to=other, created_by=self.owner)
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"status": "done"})
+        self.assertEqual(resp.status_code, 403)
+        task.refresh_from_db()
+        self.assertEqual(task.status, "pending")
+
+    def test_staff_can_update_own_task(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        task = self._make_task(assigned_to=self.staff, created_by=self.owner)
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"status": "done"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "done")
+        task.refresh_from_db()
+        self.assertEqual(task.status, "done")
+
+    def test_manager_can_update_any_task(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        task = self._make_task(assigned_to=self.staff, created_by=self.staff)
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"status": "doing", "priority": "high"})
+        self.assertEqual(resp.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.status, "doing")
+        self.assertEqual(task.priority, "high")
+
+    def test_task_update_invalid_status_400(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        task = self._make_task()
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"status": "banana"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_task_update_reassign_by_staff_ignored(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        other = User.objects.create_user(username="other5", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        task = self._make_task(assigned_to=self.staff, created_by=self.owner)
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"assigned_to": other.pk})
+        self.assertEqual(resp.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.assigned_to, self.staff)
+
+    def test_task_update_reassign_by_manager(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        other = User.objects.create_user(username="other6", password="x")
+        StaffProfile.objects.create(user=other, role="staff")
+        task = self._make_task(assigned_to=self.staff, created_by=self.owner)
+        resp = c.post(f"/crm/ajax/tasks/{task.pk}/update", {"assigned_to": other.pk})
+        self.assertEqual(resp.status_code, 200)
+        task.refresh_from_db()
+        self.assertEqual(task.assigned_to, other)
+
+    def test_tasks_page_hides_done_by_default(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        pending = self._make_task(assigned_to=self.owner, status="pending", created_by=self.owner)
+        done = self._make_task(assigned_to=self.owner, status="done", created_by=self.owner)
+        pending.title = "Visible Task"
+        done.title = "Hidden Done Task"
+        pending.save()
+        done.save()
+        resp = c.get("/crm/tasks/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn(f'data-task="{pending.pk}"', body)
+        self.assertIn("Visible Task", body)
+        self.assertNotIn("Hidden Done Task", body)
+
+    def test_tasks_page_done_visible_with_status_filter(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        task = self._make_task(assigned_to=self.owner, status="done", created_by=self.owner)
+        resp = c.get("/crm/tasks/?status=done")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Done", resp.content.decode())
+        self.assertIn(str(task.pk), resp.content.decode())

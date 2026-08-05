@@ -213,6 +213,51 @@
     });
   }
 
+  /* ---------- lead drawer actions (shared by leads + pipeline) ---------- */
+  async function quickUpdate(leadId, field, value) {
+    return api('/crm/ajax/leads/' + leadId + '/update', 'POST', { field, value });
+  }
+  function refreshLeadRow(leadId, data) {
+    const row = document.querySelector('tr[data-lead="' + leadId + '"]');
+    if (!row) return;
+    const stageCell = row.querySelector('[data-stage-cell]');
+    if (stageCell && data.stage_name) {
+      stageCell.innerHTML = '<span class="pill pill-blue"></span>';
+      stageCell.querySelector('.pill').textContent = data.stage_name;
+      const bucketCell = row.querySelector('[data-bucket-cell]');
+      if (bucketCell) {
+        const pill = bucketCell.querySelector('.pill');
+        if (data.won) { pill.className = 'pill pill-won'; pill.textContent = 'Won'; }
+        else if (data.lost) { pill.className = 'pill pill-lost'; pill.textContent = 'Lost'; }
+      }
+    }
+  }
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('.stage-form');
+    if (!form) return;
+    e.preventDefault();
+    const leadId = form.dataset.leadId;
+    const btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const res = await quickUpdate(leadId, 'stage', form.querySelector('.stage-select').value);
+      Crm.toast('Stage updated to ' + res.stage_name, 'success');
+      refreshLeadRow(leadId, res);
+      window.Crm._openLeadPopup && window.Crm._openLeadPopup(leadId);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+    btn.disabled = false;
+  });
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('#assignMeBtn');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      await quickUpdate(btn.dataset.leadId, 'assigned_to', 'me');
+      Crm.toast('Lead assigned to you', 'success');
+      window.Crm._openLeadPopup && window.Crm._openLeadPopup(btn.dataset.leadId);
+    } catch (err) { Crm.toast(err.message, 'error'); btn.disabled = false; }
+  });
+
   /* ---------- auto-dismiss toasts ---------- */
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.crm-toast').forEach((t) => {

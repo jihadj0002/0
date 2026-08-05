@@ -44,6 +44,11 @@
   <div class="popup-row"><span class="popup-label">Industry</span><span class="popup-value">{{ lead.industry|default:"—" }}</span></div>
   {% endif %}
   <div class="popup-row"><span class="popup-label">Assigned To</span><span class="popup-value">{% if lead.assigned_to %}{{ lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}Unassigned{% endif %}</span></div>
+  {% if not lead.assigned_to and can_edit %}
+  <div class="popup-block">
+    <button class="btn btn-primary btn-block" id="assignMeBtn" data-lead-id="{{ lead.pk }}">⚡ Assign to Me</button>
+  </div>
+  {% endif %}
   {% if lead.next_followup %}<div class="popup-row"><span class="popup-label">Next Follow-up</span><span class="popup-value">{{ lead.next_followup|date:"M j, Y · g:i A" }}</span></div>{% endif %}
   {% if lead.expected_value %}<div class="popup-row"><span class="popup-label">Expected Value</span><span class="popup-value">৳{{ lead.expected_value|floatformat:0 }}</span></div>{% endif %}
 

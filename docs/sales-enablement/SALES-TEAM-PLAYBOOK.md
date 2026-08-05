@@ -169,7 +169,7 @@ Then update their row in `PIPELINE.md`:
 
 ### Training curriculum (required before first live call)
 
-Every new agent studies `training/TRAINING-INDEX.md` — 9 modules, one per day. **No module 7 quiz pass (80%), no first live call.** Modules 8-9 must be read before the agent's second week live. Jihad checks progress in the Monday call.
+Every new agent studies `training/TRAINING-INDEX.md` — 10 modules, one per day. **No module 7 quiz pass (80%), no first live call.** Modules 8-9 must be read before the agent's second week live; **module 10 (how to use the CRM app) must be read before the first live day.** Jihad checks progress in the Monday call.
 
 | Day | Module | Check by Jihad |
 |-----|--------|----------------|
@@ -182,6 +182,7 @@ Every new agent studies `training/TRAINING-INDEX.md` — 9 modules, one per day.
 | 7 | `training/module-07-roleplay-and-quiz.md` | Passes quiz ≥ 16/20 |
 | 8 | `training/module-08-leads-and-qualification.md` | Scores 5 leads Hot/Warm/Cold + explains jackpot signal |
 | 9 | `training/module-09-sales-psychology.md` | Uses loss-framing + anchoring in roleplay |
+| 10 | `training/module-10-crm-operations.md` | Logs a real lead, call + follow-up in the app live |
 
 ---
 

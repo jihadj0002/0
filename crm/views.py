@@ -1,6 +1,7 @@
 from django.db.models import Count, Sum, Q
 from django.shortcuts import render, redirect, get_object_or_404
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from datetime import timedelta
 from django.contrib.auth import logout as auth_logout
 from django.http import JsonResponse
@@ -401,7 +402,7 @@ def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
     field = request.POST.get("field")
     value = request.POST.get("value")
-    allowed = {"score", "budget", "expected_value", "next_followup", "stage"}
+    allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to"}
     if field in allowed and (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
         if field == "score":
             value = max(0, min(100, int(value or 0)))
@@ -412,6 +413,20 @@ def ajax_quick_update(request, pk):
                 "ok": True, "stage_name": stage.name,
                 "won": lead.is_won(), "lost": lead.is_lost(),
             })
+        if field == "assigned_to":
+            if value == "me":
+                if lead.assigned_to_id not in (None, request.user.id) and not can_manage(request.user):
+                    return JsonResponse({"ok": False, "error": "Lead is already assigned"}, status=403)
+                assignee = request.user
+            else:
+                if not can_manage(request.user):
+                    return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+                assignee = User_or_None(value)
+            update_lead(request.user, lead, assigned_to=assignee)
+            name = None
+            if assignee:
+                name = assignee.get_full_name() or assignee.username
+            return JsonResponse({"ok": True, "assignee": name})
         update_lead(request.user, lead, **{field: value or None})
         return JsonResponse({"ok": True})
     return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
@@ -478,6 +493,33 @@ def ajax_task_toggle(request, pk):
         return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
     task.status = "done" if task.status != "done" else "pending"
     task.save(update_fields=["status"])
+    return JsonResponse({"ok": True, "status": task.status})
+
+
+@staff_required
+@require_POST
+def ajax_task_update(request, pk):
+    task = get_object_or_404(Task, pk=pk)
+    if task.assigned_to_id not in (request.user.id, None) and task.created_by_id != request.user.id and not can_manage(request.user):
+        return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+    status = request.POST.get("status")
+    if status:
+        if status not in dict(Task.STATUS_CHOICES):
+            return JsonResponse({"ok": False, "error": "Invalid status"}, status=400)
+        task.status = status
+    title = request.POST.get("title", "").strip()
+    if title:
+        task.title = title
+    priority = request.POST.get("priority")
+    if priority in dict(Task.PRIORITY_CHOICES):
+        task.priority = priority
+    deadline = request.POST.get("deadline")
+    if deadline is not None:
+        task.deadline = parse_datetime(deadline) if deadline.strip() else None
+    assigned_to = request.POST.get("assigned_to")
+    if assigned_to is not None and can_manage(request.user):
+        task.assigned_to = User_or_None(assigned_to)
+    task.save()
     return JsonResponse({"ok": True, "status": task.status})
 
 
@@ -670,16 +712,29 @@ def demos(request):
     if status:
         qs = qs.filter(status=status)
     if request.method == "POST":
-        lead = get_object_or_404(lead_queryset_for(request.user), pk=request.POST.get("lead"))
+        try:
+            lead_pk = int(request.POST.get("lead") or 0)
+        except (TypeError, ValueError):
+            lead_pk = 0
+        lead = get_object_or_404(lead_queryset_for(request.user), pk=lead_pk)
+        raw_dt = request.POST.get("datetime") or ""
+        meeting_dt = parse_datetime(raw_dt) if raw_dt.strip() else None
+        if meeting_dt is None:
+            return JsonResponse({"ok": False, "error": "Enter a valid date & time (YYYY-MM-DD HH:MM)"}, status=400)
+        platform = request.POST.get("platform", "zoom")
+        if platform not in dict(Meeting.PLATFORM_CHOICES):
+            platform = "zoom"
         meeting = Meeting.objects.create(
             lead=lead, staff=request.user,
-            datetime=request.POST.get("datetime") or timezone.now(),
-            platform=request.POST.get("platform", "zoom"),
+            datetime=meeting_dt,
+            platform=platform,
             link=request.POST.get("link", ""),
             notes=request.POST.get("notes", ""),
         )
         log_activity(lead, "demo", f"Demo scheduled ({meeting.get_platform_display()}) {meeting.datetime:%b %d, %H:%M}",
                      request.user, meeting_id=meeting.pk)
+        if request.headers.get("x-requested-with") == "XMLHttpRequest":
+            return JsonResponse({"ok": True, "url": f"/crm/demos/#meeting-{meeting.pk}"})
         messages.success(request, "Meeting scheduled.")
         return redirect("crm:demos")
     paginator = Paginator(qs.order_by("-datetime"), 25)
@@ -750,15 +805,25 @@ def tasks(request):
     if not can_manage(user):
         qs = qs.filter(Q(assigned_to=user) | Q(assigned_to__isnull=True))
     status = request.GET.get("status", "")
-    if status:
+    if status == "all":
+        pass
+    elif status:
         qs = qs.filter(status=status)
+    else:
+        qs = qs.exclude(status="done")
     if request.method == "POST":
+        if can_manage(user):
+            assigned = User_or_None(request.POST.get("assigned_to") or user.pk)
+        else:
+            assigned = user
+        raw_deadline = request.POST.get("deadline") or ""
+        deadline = parse_datetime(raw_deadline) if raw_deadline.strip() else None
         task = Task.objects.create(
             title=request.POST.get("title", "").strip(),
             lead=Lead.objects.filter(pk=request.POST.get("lead")).first() if request.POST.get("lead") else None,
-            assigned_to=User_or_None(request.POST.get("assigned_to") or user.pk),
+            assigned_to=assigned,
             priority=request.POST.get("priority", "medium"),
-            deadline=request.POST.get("deadline") or None,
+            deadline=deadline,
             created_by=user,
         )
         if task.lead:

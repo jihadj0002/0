@@ -77,6 +77,13 @@ document.querySelectorAll('.kanban-card').forEach(card => {
       .then(html => document.getElementById('crmDrawerBody').innerHTML = html)
       .catch(err => { document.getElementById('crmDrawerBody').innerHTML = '<div class="empty-state">Failed to load lead.</div>'; Crm.toast(err.message, 'error'); });
   });
+  window.Crm._openLeadPopup = (leadId) => {
+    Crm.openDrawer('Lead', '<div class="popup-loading">Loading…</div>');
+    fetch('/crm/ajax/leads/' + leadId + '/popup', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(html => document.getElementById('crmDrawerBody').innerHTML = html)
+      .catch(err => { document.getElementById('crmDrawerBody').innerHTML = '<div class="empty-state">Failed to load lead.</div>'; Crm.toast(err.message, 'error'); });
+  };
 });
 function updateCounts() {
   document.querySelectorAll('.kanban-col').forEach(col => {

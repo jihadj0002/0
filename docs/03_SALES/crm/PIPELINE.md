@@ -18,6 +18,26 @@
 
 ---
 
+## How the Tier System Works
+
+Tiers rank **uncontacted "New" prospects** by their Facebook page **follower count** — bigger audience = more revenue potential = contact first. Tiers apply ONLY to leads still at 🔵 New.
+
+| Tier | Followers | Priority | Action |
+|------|-----------|----------|--------|
+| **Tier 1** | 10K – 50K | High | Call today (phone-first) |
+| **Tier 2** | 5K – 10K | Medium | DM on FB |
+| **Tier 3** | <5K or unknown | Low | Contact only after Tiers 1–2 are done |
+
+Rules of thumb:
+1. Work top-down: finish Tier 1 → Tier 2 → Tier 3, in the weekly target order.
+2. A lead **leaves its tier** the moment it's contacted — it moves to a stage section (🟡/🟢/🔴) and is managed by the normal cadence (follow-ups, hot/warm/cold buckets), not by tier.
+3. Hot / Ready-to-Close leads at the top of the pipeline always outrank new tiers, regardless of follower count.
+4. No follower count on file → treat as Tier 3 unless the business type/size suggests otherwise.
+
+The CRM app itself has no tier field — tiers live in this doc only; track contact stage + next action in the CRM and keep the "Next Action" column here in sync.
+
+---
+
 ## 🟢 Hot / Ready to Close (Contact NOW)
 | # | Business | Type | Contact | Stage | Last Touch | Next Action | Priority |
 |---|----------|------|---------|-------|------------|-------------|----------|

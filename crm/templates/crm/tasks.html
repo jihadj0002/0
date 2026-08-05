@@ -4,7 +4,7 @@
 <div class="page-header">
   <div>
     <h1>Tasks</h1>
-    <div class="page-sub">{{ page_obj.paginator.count }} tasks</div>
+    <div class="page-sub">{{ page_obj.paginator.count }} tasks shown</div>
   </div>
   <div class="page-actions"><button class="btn btn-primary" onclick="taskModal()">+ New Task</button></div>
 </div>
@@ -12,34 +12,48 @@
 <div class="panel">
   <form class="table-toolbar" method="get">
     <select name="status">
-      <option value="">All statuses</option>
+      <option value="" {% if not status %}selected{% endif %}>Open (hides completed)</option>
       <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
       <option value="doing" {% if status == 'doing' %}selected{% endif %}>In Progress</option>
       <option value="done" {% if status == 'done' %}selected{% endif %}>Done</option>
       <option value="cancelled" {% if status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+      <option value="all" {% if status == 'all' %}selected{% endif %}>All (incl. completed)</option>
     </select>
     <button class="btn btn-primary" type="submit">Filter</button>
     <a class="btn btn-outline" href="{% url 'crm:tasks' %}">Reset</a>
   </form>
   <div class="table-wrap">
     <table class="crm-table">
-      <thead><tr><th></th><th>Title</th><th>Lead</th><th>Assigned To</th><th>Priority</th><th>Deadline</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Title</th><th>Lead</th><th>Assigned To</th><th>Priority</th><th>Deadline</th><th>Status</th><th></th></tr></thead>
       <tbody>
         {% for t in tasks %}
-        <tr>
-          <td><input type="checkbox" {% if t.status == 'done' %}checked{% endif %} onchange="toggleTask({{ t.pk }})"></td>
+        <tr data-task="{{ t.pk }}"
+            data-title="{{ t.title|escapejs }}"
+            data-lead="{% if t.lead %}{{ t.lead.pk }}{% endif %}"
+            data-priority="{{ t.priority }}"
+            data-status="{{ t.status }}"
+            data-deadline="{{ t.deadline|date:'Y-m-d H:i' }}"
+            data-assigned="{% if t.assigned_to %}{{ t.assigned_to.pk }}{% endif %}">
           <td><b>{{ t.title }}</b></td>
           <td>{% if t.lead %}<a href="{% url 'crm:lead_detail' t.lead.pk %}">{{ t.lead.name }}</a>{% else %}—{% endif %}</td>
           <td>{% if t.assigned_to %}{{ t.assigned_to.get_full_name|default:t.assigned_to.username }}{% else %}—{% endif %}</td>
           <td><span class="pill {% if t.priority == 'high' %}pill-hot{% elif t.priority == 'medium' %}pill-warm{% else %}pill-cold{% endif %}">{{ t.get_priority_display }}</span></td>
           <td>{% if t.deadline %}{{ t.deadline|date:"M j, g:i A" }}{% else %}—{% endif %}</td>
-          <td><span class="pill pill-blue">{{ t.get_status_display }}</span></td>
+          <td>
+            <select class="task-status-select" data-prev="{{ t.status }}" onchange="setTaskStatus({{ t.pk }}, this.value)">
+              <option value="pending" {% if t.status == 'pending' %}selected{% endif %}>Pending</option>
+              <option value="doing" {% if t.status == 'doing' %}selected{% endif %}>In Progress</option>
+              <option value="done" {% if t.status == 'done' %}selected{% endif %}>Done</option>
+              <option value="cancelled" {% if t.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+            </select>
+          </td>
           <td class="row-actions">
+            <button class="btn btn-sm btn-soft" onclick="taskEditModal(this)">✎</button>
             <button class="btn btn-sm btn-outline" onclick="if(confirm('Delete task?')){Crm.api('/crm/tasks/{{ t.pk }}/delete/','POST',{}).then(()=>location.reload())}">✕</button>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="8"><div class="empty-state"><div class="es-title">No tasks</div></div></td></tr>
+        <tr><td colspan="7"><div class="empty-state"><div class="es-title">No tasks</div><div class="es-sub">Open tasks are shown by default; completed ones are hidden — use the status filter to reveal them.</div></div></td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -56,6 +70,17 @@
 <script>
 const taskLeads = {{ leads_json|safe }};
 const taskStaff = {{ staff_json|safe }};
+const canAssignOthers = {% if role == 'owner' or role == 'manager' %}true{% else %}false{% endif %};
+const taskStatuses = [
+  ['pending', 'Pending'], ['doing', 'In Progress'], ['done', 'Done'], ['cancelled', 'Cancelled']
+];
+function assigneeOptions(selected) {
+  let opts = '<option value="">— Me —</option>';
+  if (canAssignOthers) {
+    opts += taskStaff.map(s => `<option value="${s.id}" ${s.id == selected ? 'selected' : ''}>${s.name}</option>`).join('');
+  }
+  return opts;
+}
 function taskModal() {
   Crm.openModal('New Task', `
     <form id="taskForm" method="post" action="/crm/tasks/" class="form-grid">
@@ -63,19 +88,59 @@ function taskModal() {
       <div class="form-group full"><label>Title *</label><input name="title" required></div>
       <div class="form-group"><label>Lead</label>
         <select name="lead"><option value="">— None —</option>${taskLeads.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}</select></div>
-      <div class="form-group"><label>Assigned To</label>
-        <select name="assigned_to"><option value="">— Me —</option>${taskStaff.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select></div>
       <div class="form-group"><label>Priority</label>
         <select name="priority"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option></select></div>
       <div class="form-group"><label>Deadline</label><input name="deadline" data-datepicker></div>
+      ${canAssignOthers ? '<div class="form-group"><label>Assigned To</label><select name="assigned_to">' + assigneeOptions('') + '</select></div>' : ''}
       <div class="form-group full"><button class="btn btn-primary" type="submit">Create</button></div>
     </form>`);
 }
-async function toggleTask(pk) {
+function taskEditModal(btn) {
+  const tr = btn.closest('tr[data-task]');
+  const t = {
+    pk: tr.dataset.task,
+    title: JSON.parse(tr.dataset.title),
+    lead: tr.dataset.lead || '',
+    priority: tr.dataset.priority,
+    status: tr.dataset.status,
+    deadline: tr.dataset.deadline || '',
+    assigned: tr.dataset.assigned || ''
+  };
+  Crm.openModal('Edit Task', `
+    <form id="taskEditForm" class="form-grid">
+      <div class="form-group full"><label>Title *</label><input name="title" value="${t.title}" required></div>
+      <div class="form-group"><label>Lead</label>
+        <select name="lead"><option value="">— None —</option>${taskLeads.map(l => `<option value="${l.id}" ${l.id == t.lead ? 'selected' : ''}>${l.name}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Priority</label>
+        <select name="priority">${['low','medium','high'].map(p => `<option value="${p}" ${p == t.priority ? 'selected' : ''}>${p.charAt(0).toUpperCase() + p.slice(1)}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Deadline</label><input name="deadline" data-datepicker value="${t.deadline}"></div>
+      <div class="form-group"><label>Status</label>
+        <select name="status">${taskStatuses.map(s => `<option value="${s[0]}" ${s[0] == t.status ? 'selected' : ''}>${s[1]}</option>`).join('')}</select></div>
+      ${canAssignOthers ? '<div class="form-group"><label>Assigned To</label><select name="assigned_to">' + assigneeOptions(t.assigned) + '</select></div>' : ''}
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save</button></div>
+    </form>`);
+  document.getElementById('taskEditForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const data = Object.fromEntries(new FormData(e.target));
+      data.title = data.title || t.title;
+      await Crm.api('/crm/ajax/tasks/' + t.pk + '/update', 'POST', data);
+      Crm.toast('Task updated', 'success');
+      Crm.closeModal();
+      setTimeout(() => location.reload(), 300);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
+}
+async function setTaskStatus(pk, status) {
+  const sel = document.querySelector('tr[data-task="' + pk + '"] .task-status-select');
   try {
-    await Crm.api('/crm/ajax/tasks/' + pk + '/toggle', 'POST', {});
-    setTimeout(() => location.reload(), 250);
-  } catch (err) { Crm.toast(err.message, 'error'); }
+    await Crm.api('/crm/ajax/tasks/' + pk + '/update', 'POST', { status });
+    Crm.toast('Task ' + status, 'success');
+    setTimeout(() => location.reload(), 300);
+  } catch (err) {
+    Crm.toast(err.message, 'error');
+    if (sel) sel.value = sel.dataset.prev || 'pending';
+  }
 }
 </script>
 {% endblock %}

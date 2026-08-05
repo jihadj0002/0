@@ -38,6 +38,12 @@
       <option value="me" {% if filters.assigned == 'me' %}selected{% endif %}>Assigned to me</option>
       <option value="unassigned" {% if filters.assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
     </select>
+    {% elif role == 'staff' %}
+    <select name="assigned">
+      <option value="" {% if not filters.assigned %}selected{% endif %}>Mine + Unassigned</option>
+      <option value="me" {% if filters.assigned == 'me' %}selected{% endif %}>Assigned to me</option>
+      <option value="unassigned" {% if filters.assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
+    </select>
     {% endif %}
     <button class="btn btn-primary" type="submit">Filter</button>
     <a class="btn btn-outline" href="{% url 'crm:leads' %}">Reset</a>
@@ -137,35 +143,7 @@ function openLeadPopup(leadId) {
     .then(html => document.getElementById('crmDrawerBody').innerHTML = html)
     .catch(err => { document.getElementById('crmDrawerBody').innerHTML = '<div class="empty-state">Failed to load lead.</div>'; Crm.toast(err.message, 'error'); });
 }
-document.addEventListener('submit', async (e) => {
-  const form = e.target.closest('.stage-form');
-  if (!form) return;
-  e.preventDefault();
-  const leadId = form.dataset.leadId;
-  const stage = form.querySelector('.stage-select').value;
-  const btn = form.querySelector('button[type=submit]');
-  const original = btn.innerHTML;
-  btn.disabled = true;
-  try {
-    const res = await Crm.api('/crm/ajax/leads/' + leadId + '/quick-update', 'POST', { field: 'stage', value: stage });
-    Crm.toast('Stage updated to ' + res.stage_name, 'success');
-    const row = document.querySelector('tr[data-lead="' + leadId + '"]');
-    if (row) {
-      const stageCell = row.querySelector('[data-stage-cell]');
-      if (stageCell) stageCell.innerHTML = '<span class="pill pill-blue"></span>';
-      if (stageCell) stageCell.querySelector('.pill').textContent = res.stage_name;
-      const bucketCell = row.querySelector('[data-bucket-cell]');
-      if (bucketCell) {
-        const pill = bucketCell.querySelector('.pill');
-        if (res.won) { pill.className = 'pill pill-won'; pill.textContent = 'Won'; }
-        else if (res.lost) { pill.className = 'pill pill-lost'; pill.textContent = 'Lost'; }
-      }
-    }
-    openLeadPopup(leadId);
-  } catch (err) { Crm.toast(err.message, 'error'); }
-  btn.disabled = false;
-  btn.innerHTML = original;
-});
+window.Crm._openLeadPopup = openLeadPopup;
 document.querySelectorAll('.row-clickable').forEach(row => {
   row.addEventListener('click', (e) => {
     if (e.target.closest('a, button, input, select, textarea, .row-actions')) return;
