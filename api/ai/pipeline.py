@@ -64,6 +64,42 @@ def _promises_videos(text):
     return bool(_VIDEO_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
 
 
+# When product cards/images are being sent, the reply text must stay to ONE short
+# message — the visuals already carry names, prices, and photos.
+_VERBOSE_LIST_RE = re.compile(r"(^|\n)\s*\d+[.)]", re.MULTILINE)
+_LIST_MARKER_RE = re.compile(r"(^|\n)\s*\d+[.)]\s+")
+_MAX_VISUAL_TEXT_LEN = 180
+
+
+def _is_verbose(text):
+    """True if a reply is too long to accompany product cards/images."""
+    if not text:
+        return False
+    if len(text) > _MAX_VISUAL_TEXT_LEN:
+        return True
+    if "\n\n" in text:
+        return True
+    return bool(_VERBOSE_LIST_RE.search(text))
+
+
+def _collapse_verbose_text(text):
+    """Compress a long reply to its first + last chunk.
+
+    Chunks split on sentence boundaries (., !, ?, ।) and on newlines — e.g. a
+    numbered list without trailing periods. Numbered-list markers are stripped
+    first, otherwise the period in "1." would split mid-list and truncate items.
+    """
+    text = _LIST_MARKER_RE.sub(r"\1", text)
+    chunks = [
+        p.strip()
+        for p in re.split(r"(?<=[.!?।])\s+|\n+", text)
+        if p.strip()
+    ]
+    if len(chunks) <= 2:
+        return " ".join(chunks)
+    return chunks[0] + " " + chunks[-1]
+
+
 from .context import build_system_prompt, get_conversation_history
 from .providers import call_llm
 from .sender import send_reply
@@ -255,6 +291,7 @@ def run(conversation, incoming_message):
     transferred = False
     image_promise_corrected = False
     video_promise_corrected = False
+    verbose_corrected = False
     search_called = False
     focus_hinted = False
     # PIDs whose images were already collected this turn — the model sometimes
@@ -383,6 +420,24 @@ def run(conversation, incoming_message):
                         "The catalog has NO videos — you must NOT claim to send "
                         "videos. Resend your reply politely stating videos are not "
                         "available and offer to send product pictures instead."
+                    ),
+                })
+                continue
+            # Safety net: with cards/images already being sent, the text must stay
+            # to ONE short message — cards already show names/prices/photos.
+            if (not verbose_corrected
+                    and (pending_images or product_cards)
+                    and _is_verbose(candidate)):
+                verbose_corrected = True
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "Product cards/images are already being sent and show the "
+                        "names, prices, and photos. Reply with ONE short message: a "
+                        "brief intro sentence and one short follow-up question. Do "
+                        "NOT list product names, prices, or details already visible "
+                        "in the cards."
                     ),
                 })
                 continue
@@ -569,6 +624,12 @@ def run(conversation, incoming_message):
         unique_cards.append(card)
     product_cards = unique_cards[:4]
 
+    # Deterministic guard: with cards/images present, collapse a still-verbose
+    # reply to first + last sentence — the model can ignore the corrective pass.
+    has_visuals = bool(unique_images or product_cards)
+    if has_visuals and _is_verbose(final_text):
+        final_text = _collapse_verbose_text(final_text)
+
     # Persist bot reply
     attachment = {}
     if unique_images:
@@ -588,7 +649,7 @@ def run(conversation, incoming_message):
     # single-product images are sent individually (avoids duplicate image messages).
     delivery = send_reply(
         conversation,
-        _split_text_messages(final_text),
+        _split_text_messages(final_text, max_parts=1 if has_visuals else 3),
         image_urls=unique_images or None,
         product_cards=product_cards if len(product_cards) > 1 else None,
     )

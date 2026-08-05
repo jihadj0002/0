@@ -353,8 +353,10 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
         "- Send at most ONE image per product and no more than 4 products per turn. "
         "Never resend images you already showed in this conversation unless the customer "
         "explicitly asks for more.\n"
-        "- Reply in 1-2 short sentences, ideally a SINGLE message (max 2). "
-        "No numbered lists, no markdown (**), no image URLs in text.\n"
+        "- When product cards or images are being sent, reply with ONE short "
+        "message: a brief intro sentence and one short follow-up question. Never "
+        "repeat names, prices, or details already shown in the cards. No numbered "
+        "lists, no markdown (**), no image URLs in text.\n"
     )
 
     parts.append(
