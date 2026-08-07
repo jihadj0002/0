@@ -1,4 +1,5 @@
 {% extends "crm/base.html" %}
+{% load crm_extras %}
 {% block title %}Sales Scripts — Matrix CRM{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -19,7 +20,7 @@
 
 <div class="grid-2">
   {% for s in scripts %}
-  <div class="panel script-card" data-title="{{ s.title }}" data-content="{{ s.content|escapejs }}">
+  <div class="panel script-card" data-pk="{{ s.pk }}" data-title="{{ s.title|json_attr }}" data-content="{{ s.content|json_attr }}" data-category="{{ s.category }}">
     <div class="panel-title">
       {{ s.title }}
       <span class="pill {% if s.active %}pill-won{% else %}pill-lost{% endif %}">{{ s.active|yesno:"Active,Inactive" }}</span>
@@ -30,6 +31,7 @@
       <span class="flex-spacer"></span>
       <button class="btn btn-soft btn-sm" onclick="event.stopPropagation(); viewScript(this)">👁 View</button>
       {% if role == 'owner' or role == 'manager' %}
+      <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); editScript(this)">✏️ Edit</button>
       <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); toggleScript({{ s.pk }})">{{ s.active|yesno:"Deactivate,Activate" }}</button>
       {% endif %}
     </div>
@@ -40,26 +42,68 @@
 </div>
 
 <script>
+const SCRIPT_CATEGORIES = [
+{% for value, label in categories %}  { v: "{{ value }}", l: "{{ label }}" },
+{% endfor %}];
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function readScript(card) {
+  return {
+    pk: card.dataset.pk,
+    title: JSON.parse(card.dataset.title),
+    content: JSON.parse(card.dataset.content),
+    category: card.dataset.category,
+  };
+}
+function catOptions(selected) {
+  return SCRIPT_CATEGORIES.map(c =>
+    `<option value="${c.v}" ${c.v === selected ? 'selected' : ''}>${c.l}</option>`).join('');
+}
 function scriptModal() {
   Crm.openModal('New Script', `
-    <form method="post" action="{% url 'crm:scripts' %}" class="form-grid">
-      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+    <form id="scriptForm" class="form-grid">
       <div class="form-group full"><label>Title</label><input name="title" required></div>
-      <div class="form-group full"><label>Category</label>
-        <select name="category">
-          {% for value, label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-        </select></div>
+      <div class="form-group full"><label>Category</label><select name="category">${catOptions('cold_call')}</select></div>
       <div class="form-group full"><label>Content</label><textarea name="content" rows="10" placeholder="1. Opening&#10;2. Qualify&#10;3. Close"></textarea></div>
       <div class="form-group full"><button class="btn btn-primary" type="submit">Save Script</button></div>
     </form>`);
+  document.getElementById('scriptForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await Crm.api('/crm/scripts/', 'POST', Object.fromEntries(new FormData(e.target)));
+      Crm.toast('Script saved', 'success');
+      Crm.closeModal();
+      setTimeout(() => location.reload(), 300);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
+}
+function editScript(el) {
+  const d = readScript(el.closest('.script-card'));
+  Crm.openModal('Edit Script', `
+    <form id="scriptForm" class="form-grid">
+      <div class="form-group full"><label>Title</label><input name="title" value="${escapeHtml(d.title)}" required></div>
+      <div class="form-group full"><label>Category</label><select name="category">${catOptions(d.category)}</select></div>
+      <div class="form-group full"><label>Content</label><textarea name="content" rows="10">${escapeHtml(d.content)}</textarea></div>
+      <div class="form-group full"><button class="btn btn-primary" type="submit">Save Changes</button></div>
+    </form>`);
+  document.getElementById('scriptForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await Crm.api('/crm/scripts/' + d.pk + '/edit/', 'POST', Object.fromEntries(new FormData(e.target)));
+      Crm.toast('Script updated', 'success');
+      Crm.closeModal();
+      setTimeout(() => location.reload(), 300);
+    } catch (err) { Crm.toast(err.message, 'error'); }
+  });
 }
 function viewScript(el) {
   const card = el.closest('.script-card');
-  const title = card.dataset.title;
-  const content = JSON.parse(card.dataset.content);
-  Crm.openDrawer(title, `
+  const d = readScript(card);
+  Crm.openDrawer(d.title, `
     <div class="script-viewer">
-      <div class="script-viewer-body">${content}</div>
+      <div class="script-viewer-body">${escapeHtml(d.content)}</div>
       <div class="script-viewer-foot">
         <button class="btn btn-primary btn-block" onclick="copyViewer(this)">📋 Copy Script</button>
       </div>
@@ -68,20 +112,12 @@ function viewScript(el) {
 document.querySelectorAll('.script-card').forEach(card => {
   card.addEventListener('click', (e) => {
     if (e.target.closest('button, a')) return;
-    const title = card.dataset.title;
-    const content = JSON.parse(card.dataset.content);
-    Crm.openDrawer(title, `
-      <div class="script-viewer">
-        <div class="script-viewer-body">${content}</div>
-        <div class="script-viewer-foot">
-          <button class="btn btn-primary btn-block" onclick="copyViewer(this)">📋 Copy Script</button>
-        </div>
-      </div>`);
+    viewScript(card);
   });
 });
 function copyViewer(btn) {
   const text = btn.closest('.script-viewer').querySelector('.script-viewer-body').innerText;
-  navigator.clipboard.writeText(text).then(() => Crm.toast('Script copied', 'success'));
+  Crm.copyText(text).then(ok => Crm.toast(ok ? 'Script copied' : 'Copy failed', ok ? 'success' : 'error'));
 }
 async function toggleScript(pk) {
   try {

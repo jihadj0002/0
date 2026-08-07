@@ -13,8 +13,8 @@
   </div>
   <div class="page-actions">
     {% if can_edit %}<a class="btn btn-soft" href="{% url 'crm:lead_edit' lead.pk %}">Edit</a>{% endif %}
-    {% if role == 'owner' or role == 'manager' %}
-    <button class="btn btn-outline" onclick="convertOpen()">🏆 Mark Won & Convert</button>
+    {% if can_edit and not lead.converted %}
+    <button class="btn btn-primary" onclick="Crm.convertModal({{ lead.pk }})">🏆 Mark Won & Convert</button>
     {% endif %}
   </div>
 </div>
@@ -36,7 +36,11 @@
       <div class="form-group"><label>Assigned To</label>
         <select name="assigned_to" {% if not can_edit %}disabled{% endif %}>
           <option value="">— Unassigned —</option>
+          {% if role == 'owner' or role == 'manager' %}
           {% for sp in staff_users %}<option value="{{ sp.user.pk }}" {% if lead.assigned_to_id == sp.user.pk %}selected{% endif %}>{{ sp.user.get_full_name|default:sp.user.username }}</option>{% endfor %}
+          {% else %}
+          <option value="{{ user.pk }}" {% if lead.assigned_to_id == user.pk %}selected{% endif %}>{{ user.get_full_name|default:user.username }} (Me)</option>
+          {% endif %}
         </select>
       </div>
       <div class="form-group"><label>Source</label>
@@ -104,25 +108,6 @@
 
 <script>
 const leadId = {{ lead.pk }};
-function convertOpen() {
-  Crm.openModal('Convert to Customer', `
-    <form id="convertForm" class="form-grid" action="/crm/ajax/leads/${leadId}/convert" method="post">
-      <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
-      <div class="form-group full"><label>Package / Plan</label><input name="package" placeholder="e.g. Pro" value="free"></div>
-      <div class="form-group"><label>Monthly Value (৳)</label><input name="monthly_value"></div>
-      <div class="form-group"><label>Renewal Date</label><input name="renewal" data-datepicker></div>
-      <div class="form-group full"><button class="btn btn-primary" type="submit">Convert</button></div>
-    </form>`);
-  document.getElementById('convertForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      const res = await Crm.api('/crm/ajax/leads/' + leadId + '/convert', 'POST',
-        Object.fromEntries(new FormData(e.target)));
-      Crm.toast('Customer created!', 'success');
-      setTimeout(() => location.href = res.url, 400);
-    } catch (err) { Crm.toast(err.message, 'error'); }
-  });
-}
 function callOpen() {
   Crm.openModal('Log a Call', `
     <form id="callForm" class="form-grid">

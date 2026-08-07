@@ -1,12 +1,27 @@
+import json
 import re
 
 from django import template
+from django.utils.html import escape
 
 register = template.Library()
 
 _BD_RE = re.compile(r"^0(1[3-9]\d{8})$")
 _BD_LOCAL_RE = re.compile(r"^(1[3-9]\d{8})$")
 _BD_INTERNATIONAL_RE = re.compile(r"^(?:880)?(1[3-9]\d{8})$")
+
+
+@register.filter
+def json_attr(value):
+    """Encode a value as a JSON string safe to embed in an HTML attribute.
+
+    JSON-escapes quotes/backslashes/newlines and HTML-escapes the result so
+    the attribute survives HTML parsing (entities are decoded back to the raw
+    JSON string in the DOM); JS recovers the original text via JSON.parse.
+    Unlike |escapejs, real newlines survive (escapejs leaves \\n literal,
+    which the HTML parser collapses to spaces in attribute values).
+    """
+    return escape(json.dumps(value or ""))
 
 
 @register.filter

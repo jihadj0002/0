@@ -30,6 +30,7 @@
     const opts = { method, headers: {} };
     if (data !== null) {
       opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      opts.headers['X-Requested-With'] = 'XMLHttpRequest';
       opts.body = new URLSearchParams(Object.entries(data).filter(([, v]) => v !== null && v !== undefined));
     }
     const csrfToken = getCookie('csrftoken');
@@ -41,6 +42,28 @@
       throw new Error((body && (body.error || body.detail)) || ('HTTP ' + res.status));
     }
     return body;
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try { await navigator.clipboard.writeText(text); return true; } catch (e) { /* fall through */ }
+    }
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    let ok = false;
+    try {
+      ok = document.execCommand('copy');
+    } catch (e) {
+      ok = false;
+    } finally {
+      ta.remove();
+    }
+    return ok;
   }
 
   /* ---------- modals & drawers ---------- */
@@ -262,6 +285,27 @@
     } catch (err) { Crm.toast(err.message, 'error'); btn.disabled = false; }
   });
 
+  /* ---------- convert lead -> customer ---------- */
+  function convertModal(leadId) {
+    openModal('Convert to Customer', `
+      <form id="convertForm" class="form-grid">
+        <div class="form-group full"><label>Package / Plan</label><input name="package" placeholder="e.g. Pro" value="free"></div>
+        <div class="form-group"><label>Monthly Value (৳)</label><input name="monthly_value"></div>
+        <div class="form-group"><label>Renewal Date</label><input name="renewal" data-datepicker></div>
+        <div class="form-group full"><button class="btn btn-primary" type="submit">Convert</button></div>
+      </form>`);
+    initDatepickers(document);
+    document.getElementById('convertForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        const res = await api('/crm/ajax/leads/' + leadId + '/convert', 'POST',
+          Object.fromEntries(new FormData(e.target)));
+        toast('Customer created!', 'success');
+        setTimeout(() => location.href = res.url, 400);
+      } catch (err) { toast(err.message, 'error'); }
+    });
+  }
+
   /* ---------- auto-dismiss toasts ---------- */
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.crm-toast').forEach((t) => {
@@ -270,5 +314,5 @@
     initDatepickers(document);
   });
 
-  window.Crm = { api, toast, openModal, closeModal, openDrawer, closeDrawer, getCookie };
+  window.Crm = { api, toast, openModal, closeModal, openDrawer, closeDrawer, getCookie, convertModal, copyText };
 })();

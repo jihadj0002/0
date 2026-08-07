@@ -33,13 +33,16 @@
       {% for value, label in lead_sources %}<option value="{{ value }}" {% if filters.source == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     {% if role == 'owner' or role == 'manager' %}
-    <select name="assigned">
+    <select name="assigned" title="Filter by assignee">
       <option value="all" {% if filters.assigned == 'all' %}selected{% endif %}>Everyone</option>
       <option value="me" {% if filters.assigned == 'me' %}selected{% endif %}>Assigned to me</option>
       <option value="unassigned" {% if filters.assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
+      {% for sp in staff_users %}
+      <option value="{{ sp.user.pk }}" {% if filters.assigned == sp.user.pk|stringformat:'s' %}selected{% endif %}>Staff: {{ sp.user.get_full_name|default:sp.user.username }}</option>
+      {% endfor %}
     </select>
     {% elif role == 'staff' %}
-    <select name="assigned">
+    <select name="assigned" title="Filter by assignee">
       <option value="" {% if not filters.assigned %}selected{% endif %}>Mine + Unassigned</option>
       <option value="me" {% if filters.assigned == 'me' %}selected{% endif %}>Assigned to me</option>
       <option value="unassigned" {% if filters.assigned == 'unassigned' %}selected{% endif %}>Unassigned</option>
@@ -54,11 +57,11 @@
       <thead>
         <tr>
           <th><input type="checkbox" id="checkAll" title="Select all"></th>
-          <th><a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}sort={% if filters.sort == 'name' %}-name{% else %}name{% endif %}">Name</a></th>
+          <th><a href="?{% if qs_params %}{{ qs_params }}&{% endif %}sort={% if filters.sort == 'name' %}-name{% else %}name{% endif %}">Name</a></th>
           <th>Contact</th>
           <th>Stage</th>
           <th>Bucket</th>
-          <th><a href="?{% if filters.q %}q={{ filters.q }}&{% endif %}sort={% if filters.sort == 'score' %}-score{% else %}score{% endif %}">Score</a></th>
+          <th><a href="?{% if qs_params %}{{ qs_params }}&{% endif %}sort={% if filters.sort == 'score' %}-score{% else %}score{% endif %}">Score</a></th>
           <th>Source</th>
           <th>Assigned To</th>
           <th>Expected</th>
@@ -100,9 +103,9 @@
 
   {% if page_obj.paginator.num_pages > 1 %}
   <div class="pagination">
-    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}">«</a>{% endif %}
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}{% if qs_params %}&{{ qs_params }}{% endif %}">«</a>{% endif %}
     <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}">»</a>{% endif %}
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}{% if qs_params %}&{{ qs_params }}{% endif %}">»</a>{% endif %}
   </div>
   {% endif %}
 </div>

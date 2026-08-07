@@ -37,6 +37,7 @@ urlpatterns = [
     # Resources
     path("scripts/", views.scripts, name="scripts"),
     path("scripts/<int:pk>/toggle/", views.script_toggle, name="script_toggle"),
+    path("scripts/<int:pk>/edit/", views.script_edit, name="script_edit"),
     path("faq/", views.faq, name="faq"),
     path("learn/", views.learn, name="learn"),
     path("learn/<slug:slug>/", views.learn, name="learn_article"),

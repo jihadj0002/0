@@ -95,6 +95,8 @@ def leads(request):
         qs = qs.filter(assigned_to__isnull=True)
     elif assigned == "all" and can_manage(user):
         pass
+    elif assigned.isdigit() and can_manage(user):
+        qs = qs.filter(assigned_to_id=assigned)
     if bucket:
         won_stages = PipelineStage.objects.filter(is_won=True).values_list("id", flat=True)
         lost_stages = PipelineStage.objects.filter(is_lost=True).values_list("id", flat=True)
@@ -126,6 +128,9 @@ def leads(request):
         "lead_sources": Lead.SOURCE_CHOICES,
         "total_count": paginator.count,
         "filters": {"q": q, "stage": stage, "source": source, "assigned": assigned, "bucket": bucket, "sort": sort},
+        "qs_params": "&".join(f"{k}={v}" for k, v in
+                              [("q", q), ("stage", stage), ("source", source),
+                               ("assigned", assigned), ("bucket", bucket)] if v),
         "role": get_role(user),
     }
     return render(request, "crm/leads.html", context)
@@ -141,6 +146,8 @@ def lead_new(request):
         else:
             stage = PipelineStage.objects.filter(pk=request.POST.get("stage")).first() if request.POST.get("stage") else None
             assigned = User_or_None(request.POST.get("assigned_to"))
+            if assigned and assigned.pk != user.pk and not can_manage(user):
+                assigned = user
             company = Company.objects.filter(pk=request.POST.get("company")).first() if request.POST.get("company") else None
             lead, created = create_lead(
                 user, name=name, phone=request.POST.get("phone", ""),
@@ -185,13 +192,15 @@ def lead_detail(request, pk):
         action = request.POST.get("action")
         if action == "update":
             fields = {}
-            if can_manage(user) or lead.assigned_to_id == user.id:
+            if can_manage(user) or lead.assigned_to_id in (user.id, None):
                 if "stage" in request.POST and request.POST.get("stage"):
                     fields["stage"] = PipelineStage.objects.filter(pk=request.POST.get("stage")).first()
                 if "score" in request.POST:
                     fields["score"] = max(0, min(100, int(request.POST.get("score", 0))))
                 if "assigned_to" in request.POST:
-                    fields["assigned_to"] = User_or_None(request.POST.get("assigned_to"))
+                    new_assignee = User_or_None(request.POST.get("assigned_to"))
+                    if can_manage(user) or new_assignee in (None, user):
+                        fields["assigned_to"] = new_assignee
                 if "next_followup" in request.POST:
                     fields["next_followup"] = request.POST.get("next_followup") or None
                 if "budget" in request.POST:
@@ -211,11 +220,12 @@ def lead_detail(request, pk):
             messages.success(request, "Note added.")
             return redirect("crm:lead_detail", pk=lead.pk)
         elif action == "convert":
-            if not lead.is_won():
-                stage = _stage_map()
-                won_stage = next((s for s in PipelineStage.objects.filter(is_won=True, tenant__isnull=True).order_by("order")), None)
-                if won_stage:
-                    update_lead(user, lead, stage=won_stage)
+            if not lead.converted:
+                won_stage = PipelineStage.objects.filter(is_won=True, tenant__isnull=True).order_by("order").first()
+                if won_stage and lead.stage_id != won_stage.pk:
+                    lead.stage = won_stage
+                    lead.save(update_fields=["stage", "updated_at"])
+                    log_activity(lead, "status_change", f"Stage changed to {won_stage.name}", user)
             customer = convert_lead(
                 user, lead, package=request.POST.get("package", ""),
                 monthly_value=request.POST.get("monthly_value") or None,
@@ -566,7 +576,14 @@ def ajax_calendar_events(request):
 @staff_required
 @require_POST
 def ajax_convert_customer(request, pk):
-    lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
+    user = request.user
+    lead = get_object_or_404(lead_queryset_for(user), pk=pk)
+    if not lead.converted:
+        won_stage = PipelineStage.objects.filter(is_won=True, tenant__isnull=True).order_by("order").first()
+        if won_stage and lead.stage_id != won_stage.pk:
+            lead.stage = won_stage
+            lead.save(update_fields=["stage", "updated_at"])
+            log_activity(lead, "status_change", f"Stage changed to {won_stage.name}", user)
     customer = convert_lead(
         request.user, lead,
         package=request.POST.get("package", ""),
@@ -870,14 +887,25 @@ def scripts(request):
     category = request.GET.get("category", "")
     if category:
         qs = qs.filter(category=category)
+    is_xhr = request.headers.get("x-requested-with") == "XMLHttpRequest"
     if request.method == "POST":
-        if can_manage(request.user):
-            SalesScript.objects.create(
-                title=request.POST.get("title", "").strip(),
-                category=request.POST.get("category", "cold_call"),
-                content=request.POST.get("content", ""),
-            )
-            messages.success(request, "Script saved.")
+        if not can_manage(request.user):
+            if is_xhr:
+                return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+            return redirect("crm:scripts")
+        title = request.POST.get("title", "").strip()
+        if not title:
+            if is_xhr:
+                return JsonResponse({"ok": False, "error": "Title is required"}, status=400)
+            return redirect("crm:scripts")
+        script = SalesScript.objects.create(
+            title=title,
+            category=request.POST.get("category", "cold_call"),
+            content=request.POST.get("content", ""),
+        )
+        if is_xhr:
+            return JsonResponse({"ok": True, "pk": script.pk})
+        messages.success(request, "Script saved.")
         return redirect("crm:scripts")
     context = {
         "scripts": qs.order_by("category", "position", "title"),
@@ -886,6 +914,25 @@ def scripts(request):
         "role": get_role(request.user),
     }
     return render(request, "crm/scripts.html", context)
+
+
+@staff_required
+@require_POST
+def script_edit(request, pk):
+    if not can_manage(request.user):
+        return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+    script = get_object_or_404(SalesScript, pk=pk)
+    title = request.POST.get("title", "").strip()
+    if not title:
+        return JsonResponse({"ok": False, "error": "Title is required"}, status=400)
+    category = request.POST.get("category", script.category)
+    if category not in dict(SalesScript.CATEGORY_CHOICES):
+        return JsonResponse({"ok": False, "error": "Invalid category"}, status=400)
+    script.title = title
+    script.category = category
+    script.content = request.POST.get("content", script.content)
+    script.save()
+    return JsonResponse({"ok": True, "pk": script.pk})
 
 
 @staff_required

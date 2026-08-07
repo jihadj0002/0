@@ -677,3 +677,301 @@ class TaskPermissionTests(CrmBaseTestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn("Done", resp.content.decode())
         self.assertIn(str(task.pk), resp.content.decode())
+
+
+class LeadAssigneeFilterTests(CrmBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.other = User.objects.create_user(username="staff2", password="x")
+        StaffProfile.objects.create(user=self.other, role="staff")
+        self.mine, _ = create_lead(self.owner, name="Mine", phone="+8801900", assigned_to=self.staff)
+        self.theirs, _ = create_lead(self.owner, name="Theirs", phone="+8801901", assigned_to=self.other)
+        self.open_lead, _ = create_lead(self.owner, name="Open", phone="+8801902")
+
+    def test_owner_can_filter_by_staff_pk(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get(f"/crm/leads/?assigned={self.staff.pk}")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn(f'data-lead="{self.mine.pk}"', body)
+        self.assertNotIn(f'data-lead="{self.theirs.pk}"', body)
+        self.assertNotIn(f'data-lead="{self.open_lead.pk}"', body)
+
+    def test_owner_can_filter_unassigned(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/leads/?assigned=unassigned")
+        body = resp.content.decode()
+        self.assertIn(f'data-lead="{self.open_lead.pk}"', body)
+        self.assertNotIn(f'data-lead="{self.mine.pk}"', body)
+
+    def test_owner_filter_dropdown_lists_each_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/leads/")
+        body = resp.content.decode()
+        self.assertIn(f'value="{self.staff.pk}"', body)
+        self.assertIn(f'value="{self.other.pk}"', body)
+
+    def test_staff_cannot_filter_by_other_staff_pk(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get(f"/crm/leads/?assigned={self.other.pk}")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertNotIn(f'data-lead="{self.theirs.pk}"', body)  # pk filter ignored for staff
+        self.assertIn(f'data-lead="{self.mine.pk}"', body)       # staff still sees own + unassigned
+        self.assertIn(f'data-lead="{self.open_lead.pk}"', body)
+
+    def test_staff_filter_dropdown_has_no_staff_options(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get("/crm/leads/")
+        body = resp.content.decode()
+        self.assertNotIn("Staff: staff1", body)
+        self.assertIn("Mine + Unassigned", body)
+
+
+class AssignmentGuardTests(CrmBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.other = User.objects.create_user(username="staff3", password="x")
+        StaffProfile.objects.create(user=self.other, role="staff")
+
+    def test_staff_cannot_reassign_own_lead_to_other_staff_via_detail(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Mine", phone="+8801910", assigned_to=self.staff)
+        resp = c.post(f"/crm/leads/{lead.pk}/", {"action": "update", "assigned_to": self.other.pk})
+        self.assertEqual(resp.status_code, 302)
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, self.staff)
+
+    def test_staff_can_assign_unassigned_lead_to_self_via_detail(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Open", phone="+8801911")
+        resp = c.post(f"/crm/leads/{lead.pk}/", {"action": "update", "assigned_to": self.staff.pk})
+        self.assertEqual(resp.status_code, 302)
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, self.staff)
+
+    def test_staff_can_unassign_own_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Mine2", phone="+8801912", assigned_to=self.staff)
+        resp = c.post(f"/crm/leads/{lead.pk}/", {"action": "update", "assigned_to": ""})
+        self.assertEqual(resp.status_code, 302)
+        lead.refresh_from_db()
+        self.assertIsNone(lead.assigned_to)
+
+    def test_manager_can_reassign_any_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        lead, _ = create_lead(self.owner, name="Any", phone="+8801913", assigned_to=self.staff)
+        resp = c.post(f"/crm/leads/{lead.pk}/", {"action": "update", "assigned_to": self.other.pk})
+        self.assertEqual(resp.status_code, 302)
+        lead.refresh_from_db()
+        self.assertEqual(lead.assigned_to, self.other)
+
+    def test_staff_create_lead_forces_self_assignment(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.post("/crm/leads/new/", {"name": "Forced", "assigned_to": self.other.pk})
+        self.assertEqual(resp.status_code, 302)
+        lead = Lead.objects.get(name="Forced")
+        self.assertEqual(lead.assigned_to, self.staff)
+
+    def test_manager_create_lead_can_assign_other_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post("/crm/leads/new/", {"name": "Delegated", "assigned_to": self.other.pk})
+        self.assertEqual(resp.status_code, 302)
+        lead = Lead.objects.get(name="Delegated")
+        self.assertEqual(lead.assigned_to, self.other)
+
+    def test_detail_page_assignee_select_restricted_for_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Sel", phone="+8801914", assigned_to=self.staff)
+        resp = c.get(f"/crm/leads/{lead.pk}/")
+        body = resp.content.decode()
+        self.assertIn("staff1 (Me)", body)          # only themselves listed
+        self.assertNotIn("staff3", body)            # other staff members absent
+        self.assertNotIn("manager1", body)
+
+
+class ConvertFlowTests(CrmBaseTestCase):
+    def test_staff_can_convert_own_lead_via_ajax(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Karim", email="karim2@x.com",
+                              phone="+8801920", assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/convert",
+                      {"package": "pro", "monthly_value": "5990"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        customer = Customer.objects.get(lead=lead)
+        self.assertEqual(customer.package, "pro")
+        self.assertEqual(customer.monthly_value, 5990)
+        lead.refresh_from_db()
+        self.assertTrue(lead.converted)
+        self.assertEqual(lead.stage, self.won_stage)
+        self.assertTrue(lead.activities.filter(type="status_change").exists())
+
+    def test_convert_is_idempotent_and_preserves_package(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Karim3", email="karim3@x.com",
+                              phone="+8801921", assigned_to=self.staff)
+        resp1 = c.post(f"/crm/ajax/leads/{lead.pk}/convert", {"package": "pro"})
+        resp2 = c.post(f"/crm/ajax/leads/{lead.pk}/convert", {"package": "basic"})
+        self.assertEqual(resp1.status_code, 200)
+        self.assertEqual(resp2.status_code, 200)
+        self.assertEqual(Customer.objects.filter(lead=lead).count(), 1)
+        customer = Customer.objects.get(lead=lead)
+        self.assertEqual(customer.package, "pro")
+
+    def test_popup_shows_convert_button_for_editable_lead(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Conv", phone="+8801922", assigned_to=self.staff)
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        body = resp.content.decode()
+        self.assertIn("Convert to Customer", body)
+        self.assertIn(f"Crm.convertModal({lead.pk})", body)
+
+    def test_popup_hides_convert_button_after_conversion(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Done", phone="+8801923", assigned_to=self.staff)
+        convert_lead(self.owner, lead, package="pro")
+        resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
+        body = resp.content.decode()
+        self.assertNotIn("Convert to Customer", body)
+
+    def test_detail_page_convert_button_for_staff_owner(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Owned", phone="+8801924", assigned_to=self.staff)
+        resp = c.get(f"/crm/leads/{lead.pk}/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Mark Won & Convert", resp.content.decode())
+
+
+class ScriptEditTests(CrmBaseTestCase):
+    def setUp(self):
+        super().setUp()
+        self.script = SalesScript.objects.create(
+            title="Cold opener", category="cold_call",
+            content="1. Intro\n2. Qualify\n3. Close",
+        )
+
+    def test_manager_can_edit_script(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post(f"/crm/scripts/{self.script.pk}/edit/",
+                      {"title": "New Title", "category": "objection", "content": "New body\nLine two"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()["ok"])
+        self.script.refresh_from_db()
+        self.assertEqual(self.script.title, "New Title")
+        self.assertEqual(self.script.category, "objection")
+        self.assertEqual(self.script.content, "New body\nLine two")
+
+    def test_staff_cannot_edit_script(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.post(f"/crm/scripts/{self.script.pk}/edit/",
+                      {"title": "Hacked", "content": "x"})
+        self.assertEqual(resp.status_code, 403)
+        self.script.refresh_from_db()
+        self.assertEqual(self.script.title, "Cold opener")
+
+    def test_edit_script_requires_title(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post(f"/crm/scripts/{self.script.pk}/edit/",
+                      {"title": "  ", "content": "x"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["error"], "Title is required")
+
+    def test_edit_script_rejects_invalid_category(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post(f"/crm/scripts/{self.script.pk}/edit/",
+                      {"title": "T", "category": "banana", "content": "x"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.json()["error"], "Invalid category")
+
+    def test_edit_script_missing_404(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post("/crm/scripts/999999/edit/", {"title": "T", "content": "x"})
+        self.assertEqual(resp.status_code, 404)
+
+    def test_ajax_create_script_returns_json(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.post("/crm/scripts/",
+                      {"title": "AJAX Script", "category": "closing", "content": "Just ask."},
+                      HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        script = SalesScript.objects.get(title="AJAX Script")
+        self.assertEqual(script.pk, data["pk"])
+
+    def test_ajax_create_script_staff_forbidden(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.post("/crm/scripts/", {"title": "Nope", "content": "x"},
+                      HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_scripts_page_embeds_content_safely_for_js(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/scripts/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        card = body.split('class="panel script-card"')[1]
+        self.assertIn("&quot;", card)  # JSON string HTML-escaped in attribute
+        self.assertIn("\\n", card)     # newlines escaped as literal \n (not collapsed)
+        self.assertIn("✏️ Edit", card)
+
+    def test_scripts_page_hides_edit_for_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get("/crm/scripts/")
+        body = resp.content.decode()
+        self.assertNotIn("✏️ Edit", body)
+        self.assertNotIn("+ New Script", body)
