@@ -1,1 +1,1 @@
-web: gunicorn theMatrixAi.wsgi:application
+web: python manage.py migrate --noinput && gunicorn theMatrixAi.wsgi:application
