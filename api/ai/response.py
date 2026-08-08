@@ -578,6 +578,11 @@ Write a natural, {style} reply in the customer's language (default: {language}).
 - If 'Conversation so far' is non-empty, do NOT greet again or reintroduce
   yourself — continue the conversation naturally (no "কেমন আছেন" repeat).
 - Max 3 sentences unless the customer asked for detailed information.
+- When product cards or images are being sent (search_products / send_images
+  results in THIS turn), reply with exactly ONE short message: a brief intro
+  sentence plus one short follow-up question. Do NOT repeat product names,
+  prices, or details already shown in the cards/photos. No numbered lists, no
+  markdown (**), no blank-line paragraph breaks.
 - Mention prices and stock only if they were in the tool results.
 - EXACT rules (FOLLOW STRICTLY):
   * Do NOT invent ANY number that isn't in the tool results above
@@ -742,7 +747,7 @@ Write a natural, {style} reply in the customer's language (default: {language}).
                 seen.add(img)
                 unique.append(img)
 
-        return unique[:5], cards[:10]
+        return unique[:4], cards[:4]
 
     @staticmethod
     def _media_for_intent(context, images, cards):
@@ -751,11 +756,54 @@ Write a natural, {style} reply in the customer's language (default: {language}).
           never for single-product details, price, qty or order replies
           ("sends the whole carousel again and again" was exactly this)
         - images only for photo requests (send_images is additionally gated by
-          tool access, so images cannot appear here unless the customer asked)"""
+          tool access, so images cannot appear here unless the customer asked)
+        - cross-turn: never resend images/cards whose photo was already shown in
+          the previous bot message, unless the customer explicitly asks for more
+        """
         intent_name = context.intent.name if context.intent else ""
         if intent_name != "CATALOG":
             cards = []
+
+        prev_images = ResponseGenerator._prev_sent_images(context)
+        requesting_more = bool(
+            re.search(r"(more|আরো|আরও|আবার|again|all|সব|dup|extra)",
+                      context.incoming_text or "", re.IGNORECASE)
+        )
+        if prev_images and not requesting_more:
+            images = [img for img in images if img not in prev_images]
+            kept_cards = []
+            for card in cards:
+                c_imgs = card.get("images") or []
+                if c_imgs and c_imgs[0] in prev_images:
+                    continue
+                kept_cards.append(card)
+            cards = kept_cards
         return images, cards
+
+    @staticmethod
+    def _prev_sent_images(context) -> set:
+        """Image URLs (standalone + card covers) from the previous bot message."""
+        prev = set()
+        conversation = getattr(context, "conversation", None)
+        if not conversation:
+            return prev
+        try:
+            from back.models import Message
+            last_bot = (
+                Message.objects.filter(conversation=conversation, sender="bot")
+                .exclude(attachments=None)
+                .order_by("-timestamp")
+                .first()
+            )
+            if last_bot and last_bot.attachments:
+                prev.update(last_bot.attachments.get("images", []) or [])
+                for _card in last_bot.attachments.get("cards", []) or []:
+                    _ci = _card.get("images") or []
+                    if _ci:
+                        prev.add(_ci[0])
+        except Exception:
+            pass
+        return prev
 
     @staticmethod
     def _greeting_or_fallback(context: ConversationContext) -> str:

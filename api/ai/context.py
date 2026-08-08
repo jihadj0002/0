@@ -27,6 +27,24 @@ class PlanStep:
 
 
 @dataclass
+class AIPlan:
+    """Structured plan produced by the Planner (new_ai_orchestrator 'AI as advisor'):
+      - goal / conversation_state / required_tools / ask_clarification / confidence
+      - steps: the validated tool sequence software will execute.
+
+    The LLM proposes; software validates the steps against per-intent tool
+    routing and drops risky/unavailable ones before anything executes.
+    """
+    goal: str = ""
+    conversation_state: str = ""
+    required_tools: list[str] = field(default_factory=list)
+    ask_clarification: bool = False
+    confidence: float = 1.0
+    reason: str = ""
+    steps: list[PlanStep] = field(default_factory=list)
+
+
+@dataclass
 class Response:
     text: str = ""
     images: list[str] = field(default_factory=list)
@@ -118,6 +136,7 @@ class ConversationContext:
     orders: list[OrderSummary] = field(default_factory=list)
     memory: MemorySummary = field(default_factory=MemorySummary)
     history: list[dict] = field(default_factory=list)
+    summary: str = ""
     intent: Intent | None = None
     plan: list[PlanStep] | None = None
     tool_results: list[Any] | None = None
@@ -177,6 +196,7 @@ class ConversationManager:
             orders=ConversationManager._load_orders(conversation),
             history=ConversationManager._load_history(conversation),
             memory=ConversationManager._load_memory(user, conversation),
+            summary=getattr(conversation, "chat_summary", "") or "",
         )
         return ctx
 
@@ -312,6 +332,47 @@ class ConversationManager:
 # Backward-compatible functions (used by old pipeline)
 # ---------------------------------------------------------------------------
 
+# Rolling conversation summary cap (chars). Kept tight so the summary adds
+# context cheaply without bloating the system prompt.
+_SUMMARY_MAX_CHARS = 900
+_SUMMARY_TURNS_KEPT = 10
+
+
+def update_turn_summary(conversation, *, customer_text="", bot_text="", intent=""):
+    """Append one compact turn to the conversation's rolling summary.
+
+    Deterministic + free (no LLM call per turn). The summary gives the planner
+    and the response generator durable memory of what happened before the
+    visible message window, at a bounded token cost.
+    """
+    try:
+        if conversation is None:
+            return
+        line = f"customer: {customer_text}"[:180]
+        if bot_text:
+            line += f" || bot: {bot_text[:140]}"
+        if intent:
+            line += f" || intent: {intent}"
+
+        old = conversation.chat_summary or ""
+        # Drop the oldest kept turns when over budget: keep only the most
+        # recent _SUMMARY_TURNS_KEPT lines inside the char cap.
+        if old:
+            turns = [t for t in old.split("\n|") if t.strip()]
+            joined = "\n|".join(turns)
+            while len(joined) > _SUMMARY_MAX_CHARS and len(turns) > 2:
+                turns = turns[-(_SUMMARY_TURNS_KEPT - 1):]
+                joined = "\n|".join(turns)
+            old = joined + "\n|" if joined else ""
+
+        new = old + line
+        if len(new) > _SUMMARY_MAX_CHARS:
+            new = new[-_SUMMARY_MAX_CHARS:]
+        Conversation.objects.filter(pk=conversation.pk).update(chat_summary=new)
+        conversation.chat_summary = new
+    except Exception:
+        pass
+
 def build_system_prompt(user, conversation, image_analysis=None):
     ctx = ConversationManager.build(conversation)
     return _build_system_prompt_from_ctx(ctx, image_analysis)
@@ -445,6 +506,11 @@ def _build_system_prompt_from_ctx(ctx, image_analysis=None):
         cust.append("Already greeted: yes")
     if ctx.conversation and ctx.conversation.detected_intent:
         cust.append(f"Intent: {ctx.conversation.detected_intent}")
+
+    # Rolling summary of earlier turns — cheap durable memory for planner and
+    # response generation, bounded to ~900 chars (see update_turn_summary).
+    if ctx.summary:
+        parts.append("## Conversation Summary (previous turns)\n" + ctx.summary)
 
     currency = settings.currency or "BDT"
 

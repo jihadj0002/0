@@ -65,6 +65,7 @@ urlpatterns = [
     # path('webhook-api/', views.webhook_api, name='webhook_api'),
 
     path("settings/", views.settings_view, name="settings"),
+    path("setup/", views.setup_wizard, name="setup"),
     path("billing/", views.billing_dashboard, name="billing"),
     path("tickets", views.tickets_view, name="tickets"),
     path("tickets/data", views.ajax_tickets, name="ajax_tickets"),

@@ -153,10 +153,32 @@
   <div class="small-panel">
     <h3>Integrations</h3>
     <ul class="integrations-list">
-      <li>Facebook Messenger <span class="dot connected">connected</span></li>
-      <li>Shopify <span class="dot sync">sync</span></li>
-      <li>WhatsApp <span class="dot off">not connected</span></li>
+      {% with msgr=integration_status.messenger %}
+        <li>Facebook Messenger
+          {% if msgr.connected %}<span class="dot connected">{{ msgr.page_name|default:'connected' }}</span>
+          {% else %}<a class="dot off" href="{% url 'api:meta-oauth-start' %}?next={% url 'back:setup' %}" style="text-decoration:none;cursor:pointer">connect</a>{% endif %}
+        </li>
+      {% endwith %}
+      {% with inst=integration_status.instagram %}
+        <li>Instagram
+          {% if inst.connected %}<span class="dot connected">{{ inst.page_name|default:'connected' }}</span>
+          {% else %}<span class="dot off">not connected</span>{% endif %}
+        </li>
+      {% endwith %}
+      {% with wa=integration_status.whatsapp %}
+        <li>WhatsApp
+          {% if wa.connected %}<span class="dot connected">connected</span>
+          {% else %}<span class="dot off">not connected</span>{% endif %}
+        </li>
+      {% endwith %}
+      {% with tg=integration_status.telegram %}
+        <li>Telegram
+          {% if tg.connected %}<span class="dot connected">connected</span>
+          {% else %}<span class="dot off">not connected</span>{% endif %}
+        </li>
+      {% endwith %}
     </ul>
+    <a href="{% url 'back:options' %}" style="display:block;margin-top:10px;font-size:.82rem;font-weight:600;">Manage integrations →</a>
   </div>
 
   <div class="small-panel">

@@ -22,14 +22,17 @@ WORKFLOW_TIMEOUT = timezone.timedelta(minutes=30)
 # ---------------------------------------------------------------------------
 
 WORKFLOW_STATES = [
-    "idle", "browsing", "product_selected", "awaiting_details",
+    "idle", "browsing", "product_selected", "awaiting_product_selection",
+    "awaiting_variation", "awaiting_details",
     "awaiting_confirmation", "checkout", "payment", "completed", "escalated",
 ]
 
 STATE_TRANSITIONS: dict[str, set[str]] = {
     "idle": set(WORKFLOW_STATES) - {"idle"},
     "browsing": {"product_selected", "idle", "escalated"},
-    "product_selected": {"awaiting_details", "idle", "escalated"},
+    "product_selected": {"awaiting_variation", "awaiting_details", "idle", "escalated"},
+    "awaiting_product_selection": {"product_selected", "awaiting_variation", "idle", "escalated"},
+    "awaiting_variation": {"awaiting_details", "idle", "escalated"},
     "awaiting_details": {"awaiting_confirmation", "awaiting_details", "idle", "escalated"},
     "awaiting_confirmation": {"checkout", "awaiting_details", "idle", "escalated"},
     "checkout": {"payment", "completed", "idle", "escalated"},
@@ -900,7 +903,48 @@ class WorkflowEngine:
     @classmethod
     def _parse_details(cls, text) -> dict:
         """Best-effort name/phone/address extraction from a free-form details
-        message ("Rafiul alam, Mirpur 10 kajipara, 01793504010")."""
+        message ("Rafiul alam, Mirpur 10 kajipara, 01793504010").
+
+        Handles label words ("phone", "address", "আমার নাম", "mobile", "number")
+        so ``"ami ashik, phone 01712345678, address dhaka"`` yields
+        name="ashik", phone="01712345678", address="dhaka" — never captures the
+        literal label or the whole sentence.
+        """
+        if not text:
+            return {"customer_name": "", "customer_phone": "", "customer_address": ""}
+
+        # Label words stripped from any part (case-insensitive; bangla + latin).
+        # Prefix connectors ("ami", "amar") must be dropped so "ami ashik"
+        # leaves "ashik", not "ami ashik".
+        _LABEL_RE = re.compile(
+            r"^\s*(?:(?:amar|my|i|the|a)?\s*)?"
+            r"(?:name|naam|nam|phone|number|mobile|mob|mbl|phn|"
+            r"address|thikana|ঠিকানা|নাম|ফোন|মোবাইল|নম্বর|মো)\s*:?\s*",
+            re.IGNORECASE,
+        )
+        # Conversational filler prefixes to drop from the name/address text.
+        _PREFIX_RE = re.compile(
+            r"^\s*(?:i[ '’]?m|i am|my name is|my|amar|amer|ami|\u0986\u09ae\u09bf"
+            r"|\u0986\u09ae\u09be\u09b0)\s+",
+            re.IGNORECASE,
+        )
+
+        # After the label is stripped, drop loose filler words that remain at
+        # the head ("my name is karim" → label strips "name" → "my is karim";
+        # drop "my" and "is" → "karim").
+        _FILLER_WORDS = {
+            "my", "is", "are", "am", "i'm", "name", "naam", "nam", "amar",
+            "amer", "ami", "the", "a", "an", "my", "\u0986\u09ae\u09bf",  # আমি
+        }
+
+        def _strip_lead(part: str) -> str:
+            part = _LABEL_RE.sub("", part).strip(" ,;-")
+            part = _PREFIX_RE.sub("", part).strip(" ,;-")
+            words = part.split()
+            while words and words[0].lower().strip(":,;") in _FILLER_WORDS:
+                words = words[1:]
+            return " ".join(words).strip(" ,;-")
+
         parts = [p.strip() for p in re.split(r"[,;|\n]+", text or "") if p.strip()]
         phone = ""
         name = ""
@@ -911,13 +955,15 @@ class WorkflowEngine:
             if len(digits) >= 10:
                 phone = digits
                 rest = re.sub(r"\d", "", p).strip(" ,;-")
-                if rest and not name:
+                rest = _strip_lead(rest)
+                if len(rest) >= 3 and not name:
                     name = rest
             else:
-                named_parts.append(p)
+                cleaned = _strip_lead(p)
+                if cleaned:
+                    named_parts.append(cleaned)
         if not name and named_parts:
-            name = named_parts[0]
-            named_parts = named_parts[1:]
+            name = _strip_lead(named_parts.pop(0))
         if named_parts:
             address = ", ".join(named_parts)
         return {

@@ -1,10 +1,15 @@
 """
-Planner (P0-4): Given intent + context, produce an ordered sequence of PlanSteps.
+Planner (P0-4 / Phase 1.1): Given intent + context, produce a structured AIPlan
+{goal, conversation_state, required_tools, ask_clarification, confidence, steps}.
 
 Three modes:
-- Direct: simple intent → single tool call
-- Template: known workflow → predefined multi-step sequence
-- LLM: complex/ambiguous → single LLM call produces plan
+- Direct: simple intent → single tool call (deterministic, free)
+- Template: known workflow → predefined multi-step sequence (deterministic)
+- LLM: complex/ambiguous → structured JSON plan, then software validation
+
+The LLM proposes; software validates (PlanValidator) — see 'AI as advisor':
+reject tools outside the intent's allowed set, never create orders here, and
+surface low confidence / ask_clarification to the orchestrator.
 """
 import json
 import logging
@@ -12,10 +17,82 @@ from pathlib import Path
 
 from back.models import Message
 
-from .context import ConversationContext, PlanStep
+from .context import AIPlan, ConversationContext, PlanStep
 from .tools import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Tool routing: the deterministic allow-list per intent ("Tool Routing" in the
+# doc). The LLM is NEVER handed tools outside this set for a given intent —
+# software, not the model, decides what is allowed.
+# ---------------------------------------------------------------------------
+
+_INTENT_ALLOWED_TOOLS: dict[str, set[str]] = {
+    "ASK_PRICE": {"search_products", "get_product_details"},
+    "ASK_STOCK": {"search_products", "check_inventory"},
+    "SEARCH_PRODUCT": {"search_products", "get_product_details", "send_images"},
+    "ASK_DETAILS": {"search_products", "get_product_details", "send_images"},
+    "RECOMMEND": {"search_products", "get_product_details", "send_images"},
+    "COMPARE_PRODUCTS": {"search_products", "get_product_details"},
+    "CATALOG": {"search_products", "send_images"},
+    "SEND_IMAGES": {"search_products", "send_images"},
+    "CHECK_ORDER": {"get_order_status", "track_shipment"},
+    "CANCEL_ORDER": {"get_order_status", "create_ticket"},
+    "RETURN_PRODUCT": {"search_knowledge_base", "create_ticket"},
+    "ASK_DELIVERY": {"search_knowledge_base", "track_shipment"},
+    "ASK_PAYMENT": {"search_knowledge_base", "get_payment_link"},
+    "ASK_FAQ": {"search_knowledge_base"},
+    "HUMAN_SUPPORT": {"create_ticket"},
+    "ANALYTICS_QUERY": {"get_sales_summary"},
+    "NEGOTIATE": {"search_products", "get_product_details"},
+    "UPGRADE_PLAN": {"search_knowledge_base"},
+    "BILLING_QUERY": {"search_knowledge_base"},
+    "STORE_SYNC": {"search_knowledge_base"},
+    "FRUSTRATION": {"search_knowledge_base", "create_ticket"},
+}
+
+# Tools that can NEVER appear in a software-executed plan step — reserved for
+# the deterministic workflow engine (order flow) or side-effects the planner
+# must not trigger with guessed arguments.
+_FORBIDDEN_PLAN_TOOLS = {"create_order", "update_customer", "create_ticket"}
+
+# Low-confidence structured plans below this threshold ask a clarifying
+# question instead of executing (mirrors _LOW_CONFIDENCE in the orchestrator).
+PLAN_CONFIDENCE_THRESHOLD = 0.6
+MAX_PLAN_STEPS = 4
+
+# Two-tier planning (docs 'Two AI planners'). Cheap model decides most turns;
+# the expensive model is used only for complex conversations or when the cheap
+# plan is low confidence / asks for clarification.
+FAST_PLANNER_MODEL = "openai/gpt-4o-mini"
+SMART_PLANNER_MODEL = None  # None → context.model (integration ai_model)
+
+# Intents where planning is genuinely hard — skip the cheap tier entirely.
+_SMART_ONLY_INTENTS = {
+    "NEGOTIATE", "COMPARE_PRODUCTS", "FRUSTRATION", "UNKNOWN",
+    "RETURN_PRODUCT", "RECOMMEND",
+}
+
+# Conversation states that signal an in-flight, complex exchange.
+_COMPLEX_STATES = {"comparing", "negotiating", "product_selection", "checkout", "payment"}
+
+
+def _is_complex_context(context: ConversationContext) -> bool:
+    """True when the current conversation state indicates a complex exchange
+    that deserves the smart planner (checkout, payment, comparing…)."""
+    if getattr(getattr(context, "intent", None), "name", "") in _SMART_ONLY_INTENTS:
+        return True
+    state = ""
+    try:
+        if getattr(context, "conversation", None) is not None:
+            from context.models import SessionContext
+            sc = SessionContext.objects.filter(conversation=context.conversation).first()
+            state = (sc.state or "") if sc else ""
+    except Exception:
+        state = ""
+    return state in _COMPLEX_STATES
+
 
 # ---------------------------------------------------------------------------
 # Direct mappings (simple intents → single tool)
@@ -68,27 +145,63 @@ _TEMPLATE_PLANS: dict[str, list[dict]] = {
     ],
 }
 
+# goal / state labels for the deterministic tiers (free metadata).
+_INTENT_GOALS: dict[str, tuple[str, str]] = {
+    "ASK_PRICE": ("share_product_price", "browsing"),
+    "ASK_STOCK": ("share_product_stock", "browsing"),
+    "SEARCH_PRODUCT": ("find_product", "browsing"),
+    "ASK_DETAILS": ("share_product_details", "browsing"),
+    "RECOMMEND": ("recommend_product", "product_selection"),
+    "COMPARE_PRODUCTS": ("compare_products", "comparing"),
+    "CATALOG": ("show_catalog", "browsing"),
+    "SEND_IMAGES": ("send_product_images", "browsing"),
+    "CHECK_ORDER": ("check_order_status", "order_lookup"),
+    "CANCEL_ORDER": ("cancel_order", "order_lookup"),
+    "RETURN_PRODUCT": ("help_with_return", "support"),
+    "ASK_DELIVERY": ("answer_delivery_question", "support"),
+    "ASK_PAYMENT": ("answer_payment_question", "support"),
+    "ASK_FAQ": ("answer_faq", "support"),
+    "HUMAN_SUPPORT": ("handoff_to_human", "support"),
+    "ANALYTICS_QUERY": ("share_sales_summary", "analytics"),
+    "NEGOTIATE": ("handle_price_negotiation", "negotiating"),
+    "UPGRADE_PLAN": ("answer_plan_question", "support"),
+    "BILLING_QUERY": ("answer_billing_question", "support"),
+    "STORE_SYNC": ("answer_sync_question", "support"),
+}
+
 
 class Planner:
 
     @staticmethod
-    def plan(intent: str, context: ConversationContext, reply_id: str | None = None) -> list[PlanStep]:
-        """Produce a list of PlanSteps for the given intent and context.
+    def plan(intent: str, context: ConversationContext, reply_id: str | None = None) -> AIPlan:
+        """Produce a structured AIPlan for the given intent and context.
 
-        Uses direct → template → LLM fallback.
+        Deterministic tiers (direct → template) first — free and consistent.
+        The LLM tier is used only for intents with no canned plan, and its
+        output is software-validated before it reaches the executor.
         """
         if intent in ("GREETING", "SMALL_TALK", "UNKNOWN", "FRUSTRATION"):
             # First-contact greeting: text-only (a welcome line). The catalog
             # carousel is shown only when the customer asks to browse ("ki
             # product ache?") — dumping the whole carousel on "hi" is spammy.
-            return []
+            return AIPlan(
+                goal="respond_conversationally",
+                conversation_state="idle",
+                confidence=1.0,
+                steps=[],
+            )
 
         # Orders are handled EXCLUSIVELY by the deterministic workflow
         # (orchestrator Step 2c). The planner must never create orders with
         # guessed args — that path produced unrequested orders and stale
         # customer data in real conversations.
         if intent == "CREATE_ORDER":
-            return []
+            return AIPlan(
+                goal="start_order_flow",
+                conversation_state="ordering",
+                confidence=1.0,
+                steps=[],
+            )
 
         # 1) Direct mode: single tool
         direct_tool = _DIRECT_MAP.get(intent)
@@ -97,17 +210,101 @@ class Planner:
                 tool=direct_tool,
                 args=Planner._build_args(direct_tool, context),
             )
-            return [step]
+            return Planner._wrap(intent, [step])
 
         # 2) Template mode: known multi-step workflow
         template = _TEMPLATE_PLANS.get(intent)
         if template:
             if intent == "SEND_IMAGES":
-                return Planner._send_images_plan(context)
-            return Planner._resolve_template(template, context)
+                steps = Planner._send_images_plan(context)
+            else:
+                steps = Planner._resolve_template(template, context)
+            return Planner._wrap(intent, steps)
 
-        # 3) LLM mode: use LLM to plan
+        # 3) LLM mode: structured plan, software-validated
         return Planner._llm_plan(intent, context, reply_id)
+
+    @staticmethod
+    def _wrap(intent: str, steps: list[PlanStep], confidence: float = 1.0,
+              reason: str = "") -> AIPlan:
+        goal, state = _INTENT_GOALS.get(intent, ("respond", "idle"))
+        tools = [s.tool for s in steps if s.tool]
+        return AIPlan(
+            goal=goal,
+            conversation_state=state,
+            required_tools=tools,
+            ask_clarification=False,
+            confidence=confidence,
+            reason=reason,
+            steps=steps,
+        )
+
+    # ------------------------------------------------------------------
+    # Software validation ("AI proposes, software disposes")
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def validate(plan: AIPlan, intent: str, context: ConversationContext) -> AIPlan:
+        """Deterministic gate over any plan (LLM or template) before execution.
+
+        - Drops steps whose tool is not in the intent's allowed set.
+        - Forbids create_order / update_customer / create_ticket as planner
+          steps (they run only via the deterministic workflow / tool paths).
+        - Low confidence + any steps → ask_clarification instead of executing.
+        - Caps iteration count so a runaway LLM plan can't loop the pipeline.
+        """
+        from .orchestrator import MAX_TOOL_ITERATIONS
+
+        allowed = _INTENT_ALLOWED_TOOLS.get(intent, set()) | _INTENT_ALLOWED_TOOLS.get("SEARCH_PRODUCT", set())
+        validated: list[PlanStep] = []
+        for step in plan.steps:
+            tool = step.tool
+            if not tool:
+                continue
+            if tool in _FORBIDDEN_PLAN_TOOLS:
+                logger.warning("PlanValidator rejected forbidden tool=%s intent=%s", tool, intent)
+                continue
+            if allowed and tool not in allowed:
+                logger.warning("PlanValidator rejected tool=%s (not allowed for intent=%s)", tool, intent)
+                continue
+            validated.append(step)
+            if len(validated) >= MAX_TOOL_ITERATIONS:
+                break
+
+        if not validated:
+            return AIPlan(
+                goal=plan.goal,
+                conversation_state=plan.conversation_state,
+                ask_clarification=bool(plan.ask_clarification),
+                confidence=plan.confidence,
+                reason=plan.reason,
+                steps=[],
+            )
+
+        # Low-confidence structured plans never execute blindly.
+        if plan.confidence < PLAN_CONFIDENCE_THRESHOLD:
+            logger.info(
+                "PlanValidator: low confidence %.2f for intent=%s → ask clarification",
+                plan.confidence, intent,
+            )
+            return AIPlan(
+                goal=plan.goal,
+                conversation_state=plan.conversation_state,
+                ask_clarification=True,
+                confidence=plan.confidence,
+                reason=plan.reason,
+                steps=[],
+            )
+
+        return AIPlan(
+            goal=plan.goal,
+            conversation_state=plan.conversation_state,
+            required_tools=[s.tool for s in validated],
+            ask_clarification=plan.ask_clarification,
+            confidence=plan.confidence,
+            reason=plan.reason,
+            steps=validated,
+        )
 
     @staticmethod
     def _send_images_plan(context: ConversationContext) -> list[PlanStep]:
@@ -253,29 +450,79 @@ class Planner:
         return steps
 
     @staticmethod
-    def _llm_plan(intent: str, context: ConversationContext, reply_id: str | None = None) -> list[PlanStep]:
-        """Use LLM to generate a plan for complex/ambiguous intents."""
+    def _llm_plan(intent: str, context: ConversationContext, reply_id: str | None = None) -> AIPlan:
+        """Two-tier structured planning (docs 'Two AI planners').
+
+        1. Fast tier (cheap model) tries every LLM-required turn first.
+        2. Smart tier (the user's configured model) is used only when:
+             - the intent is on the hard list, or
+             - the conversation is mid-complex-flow (comparing/negotiating/
+               product_selection/payment), or
+             - the fast plan is low confidence or asks for clarification.
+        """
+        result = None
+        first_pass = None
+        try:
+            if intent in _SMART_ONLY_INTENTS or _is_complex_context(context):
+                result = Planner._plan_call(intent, context, reply_id, smart=True, first_pass=False)
+            else:
+                result = Planner._plan_call(intent, context, reply_id, smart=False, first_pass=True)
+                first_pass = result
+                if result.confidence < PLAN_CONFIDENCE_THRESHOLD or result.ask_clarification:
+                    result = Planner._plan_call(
+                        intent, context, reply_id, smart=True, first_pass=False, draft=first_pass,
+                    )
+        except Exception:
+            logger.exception("Two-tier planning failed intent=%s", intent)
+            result = first_pass or AIPlan(goal="respond", confidence=0.0, ask_clarification=True, steps=[])
+        return result
+
+    @staticmethod
+    def _smart_model(context: ConversationContext) -> str:
+        if SMART_PLANNER_MODEL:
+            return SMART_PLANNER_MODEL
+        dm = getattr(context, "model", None) or ""
+        return dm or FAST_PLANNER_MODEL
+
+    @staticmethod
+    def _plan_call(intent, context: ConversationContext, reply_id, *, smart: bool, first_pass: bool, draft=None) -> AIPlan:
         try:
             from .providers import call_llm
 
-            available_tools = ToolRegistry.get_definitions()
-            available_names = [t["function"]["name"] for t in available_tools]
+            allowed = _INTENT_ALLOWED_TOOLS.get(intent, set())
+            draft_hint = ""
+            if draft is not None:
+                tools = ", ".join(s.tool for s in draft.steps) or "none"
+                draft_hint = (
+                    f'The first attempt was low-confidence (conf={draft.confidence}). '
+                    f'Its steps were: {tools}. Re-analyze and produce a better plan.\n'
+                )
 
             prompt = (
                 f"Intent: {intent}\n"
                 f"Customer message: {context.incoming_text}\n"
                 f"Customer has {len(context.products)} focused products\n\n"
-                f"Available tools: {', '.join(available_names)}\n\n"
-                "Return a JSON array of tool sequences. Each item: {\"tool\": \"name\", \"args\": {}}\n"
-                "Only use tools from the available list. Return [] if no tools needed.\n"
-                "Return ONLY the JSON array, nothing else."
+                + draft_hint +
+                f"Allowed tools (USE ONLY THESE): {', '.join(sorted(allowed))}\n\n"
+                "Return a single JSON object:\n"
+                "{\n"
+                '  "goal": "short verb phrase of what to achieve",\n'
+                '  "conversation_state": "browsing|product_selection|comparing|support|order_lookup",\n'
+                '  "required_tools": ["tool names from the allowed list"],\n'
+                '  "ask_clarification": false,\n'
+                '  "confidence": 0.0-1.0,\n'
+                '  "steps": [{"tool": "name", "args": {}}]\n'
+                "}\n"
+                "Each step.tool MUST be from the allowed list. ask_clarification=true "
+                "when the message is ambiguous. Return ONLY the JSON, nothing else."
             )
 
             msg, usage = call_llm(
                 messages=[{"role": "user", "content": prompt}],
                 tools=None,
-                temperature=0.3,
-                max_tokens=300,
+                model=Planner._smart_model(context) if smart else FAST_PLANNER_MODEL,
+                temperature=0.2,
+                max_tokens=400,
             )
 
             if reply_id:
@@ -287,7 +534,7 @@ class Planner:
                         model=usage.get("model", ""),
                         input_tokens=usage.get("input_tokens", 0),
                         output_tokens=usage.get("output_tokens", 0),
-                        call_type="planning",
+                        call_type=("planning_smart" if smart else "planning_fast"),
                     )
                 except Exception as exc:
                     logger.warning("UsageLog write failed reply_id=%s: %s", reply_id, exc)
@@ -296,16 +543,44 @@ class Planner:
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[-1]
                 raw = raw.rsplit("\n```", 1)[0]
-            plan_data = json.loads(raw) if raw else []
+            plan_data = json.loads(raw) if raw else {}
+            if not isinstance(plan_data, dict):
+                plan_data = {}
 
-            if isinstance(plan_data, list):
-                return [
-                    PlanStep(tool=item["tool"], args=item.get("args", {}))
-                    for item in plan_data
-                    if isinstance(item, dict) and item.get("tool") in available_names
-                ]
+            steps = []
+            steps_raw = plan_data.get("steps") or []
+            for item in steps_raw:
+                if not isinstance(item, dict):
+                    continue
+                tool = item.get("tool")
+                if tool in _INTENT_ALLOWED_TOOLS.get(intent, set()) and tool:
+                    args = item.get("args")
+                    steps.append(PlanStep(tool=tool, args=args if isinstance(args, dict) else {}))
+
+            return AIPlan(
+                goal=str(plan_data.get("goal") or ""),
+                conversation_state=str(plan_data.get("conversation_state") or ""),
+                required_tools=list(plan_data.get("required_tools") or [])[:8],
+                ask_clarification=bool(plan_data.get("ask_clarification")),
+                confidence=Planner._safe_confidence(plan_data.get("confidence")),
+                reason=str(plan_data.get("reason") or ""),
+                steps=steps[:MAX_PLAN_STEPS],
+            )
 
         except Exception as exc:
             logger.warning("LLM planning failed for intent=%s: %s", intent, exc)
 
-        return []
+            return AIPlan(
+                goal="respond",
+                confidence=0.0,
+                ask_clarification=True,
+                steps=[],
+            )
+
+    @staticmethod
+    def _safe_confidence(value) -> float:
+        try:
+            v = float(value)
+            return max(0.0, min(1.0, v))
+        except (TypeError, ValueError):
+            return 0.0

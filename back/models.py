@@ -75,6 +75,7 @@ class UserProfile(models.Model):
     uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default="free")
     product_type = models.CharField(max_length=20, choices=PRODUCT_CHOICES, default="normal_product")
+    setup_completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -722,6 +723,10 @@ class ToolCallLog(models.Model):
     arguments = models.JSONField()
     result_summary = models.TextField()
     execution_time_ms = models.IntegerField()
+    conversation_state = models.CharField(max_length=100, blank=True, default="")
+    intent_confidence = models.FloatField(null=True, blank=True)
+    plan_goal = models.CharField(max_length=200, blank=True, default="")
+    plan_confidence = models.FloatField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:

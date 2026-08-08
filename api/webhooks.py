@@ -180,12 +180,11 @@ def _fire_batch_pipeline(conversation_id):
 
         unified = SimpleNamespace(text=combined_text)
         try:
-            if settings.AI_ORCHESTRATOR_ENABLED:
-                from api.ai.orchestrator import run_via_orchestrator
-                run_via_orchestrator(conversation, unified)
-            else:
-                from api.ai.pipeline import run
-                run(conversation, unified)
+            # Single canonical AI path: the Orchestrator (intent → workflow →
+            # planner → executor → response generator). Legacy pipeline.py is
+            # no longer dispatched from here — see run_via_orchestrator().
+            from api.ai.orchestrator import run_via_orchestrator
+            run_via_orchestrator(conversation, unified)
         except Exception:
             logger.exception(
                 "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
@@ -218,12 +217,8 @@ def _fire_batch_pipeline(conversation_id):
                 if combined_text.strip():
                     unified = SimpleNamespace(text=combined_text)
                     try:
-                        if settings.AI_ORCHESTRATOR_ENABLED:
-                            from api.ai.orchestrator import run_via_orchestrator
-                            run_via_orchestrator(conversation, unified)
-                        else:
-                            from api.ai.pipeline import run
-                            run(conversation, unified)
+                        from api.ai.orchestrator import run_via_orchestrator
+                        run_via_orchestrator(conversation, unified)
                         MessageBatch.objects.filter(pk__in=fresh_pks).update(processed=True)
                     except Exception:
                         logger.exception(

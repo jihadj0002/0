@@ -112,17 +112,24 @@ def contact(request):
 
 
 
+def _post_login_redirect(user):
+    """Staff go to the CRM; tenants with an incomplete setup go to the wizard."""
+    try:
+        if user.staff_profile.is_active:
+            return redirect("crm:dashboard")
+    except Exception:
+        pass
+    from back.views import _needs_setup
+    if _needs_setup(user):
+        return redirect("back:setup")
+    return redirect("back:dashboard")
+
+
 def login_view(request):
     print("Login open")
     
     if request.user.is_authenticated:
-        # Staff go to the CRM, tenants go to their dashboard
-        try:
-            if request.user.staff_profile.is_active:
-                return redirect('crm:dashboard')
-        except Exception:
-            pass
-        return redirect('back:dashboard')  # Redirect if already logged in
+        return _post_login_redirect(request.user)  # Redirect if already logged in
     
     # Always get next URL from GET parameter
     next_url = request.GET.get('next', '')
@@ -142,12 +149,7 @@ def login_view(request):
                 # Redirect to next_url if provided, else CRM (staff) or dashboard
                 if next_url:
                     return redirect(next_url)
-                try:
-                    if request.user.staff_profile.is_active:
-                        return redirect('crm:dashboard')
-                except Exception:
-                    pass
-                return redirect('back:dashboard')
+                return _post_login_redirect(user)
             else:
                 messages.error(request, "Invalid username or password.")
                 print("Login failed")
@@ -177,6 +179,7 @@ def signup(request):
             
             user.save()
             messages.success(request, "User Created Successfully")
+            return redirect("front:login")
             
         except Exception as e:
             messages.error(request, "Smething Went Wrong")

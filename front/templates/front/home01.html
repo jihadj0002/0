@@ -13,7 +13,7 @@
     <link href="https://pub-421b25bbb74c448fa8ac1458aa3f57f7.r2.dev/main/Logo/favicon_256x256_3.png" rel="apple-touch-icon"/>
     <script async="" src="https://www.googletagmanager.com/gtag/js?id=G-8RGNJSHJRS"></script>
     <script type="text/javascript">window.dataLayer = window.dataLayer || [];function gtag(){dataLayer.push(arguments);}gtag('js', new Date());gtag('set', 'developer_id.dZGVlNj', true);gtag('config', 'G-8RGNJSHJRS');</script>
-    <script type="text/javascript">!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.agent='plwebflow';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init', '--MetaPixelCode--scriptfunctionfbevntsifffbqreturnnffbqfunctionncallMethodncallMethodapplynargumentsnqueuepushargumentsiff_fbqf_fbqnnpushnnloaded0nversion20nqueuetbcreateElementetasync0tsrcvsbgetElementsByTagNamee0sparentNodeinsertBeforetswindowdocumentscripthttpsconnectfacebookneten_USfbeventsjsfbqinit746028741484628fbqtrackPageViewscriptnoscriptimgheight1width1styledisplaynonesrchttpswwwfacebookcomtrid746028741484628evPageViewnoscript1noscript--EndMetaPixelCode--');fbq('track', 'PageView');</script>
+    {% include "front/includes/meta_pixel.html" %}
     
 
         <!-- Google tag (gtag.js) -->
@@ -527,6 +527,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // Scroll-driven slide changes
     window.addEventListener('scroll', handleScrollSwiper);
+  });
+</script>
+<script>
+  document.addEventListener('click', function(e) {
+    if (window.fbq && e.target && e.target.closest && e.target.closest('[data-cal-link]')) {
+      fbq('track', 'Lead');
+    }
   });
 </script>
 </body></html>

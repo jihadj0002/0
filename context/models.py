@@ -189,6 +189,8 @@ class SessionContext(models.Model):
         ("idle", "Idle — no active workflow"),
         ("browsing", "Customer is browsing products"),
         ("product_selected", "A specific product was selected"),
+        ("awaiting_product_selection", "AI asks which product to order"),
+        ("awaiting_variation", "AI asks which size/variant"),
         ("awaiting_details", "AI is collecting order details"),
         ("awaiting_confirmation", "AI is waiting for order confirmation"),
         ("checkout", "Checkout in progress"),

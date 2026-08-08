@@ -201,15 +201,16 @@ def run(conversation, incoming_message):
     """
     Entry point for the AI pipeline.
 
-    Called from the post_save signal (inside a webhook background thread) after
-    a customer message is persisted. Runs synchronously — already off the main
-    request thread.
-
-    Flow:
-        pre-flight credit check → build context → LLM call →
-        [tool loop up to MAX_TOOL_ITERATIONS] →
-        final text → save bot Message → send via platform → log all LLM calls
+    Legacy: the Orchestrator is now the single canonical AI path (webhooks route
+    through ``run_via_orchestrator``). This shim keeps any stray caller (tests,
+    back-office scripts, future integrations) behaviorally identical.
     """
+    from .orchestrator import run_via_orchestrator
+    run_via_orchestrator(conversation, incoming_message)
+    return
+
+    # The legacy monolithic pipeline body below is intentionally unreachable
+    # (the Orchestrator is the single AI path). Kept for reference only.
     if not conversation.is_ai_enabled:
         try:
             if not conversation.auto_enable_ai():

@@ -1566,6 +1566,34 @@ def import_products(request):
 # =====================================================================
 # Settings — Store, Agent Identity, Behavior Rules, AI Model
 # =====================================================================
+
+def _needs_setup(user):
+    """First-run gate: user must complete the setup wizard unless they already
+    have a connected Messenger integration or finished setup before."""
+    try:
+        profile = user.profile
+        if profile.setup_completed_at:
+            return False
+    except Exception:
+        return True
+
+    has_connection = Integration.objects.filter(
+        user=user, platform="messenger", is_connected=True
+    ).exists()
+    if has_connection:
+        # Existing users with a working Messenger connection skip the wizard.
+        try:
+            from django.utils import timezone
+            user.profile.setup_completed_at = timezone.now()
+            user.profile.save(update_fields=["setup_completed_at"])
+        except Exception:
+            pass
+        return False
+
+    # Fresh signup with no connection → needs the wizard.
+    return True
+
+
 @login_required
 def settings_view(request):
     from context.models import AgentIdentity, StoreConfig, BehaviorRules
@@ -1579,55 +1607,10 @@ def settings_view(request):
     available_models = list(ModelPricing.objects.filter(is_active=True).values_list('model_id', flat=True))
 
     if request.method == 'POST':
+        from .settings_helpers import apply_setting_section
         section = request.POST.get('section', '')
-
-        if section == 'store':
-            store.store_name = request.POST.get('store_name', '')
-            store.address = request.POST.get('address', '')
-            store.whatsapp_number = request.POST.get('whatsapp_number', '')
-            store.delivery_charge_inside = request.POST.get('delivery_charge_inside') or 0
-            store.delivery_charge_outside = request.POST.get('delivery_charge_outside') or 0
-            store.support_open_time = request.POST.get('support_open_time') or '09:00'
-            store.support_close_time = request.POST.get('support_close_time') or '21:00'
-            store.timezone = request.POST.get('timezone') or 'Asia/Dhaka'
-            store.currency = request.POST.get('currency') or 'BDT'
-            store.save()
-            messages.success(request, 'Store settings saved.')
-
-        elif section == 'agent':
-            identity.name = request.POST.get('name') or 'Assistant'
-            identity.role = request.POST.get('role', '')
-            identity.tone = request.POST.get('tone') or 'friendly'
-            identity.style = request.POST.get('style') or 'conversational'
-            identity.language = request.POST.get('language') or 'en'
-            if 'image' in request.FILES:
-                identity.image = request.FILES['image']
-            identity.save()
-            messages.success(request, 'Agent identity saved.')
-
-        elif section == 'behavior':
-            rules.greeting_message = request.POST.get('greeting_message', '')
-            rules.custom_instructions = request.POST.get('custom_instructions', '')
-            rules.chit_chat_enabled = 'chit_chat_enabled' in request.POST
-            rules.chit_chat_style = request.POST.get('chit_chat_style') or 'moderate'
-            rules.cross_sell_enabled = 'cross_sell_enabled' in request.POST
-            rules.ask_open_ended = 'ask_open_ended' in request.POST
-            rules.sample_questions_answers = request.POST.get('sample_questions_answers', '').strip()
-            rules.save()
-            messages.success(request, 'Behavior rules saved.')
-
-        elif section == 'knowledge':
-            rules.knowledge_base = request.POST.get('knowledge_base', '').strip()
-            rules.save(update_fields=['knowledge_base'])
-            messages.success(request, 'Knowledge base saved.')
-
-        elif section == 'ai_model':
-            for intg in integrations:
-                intg.ai_model = request.POST.get(f'ai_model_{intg.pk}') or None
-                intg.save(update_fields=['ai_model'])
-            messages.success(request, 'AI model settings saved.')
-
-        return redirect(f"{request.path}?tab={request.POST.get('section', 'store')}")
+        if apply_setting_section(user, request, section):
+            return redirect(f"{request.path}?tab={section}")
 
     timezones = [
         'Asia/Dhaka', 'Asia/Kolkata', 'Asia/Karachi', 'Asia/Dubai',
@@ -1643,6 +1626,105 @@ def settings_view(request):
         'integrations': integrations,
         'available_models': available_models,
         'active_tab': request.GET.get('tab', 'store'),
+        'timezones': timezones,
+    })
+
+
+# =====================================================================
+# Setup Wizard — first-run guided onboarding (steps: connect → store →
+# agent → behavior → knowledge → ai_model → done)
+# =====================================================================
+
+SETUP_STEPS = [
+    ("connect", "🔗 Connect"),
+    ("store", "🏪 Store"),
+    ("agent", "🤖 Agent"),
+    ("behavior", "💬 Behavior"),
+    ("knowledge", "📚 Knowledge"),
+    ("ai_model", "⚡ AI Model"),
+    ("done", "🎉 Done"),
+]
+
+_SETUP_SECTIONS = {"store", "agent", "behavior", "knowledge", "ai_model"}
+
+
+def _messenger_connected(user):
+    return Integration.objects.filter(
+        user=user, platform="messenger", is_connected=True
+    ).first()
+
+
+@login_required
+def setup_wizard(request):
+    from context.models import AgentIdentity, StoreConfig, BehaviorRules
+    from billing.models import ModelPricing
+
+    user = request.user
+    identity, _ = AgentIdentity.objects.get_or_create(user=user)
+    store, _ = StoreConfig.objects.get_or_create(user=user)
+    rules, _ = BehaviorRules.objects.get_or_create(user=user)
+    integrations = list(Integration.objects.filter(user=user))
+    available_models = list(ModelPricing.objects.filter(is_active=True).values_list('model_id', flat=True))
+    messenger = _messenger_connected(user)
+
+    if request.method == 'POST':
+        section = request.POST.get('section', '')
+
+        if section == 'finish':
+            # Last step: mark setup as complete and land on the dashboard.
+            try:
+                user.profile.setup_completed_at = timezone.now()
+                user.profile.save(update_fields=["setup_completed_at"])
+            except Exception:
+                pass
+            messages.success(request, "Setup complete! 🎉 Your store is live.")
+            return redirect("back:dashboard")
+
+        if section in _SETUP_SECTIONS:
+            from .settings_helpers import apply_setting_section
+            apply_setting_section(user, request, section)
+            # Advance to the next step after saving.
+            names = [s for s, _ in SETUP_STEPS]
+            idx = names.index(section)
+            nxt = names[idx + 1] if idx + 1 < len(names) else "done"
+            return redirect(f"{request.path}?step={nxt}")
+
+        # Unknown POST → stay on the current step.
+        return redirect(f"{request.path}?step={request.POST.get('step', 'connect')}")
+
+    # GET: default step = connect (or store when messenger already connected)
+    step = request.GET.get('step', '')
+    step_names = [s for s, _ in SETUP_STEPS]
+    if step not in step_names:
+        step = "store" if messenger else "connect"
+
+    active_index = step_names.index(step)
+    steps = [
+        {"key": k, "label": lbl, "state": (
+            "done" if i < active_index
+            else "active" if i == active_index
+            else "todo"
+        )}
+        for i, (k, lbl) in enumerate(SETUP_STEPS)
+    ]
+
+    timezones = [
+        'Asia/Dhaka', 'Asia/Kolkata', 'Asia/Karachi', 'Asia/Dubai',
+        'Asia/Singapore', 'Asia/Bangkok', 'Asia/Jakarta',
+        'UTC', 'Europe/London', 'Europe/Paris', 'Europe/Berlin',
+        'America/New_York', 'America/Chicago', 'America/Los_Angeles',
+    ]
+
+    return render(request, 'back/setup.html', {
+        'active_step': step,
+        'steps_list': steps,
+        'messenger': messenger,
+        'messenger_connected': bool(messenger),
+        'identity': identity,
+        'store': store,
+        'rules': rules,
+        'integrations': integrations,
+        'available_models': available_models,
         'timezones': timezones,
     })
 

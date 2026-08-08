@@ -305,8 +305,21 @@ def _clear_oauth_session(request):
         "meta_oauth_user_id",
         "meta_oauth_expires_in",
         "meta_oauth_token",
+        "meta_oauth_next",
     ):
         request.session.pop(key, None)
+
+
+def _redirect_after_oauth(request, default="back:options"):
+    """Redirect the user after an OAuth outcome.
+
+    Honors a sanitized ``?next=`` stored in the session (used by the setup
+    wizard to keep the user in flow); falls back to the Integrations page.
+    """
+    target = request.session.pop("meta_oauth_next", None)
+    if target and target.startswith("/") and not target.startswith("//"):
+        return redirect(target)
+    return redirect(default)
 
 
 # ---------------------------------------------------------------------------
@@ -318,10 +331,16 @@ def meta_oauth_start(request):
     """Kick off the OAuth flow: store state in session, redirect to Facebook."""
     if not settings.META_APP_ID:
         messages.error(request, "Facebook app not configured")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     state = secrets.token_urlsafe(24)
     request.session["meta_oauth_state"] = state
+
+    # Optional sanitized ?next= — the setup wizard passes /dbsetup/ so the
+    # user returns to the wizard (not the Integrations page) after connecting.
+    next_url = request.GET.get("next", "")
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        request.session["meta_oauth_next"] = next_url
 
     redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
         reverse("api:meta-oauth-callback")
@@ -334,18 +353,18 @@ def meta_oauth_callback(request):
     """Handle the OAuth redirect: validate state, exchange tokens, list pages."""
     if request.GET.get("error"):
         messages.error(request, "Facebook connection was cancelled or denied.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     # CSRF: state must match what we stored (and is single-use).
     expected_state = request.session.pop("meta_oauth_state", None)
     if not expected_state or request.GET.get("state") != expected_state:
         messages.error(request, "Invalid OAuth state. Please try connecting again.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     code = request.GET.get("code")
     if not code:
         messages.error(request, "No authorization code returned from Facebook.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
         reverse("api:meta-oauth-callback")
@@ -354,12 +373,12 @@ def meta_oauth_callback(request):
     short = exchange_code_for_token(code, redirect_uri)
     if short.get("error") or not short.get("access_token"):
         messages.error(request, "Could not complete Facebook login. Please try again.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     long_lived = get_long_lived_token(short["access_token"])
     if long_lived.get("error") or not long_lived.get("access_token"):
         messages.error(request, "Could not obtain a long-lived token. Please try again.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     user_token = long_lived["access_token"]
     expires_in = long_lived.get("expires_in")
@@ -370,7 +389,7 @@ def meta_oauth_callback(request):
     pages = list_pages(user_token)
     if isinstance(pages, dict) and pages.get("error"):
         messages.error(request, "Could not read your Facebook Pages. Please try again.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     page_list = [
         {
@@ -391,7 +410,7 @@ def meta_oauth_callback(request):
     if not page_list:
         _clear_oauth_session(request)
         messages.error(request, "No Facebook Pages found on your account.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     if len(page_list) == 1:
         name, warning = _connect_page(request.user, page_list[0], meta_user_id, expires_in)
@@ -403,7 +422,7 @@ def meta_oauth_callback(request):
             )
         else:
             messages.success(request, f"Connected Facebook Page: {name}")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     # Multiple pages → let the user choose.
     return render(request, "back/meta_select_pages.html", {"pages": page_list})
@@ -416,7 +435,7 @@ def meta_oauth_select(request):
     session_pages = request.session.get("meta_oauth_pages") or []
     if not session_pages:
         messages.error(request, "Your connection session expired. Please try again.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     by_id = {p["id"]: p for p in session_pages}
     selected_ids = request.POST.getlist("page_id")
@@ -424,7 +443,7 @@ def meta_oauth_select(request):
 
     if not selected:
         messages.error(request, "No pages selected.")
-        return redirect("back:options")
+        return _redirect_after_oauth(request)
 
     meta_user_id = request.session.get("meta_oauth_user_id", "")
     expires_in = request.session.get("meta_oauth_expires_in")
@@ -446,7 +465,7 @@ def meta_oauth_select(request):
             request,
             "Event subscription may need attention for: " + ", ".join(warnings),
         )
-    return redirect("back:options")
+    return _redirect_after_oauth(request)
 
 
 @login_required

@@ -19,10 +19,15 @@ from .intent import IntentDetector
 from .planner import Planner
 from .response import ResponseGenerator
 from .tools import ToolRegistry, ToolResult
+from .validator import ResponseValidator
 
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 7
+
+# Intent confidence below this never auto-executes a risky flow (CREATE_ORDER,
+# cancellations, human handoff). See 'Use confidence' in the task docs.
+_LOW_CONFIDENCE = 0.6
 
 
 class Orchestrator:
@@ -124,10 +129,11 @@ class Orchestrator:
                 pass
 
         # Step 2: Detect intent
-        intent_name = self.intent_detector.detect(customer_text, context)
+        intent_name, intent_conf = self.intent_detector.detect_with_confidence(customer_text, context)
         from .context import Intent as IntentDC
-        context.intent = IntentDC(name=intent_name, confidence=1.0)
+        context.intent = IntentDC(name=intent_name, confidence=intent_conf)
         self._intent_name = intent_name
+        self._intent_conf = intent_conf
 
         # Step 2a: A confirmation ("ok", "হ্যাঁ") right after an ORDER question
         # ("...নিতে আগ্রহী?") means the customer wants that product → order flow.
@@ -210,26 +216,60 @@ class Orchestrator:
         # handled EXCLUSIVELY here — if the flow somehow produces no response,
         # ask for the product instead of falling through to the planner (which
         # must never create orders with guessed args).
+        # Low-confidence gate (docs 'Use confidence'): a weak CREATE_ORDER signal
+        # must NOT auto-start the order flow — treat it as a product/search turn
+        # so the bot asks a clarifying question instead of creating an order.
         if intent_name == "CREATE_ORDER":
-            started = WorkflowEngine.start_order_flow(conversation, context)
-            if not started:
-                started = {"text": (
-                    "কোন প্রোডাক্টটা অর্ডার করতে চান? আমাদের ক্যাটালগ থেকে একটার নাম বলুন।"
-                    if getattr(conversation, "language_detected", "") == "bn" else
-                    "Which product would you like to order? Please name one from our catalog."
-                )}
-            response = Response(text=started.get("text", ""))
+            if not getattr(self, "_intent_conf", 1.0) or self._intent_conf < _LOW_CONFIDENCE:
+                logger.info(
+                    "Low-confidence CREATE_ORDER (%.2f) → SEARCH_PRODUCT conv=%s",
+                    self._intent_conf, conversation.pk,
+                )
+                intent_name = "SEARCH_PRODUCT"
+                context.intent = IntentDC(name="SEARCH_PRODUCT", confidence=self._intent_conf)
+                self._intent_name = intent_name
+            else:
+                started = WorkflowEngine.start_order_flow(conversation, context)
+                if not started:
+                    started = {"text": (
+                        "কোন প্রোডাক্টটা অর্ডার করতে চান? আমাদের ক্যাটালগ থেকে একটার নাম বলুন।"
+                        if getattr(conversation, "language_detected", "") == "bn" else
+                        "Which product would you like to order? Please name one from our catalog."
+                    )}
+                response = Response(text=started.get("text", ""))
+                self.last_response = response
+                self.last_reply_id = reply_id
+                self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
+                return
+
+        # Step 3: Generate plan (structured AIPlan — deterministic tiers are
+        # free; the LLM tier is software-validated before anything executes)
+        _t_plan = time.time()
+        plan = self.planner.plan(intent_name, context, reply_id=reply_id)
+        plan = self.planner.validate(plan, intent_name, context)
+        _t_plan = (time.time() - _t_plan) * 1000
+        context.plan = plan
+        self._plan_meta = plan
+        steps = plan.steps
+
+        # Step 3a: The planner flagged an ambiguous turn — ask instead of
+        # guessing ("Use confidence" / ask_clarification in the docs).
+        if plan.ask_clarification and not steps:
+            clarification = (
+                "আপনি কোনটা বোঝাতে চেয়েছেন? একটু বিস্তারিত বলুন (যেমন প্রোডাক্টের নাম বা অর্ডার আইডি)।"
+                if context.settings.agent_language == "bn" or getattr(conversation, "language_detected", "") == "bn"
+                else "Could you tell me a bit more? For example the product name or order ID."
+            )
+            response = Response(text=clarification)
             self.last_response = response
             self.last_reply_id = reply_id
             self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
             return
 
-        # Step 3: Generate plan
-        plan = self.planner.plan(intent_name, context, reply_id=reply_id)
-        context.plan = plan
-
         # Step 4: Execute plan
-        tool_results = self.executor.execute(plan, context)
+        _t_exec = time.time()
+        tool_results = self.executor.execute(steps, context)
+        _t_exec = (time.time() - _t_exec) * 1000
         context.tool_results = tool_results
         self._tool_results = tool_results
 
@@ -237,6 +277,17 @@ class Orchestrator:
         if any(r.tool == "create_ticket" and r.state == "success" for r in tool_results):
             from .state import mark_escalated
             mark_escalated(conversation)
+
+        # Per-turn decision context captured once here; written onto every
+        # ToolCallLog row so the dashboard can join tool behavior to the
+        # planner/intent/state that produced it (PHASE 2 observability).
+        try:
+            _conv_state = conversation.session.state
+        except Exception:
+            _conv_state = ""
+        _self_intent_conf = getattr(self, "_intent_conf", None)
+        _plan_goal = getattr(plan, "goal", "") or ""
+        _plan_conf = getattr(plan, "confidence", None)
 
         # Log tool executions
         for i, r in enumerate(tool_results):
@@ -247,24 +298,39 @@ class Orchestrator:
                     reply_id=reply_id,
                     iteration=i,
                     tool_name=r.tool,
-                    arguments=plan[i].args if i < len(plan) else {},
+                    arguments=steps[i].args if i < len(steps) else {},
                     result_summary=self._summarize_result(r),
                     execution_time_ms=r.execution_time_ms,
+                    conversation_state=_conv_state,
+                    intent_confidence=_self_intent_conf,
+                    plan_goal=_plan_goal,
+                    plan_confidence=_plan_conf,
                 )
             except Exception as exc:
                 logger.warning("ToolCallLog write failed: %s", exc)
 
         # Step 5: Generate response
+        _t_resp = time.time()
         response = self.response_generator.generate(
             context, tool_results, reply_id=reply_id, dry_run=self.dry_run
         )
+        _t_resp = (time.time() - _t_resp) * 1000
 
         if not response.text:
             logger.warning("Orchestrator produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
             return
 
+        # Step 5a: Deterministic final gate (Layer 7) — empty/unsafe/verbose/
+        # media-cardinality corrections before anything reaches the customer.
+        response, self._validation_issues = ResponseValidator.validate(response, context)
+
         self.last_response = response
         self.last_reply_id = reply_id
+        self._latency_ms = {
+            "planning": round(_t_plan, 1),
+            "executor": round(_t_exec, 1),
+            "response": round(_t_resp, 1),
+        }
 
         # Step 6: Save bot message and send
         self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
@@ -286,9 +352,12 @@ class Orchestrator:
 
                 from django.db import close_old_connections
 
+                from .context import update_turn_summary
                 from .memory import MemoryManager
 
                 turn_text = customer_text
+                turn_intent = getattr(self, "_intent_name", "")
+                turn_bot = response.text or ""
 
                 def _extract():
                     close_old_connections()
@@ -296,6 +365,15 @@ class Orchestrator:
                         MemoryManager.extract_from_conversation(conversation, turn_text)
                     except Exception:
                         logger.exception("Background memory extraction failed conv=%s", conversation.pk)
+                    try:
+                        update_turn_summary(
+                            conversation,
+                            customer_text=turn_text,
+                            bot_text=turn_bot,
+                            intent=turn_intent,
+                        )
+                    except Exception:
+                        logger.exception("Background summary update failed conv=%s", conversation.pk)
                     finally:
                         close_old_connections()
 
@@ -314,6 +392,7 @@ class Orchestrator:
     def _save_and_send(self, conversation, response: Response, reply_id: str, dry_run=False):
         """Persist the bot reply and send it via the platform."""
         from .sender import send_reply
+        from .pipeline import _split_text_messages
 
         # Build attachment metadata
         attachment = {}
@@ -326,21 +405,47 @@ class Orchestrator:
             attachment["cards"] = response.cards
             attachment["type"] = "product_cards" if len(response.cards) > 1 else "product_card"
 
+        # Text discipline lives in ResponseValidator (Layer 7). Here we only
+        # enforce bubble cardinality: ONE bubble when visuals are sent, else
+        # capped at 3 for pure-text replies.
+        has_visuals = bool(response.images or response.cards)
+        text = response.text or ""
+
         # Build pipeline trace for the message
         trace = {}
         if hasattr(self, '_intent_name'):
             trace["intent"] = self._intent_name
+            if getattr(self, "_intent_conf", None) is not None:
+                trace["intent_confidence"] = round(getattr(self, "_intent_conf", 0.0), 3)
         if hasattr(self, '_tool_results') and self._tool_results:
             trace["tool_calls"] = [
                 {"tool": r.tool, "state": r.state, "time_ms": r.execution_time_ms}
                 for r in self._tool_results if r.tool
             ]
+        if getattr(self, "_validation_issues", None):
+            trace["validation"] = self._validation_issues
+        plan_meta = getattr(self, "_plan_meta", None)
+        if plan_meta is not None:
+            trace["plan"] = {
+                "goal": getattr(plan_meta, "goal", ""),
+                "state": getattr(plan_meta, "conversation_state", ""),
+                "confidence": round(getattr(plan_meta, "confidence", 0.0), 3),
+                "ask_clarification": bool(getattr(plan_meta, "ask_clarification", False)),
+            }
+        latency = getattr(self, "_latency_ms", None)
+        if latency:
+            trace["latency_ms"] = latency
+        try:
+            if conversation.session_id:
+                trace["conversation_state"] = conversation.session.state
+        except Exception:
+            pass
 
         # Save message with pipeline trace in raw_payload
         msg = Message.objects.create(
             conversation=conversation,
             sender="bot",
-            text=response.text,
+            text=text,
             attachments=attachment or None,
             raw_payload=trace or None,
         )
@@ -350,8 +455,8 @@ class Orchestrator:
             # history, last-bot-question matching) but never send to the platform.
             return
 
-        # Send via platform
-        texts = self._split_text(response.text)
+        # Send via platform — one bubble when visuals are sent, otherwise cap at 3.
+        texts = _split_text_messages(text, max_parts=1 if has_visuals else 3)
         delivery = send_reply(
             conversation,
             texts,
@@ -372,6 +477,7 @@ class Orchestrator:
             logger.warning("Delivery-status write failed reply_id=%s", reply_id)
 
     def _split_text(self, text: str) -> list[str]:
+        # Kept for backward compatibility — superseded by pipeline._split_text_messages.
         if not text:
             return []
         parts = [p.strip() for p in text.split("\n\n") if p.strip()]

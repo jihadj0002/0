@@ -5,6 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Matrix AI Dashboard{% endblock %}</title>
+  {% include "front/includes/meta_pixel.html" %}
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 
@@ -156,6 +157,7 @@ html, body {
   border-radius: 10px;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
   transition: background 0.2s ease;
 }
 
@@ -311,7 +313,15 @@ html, body {
         </div>
 
         <div class="top-actions">
-          <button id="connectBtn" class="btn-primary">Connect Messenger</button>
+          {% with msgr=integration_status.messenger %}
+            {% if msgr.connected %}
+              <a href="{% url 'back:options' %}" id="connectBtn" class="btn-primary" title="Messenger connected — manage in Integrations">
+                Messenger ✓
+              </a>
+            {% else %}
+              <a href="{% url 'api:meta-oauth-start' %}?next={% url 'back:setup' %}" id="connectBtn" class="btn-primary">🟢 Connect Messenger</a>
+            {% endif %}
+          {% endwith %}
           <div class="avatar" id="avatarMenu">{{ user.username|first|upper }}</div>
         </div>
       </header>
@@ -337,10 +347,7 @@ html, body {
 
 
   <script>
-    document.getElementById('connectBtn').addEventListener('click', function(){
-      const token = prompt('Paste your Messenger Page Access Token or Webhook URL:');
-      if(token) alert('Saved (demo). In production you would POST this securely to your backend.');
-    });
+    {% comment %} Connect Messenger now lives in the topbar as a real OAuth link (base.html). {% endcomment %}
   </script>
 
 

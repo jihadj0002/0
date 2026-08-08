@@ -269,12 +269,22 @@ class IntentDetector:
 
     @staticmethod
     def detect(text: str, context=None) -> str:
+        """Rule-based intent detection. Returns an intent name string.
+        Falls back to 'UNKNOWN' if no pattern matches."""
+        return IntentDetector.detect_with_confidence(text, context)[0]
+
+    @staticmethod
+    def detect_with_confidence(text: str, context=None) -> tuple[str, float]:
         """
-        Rule-based intent detection. Returns an intent name string.
-        Falls back to 'UNKNOWN' if no pattern matches.
+        Rule-based intent detection with a confidence score (new_ai_orchestrator
+        Layer 5 / 'use confidence'). Returns (intent_name, confidence).
+
+        Confidence drives the orchestrator's clarify/block-risky gate: high
+        confidence intents proceed, low-confidence CREATE_ORDER etc. never
+        auto-execute.
         """
         if not text or not text.strip():
-            return "UNKNOWN"
+            return "UNKNOWN", 0.0
 
         cleaned = text.strip()
 
@@ -283,7 +293,7 @@ class IntentDetector:
         # small-talk word ("ok bhai, ami amer achar 2 pcs order korbo") must go
         # through full scoring so the real intent (order/product) is found.
         if _SMALL_TALK_RE.fullmatch(cleaned):
-            return "SMALL_TALK"
+            return "SMALL_TALK", 0.75
 
         scores: dict[str, float] = {}
 
@@ -307,17 +317,20 @@ class IntentDetector:
             # no pattern but are clearly product queries — search them instead
             # of falling to UNKNOWN (which answers from memory without tools).
             if IntentDetector._is_short_product_query(cleaned):
-                return "SEARCH_PRODUCT"
-            return IntentDetector._match_catalog_product(text, context) or "UNKNOWN"
+                return "SEARCH_PRODUCT", 0.7
+            product_intent = IntentDetector._match_catalog_product(text, context)
+            return (product_intent or "UNKNOWN", 0.65 if product_intent else 0.0)
 
         # Return the highest-confidence match
         best_intent = max(scores, key=scores.get)
+        best_conf = scores[best_intent]
 
         # An explicit order request is more specific than chit-chat — a message
-        # like "ok bhai, ami amer achar 2 pcs order korbo" mentions BOTH "ok"
+        # like "ok bhai, ami amer k 2 pcs order korbo" mentions BOTH "ok"
         # (small talk) and "order korbo"; the order intent must win.
         if best_intent in ("SMALL_TALK", "GREETING") and "CREATE_ORDER" in scores:
             best_intent = "CREATE_ORDER"
+            best_conf = scores["CREATE_ORDER"]
 
         # Weak/generic matches that mention a real catalog product should be
         # treated as product searches (e.g. "jolpai" alone, "ok" style replies
@@ -325,10 +338,10 @@ class IntentDetector:
         if best_intent in ("UNKNOWN", "SMALL_TALK", "GREETING"):
             product_intent = IntentDetector._match_catalog_product(text, context)
             if product_intent:
-                return product_intent
+                return product_intent, 0.65
 
-        logger.debug("IntentDetector: text=%r → %s (scores=%s)", text[:50], best_intent, scores)
-        return best_intent
+        logger.debug("IntentDetector: text=%r → %s (%.2f, scores=%s)", text[:50], best_intent, best_conf, scores)
+        return best_intent, best_conf
 
     @staticmethod
     def _is_short_product_query(text: str) -> bool:

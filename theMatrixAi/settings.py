@@ -34,7 +34,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-!$#k@v1z&2e3g4h5i6j7k8l9m0n1o2p3q4r5s6t7u8v9w0x1y2z3a4b5c6d7e8f9g0")
 ENCRYPT_KEY = env("ENCRYPT_KEY", default="default_encrypt_key_please_change_me_1234567890")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
-AI_ORCHESTRATOR_ENABLED = os.environ.get("AI_ORCHESTRATOR_ENABLED", "False") == "True"
+# The Orchestrator is the ONLY AI path (webhooks always route through it).
+# The flag is kept for compatibility; it defaults to True.
+AI_ORCHESTRATOR_ENABLED = os.environ.get("AI_ORCHESTRATOR_ENABLED", "True") == "True"
 
 # --- Meta (Facebook/Instagram) OAuth + app-level webhook ---
 META_APP_ID = env("META_APP_ID", default="")
@@ -48,6 +50,10 @@ META_OAUTH_SCOPES = env(
 )
 # Optional explicit redirect URI override (else built from the request).
 META_OAUTH_REDIRECT_URI = env("META_OAUTH_REDIRECT_URI", default="")
+
+# --- Meta Pixel (marketing analytics) ---
+# Empty/absent disables the pixel entirely.
+META_PIXEL_ID = env("META_PIXEL_ID", default="")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
@@ -129,6 +135,8 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "back.context_processors.integration_status",
+                "back.context_processors.meta_pixel",
             ],
         },
     },

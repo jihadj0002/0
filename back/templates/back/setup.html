@@ -1,0 +1,358 @@
+{% extends 'back/base.html' %}
+{% load static %}
+{% block title %}Setup Wizard | Matrix AI{% endblock %}
+
+{% block extra_css %}
+<style>
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 1.5rem; font-weight: 800; margin: 0 0 4px; }
+.page-header p  { color: var(--muted); margin: 0; font-size: .9rem; }
+
+/* Progress rail */
+.wizard-rail-wrap { margin-bottom: 26px; overflow-x: auto; }
+.wizard-rail {
+  display: flex; align-items: center; gap: 6px; background: var(--soft);
+  border-radius: 12px; padding: 10px 14px; width: fit-content;
+  min-width: 100%; font-size: .8rem; font-weight: 600;
+}
+.step-node {
+  color: var(--muted); white-space: nowrap; padding: 3px 6px;
+  border-radius: 8px;
+}
+.step-node a { color: inherit; text-decoration: none; }
+.step-node a:hover { color: var(--accent); }
+.step-node.done-step { color: #059669; }
+.step-node.active-step {
+  color: #fff; background: var(--accent); padding: 5px 10px;
+  box-shadow: 0 2px 8px rgba(37,99,235,.25);
+}
+.rail-arrow { color: #cbd5e1; font-size: .8rem; }
+
+/* Settings card (shared visuals with the settings page) */
+.settings-card {
+  background: #fff; border-radius: 14px;
+  box-shadow: var(--shadow); padding: 28px; margin-bottom: 20px;
+}
+.settings-card h2 { font-size: 1.05rem; font-weight: 700; margin: 0 0 6px; }
+.settings-card .desc { color: var(--muted); font-size: .85rem; margin: 0 0 24px; }
+
+/* Tab panes — only the active one shows */
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media(max-width:640px){ .form-grid { grid-template-columns: 1fr; } }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group.full { grid-column: 1 / -1; }
+.form-group label { font-weight: 600; font-size: .85rem; }
+.form-group input,
+.form-group select,
+.form-group textarea {
+  padding: 10px 13px; border: 1.5px solid #e2e8f0;
+  border-radius: 9px; font-size: .9rem;
+  transition: border-color .2s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(37,99,235,.1);
+}
+.form-group textarea { min-height: 90px; resize: vertical; }
+
+.toggle-section { display: flex; flex-direction: column; gap: 14px; margin-bottom: 20px; }
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: var(--soft); border-radius: 10px;
+}
+.toggle-label h4 { margin: 0 0 2px; font-size: .9rem; }
+.toggle-label p  { margin: 0; font-size: .78rem; color: var(--muted); }
+.switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute; cursor: pointer; inset: 0;
+  background: #cbd5e1; border-radius: 24px; transition: .3s;
+}
+.slider::before {
+  content: ''; position: absolute; height: 18px; width: 18px;
+  left: 3px; bottom: 3px; background: #fff;
+  border-radius: 50%; transition: .3s;
+}
+input:checked + .slider { background: var(--accent); }
+input:checked + .slider::before { transform: translateX(20px); }
+
+.intg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; background: var(--soft); border-radius: 10px; gap: 12px;
+}
+.intg-info h4 { margin: 0 0 2px; font-size: .9rem; text-transform: capitalize; }
+.intg-info p  { margin: 0; font-size: .78rem; color: var(--muted); }
+.intg-row select { min-width: 220px; }
+.img-preview {
+  width: 80px; height: 80px; border-radius: 50%;
+  object-fit: cover; border: 3px solid var(--soft); margin-bottom: 10px;
+}
+.save-row { display: flex; justify-content: flex-end; margin-top: 20px; }
+.btn-save {
+  background: var(--accent); color: #fff; border: none;
+  padding: 11px 28px; border-radius: 10px; font-weight: 700;
+  font-size: .9rem; cursor: pointer; transition: background .2s;
+}
+.btn-save:hover { background: #1d4ed8; }
+
+.msg-success {
+  background: #ecfdf5; border: 1px solid #6ee7b7;
+  color: #065f46; padding: 12px 16px; border-radius: 10px;
+  margin-bottom: 20px; font-weight: 600; font-size: .9rem;
+}
+
+/* Connect step */
+.connect-hero { text-align: center; padding: 44px 24px; }
+.connect-hero .big-icon { font-size: 3rem; margin-bottom: 10px; }
+.connect-hero h2 { font-size: 1.3rem; margin: 0 0 8px; }
+.connect-hero p { color: var(--muted); max-width: 480px; margin: 0 auto 26px; }
+.btn-connect {
+  display: inline-block; background: #1877f2; color: #fff; text-decoration: none;
+  padding: 13px 36px; border-radius: 12px; font-weight: 700; font-size: 1rem;
+  transition: background .2s;
+}
+.btn-connect:hover { background: #1463c7; }
+.connect-ok {
+  border: 1px solid #6ee7b7; background: #ecfdf5; border-radius: 14px;
+  padding: 22px 26px; margin-bottom: 18px;
+}
+.optional-channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 12px; margin-top: 22px; }
+.optional-card {
+  border: 1.5px dashed #cbd5e1; border-radius: 12px; padding: 16px 18px; text-align: center;
+}
+.optional-card .oc-icon { font-size: 1.6rem; }
+.optional-card h5 { margin: 6px 0 2px; }
+.optional-card p { font-size: .78rem; color: var(--muted); margin: 0 0 10px; }
+.btn-ghost {
+  display: inline-block; border: 1.5px solid var(--accent); color: var(--accent);
+  background: #fff; padding: 7px 16px; border-radius: 9px; font-weight: 600;
+  font-size: .82rem; text-decoration: none;
+}
+.btn-ghost:hover { background: rgba(37,99,235,.06); }
+
+.wizard-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; }
+.wizard-actions .back-link { color: var(--muted); text-decoration: none; font-weight: 600; font-size: .9rem; }
+.wizard-actions .back-link:hover { color: var(--accent); }
+
+/* Done step */
+.done-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0 26px; }
+.done-item { background: var(--soft); border-radius: 12px; padding: 14px 16px; }
+.done-item .k { font-size: .76rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.done-item .v { font-weight: 700; margin-top: 4px; word-break: break-word; }
+@media(max-width:640px){ .done-summary { grid-template-columns: 1fr; } }
+
+/* ── Mobile-friendly (phones & small screens) ── */
+@media (max-width: 640px) {
+  .page-header h1 { font-size: 1.25rem; }
+  .page-header p  { font-size: .82rem; }
+
+  /* Progress rail: wrap into compact touch-friendly pills */
+  .wizard-rail-wrap { overflow-x: visible; }
+  .wizard-rail {
+    flex-wrap: wrap; width: 100%; min-width: 0;
+    padding: 8px; gap: 4px; justify-content: center;
+  }
+  .step-node { padding: 6px 8px; font-size: .74rem; }
+  .step-node.active-step { padding: 6px 10px; }
+  .rail-arrow { display: none; }
+
+  /* Cards & hero */
+  .settings-card { padding: 18px 16px; }
+  .settings-card h2 { font-size: 1rem; }
+  .connect-hero { padding: 26px 8px; }
+  .connect-hero .big-icon { font-size: 2.4rem; }
+  .connect-hero h2 { font-size: 1.15rem; }
+  .connect-hero p { font-size: .85rem; margin-bottom: 20px; }
+
+  /* Touch-friendly buttons — full width on phones */
+  .btn-connect { display: block; width: 100%; padding: 14px 20px; font-size: .95rem; }
+  .btn-save { width: 100%; padding: 14px 20px; font-size: .95rem; }
+  .save-row { margin-top: 16px; }
+  .btn-ghost { width: 100%; padding: 10px 16px; }
+  .connect-ok { padding: 16px; }
+  .connect-ok .btn-save { display: block; text-align: center; }
+
+  /* Optional channel cards stack full-width */
+  .optional-channels { grid-template-columns: 1fr; gap: 10px; }
+
+  /* Form fields: 16px prevents iOS auto-zoom on focus */
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    font-size: 16px; padding: 12px 12px;
+  }
+  .form-grid { gap: 14px; }
+
+  /* Toggles: keep label readable, switch on the right */
+  .toggle-row { gap: 10px; }
+
+  /* AI-model per-integration rows stack so the select never overflows */
+  .intg-row { flex-direction: column; align-items: stretch; }
+  .intg-row select { min-width: 0; width: 100%; }
+
+  /* Wizard bottom actions */
+  .wizard-actions { margin-top: 16px; }
+  .wizard-actions .back-link {
+    padding: 10px 4px; display: inline-block; font-size: .88rem;
+  }
+
+  /* Done recap */
+  .done-summary { margin: 14px 0 20px; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>🚀 Get your store live</h1>
+  <p>A few quick steps — most are optional and can be revisited later in <a href="{% url 'back:settings' %}">AI Settings</a>.</p>
+</div>
+
+{% if messages %}
+  {% for msg in messages %}
+    <div class="msg-success">✓ {{ msg }}</div>
+  {% endfor %}
+{% endif %}
+
+<!-- Progress rail -->
+<div class="wizard-rail-wrap">
+  <div class="wizard-rail">
+    {% for s in steps_list %}
+      {% if s.state == 'done' %}
+        <span class="step-node done-step">
+          <a href="?step={{ s.key }}">✓ {{ s.label }}</a>
+        </span>
+      {% elif s.state == 'active' %}
+        <span class="step-node active-step">{{ s.label }}<span class="sr-dot">●</span></span>
+      {% else %}
+        <span class="step-node">{{ s.label }}</span>
+      {% endif %}
+      {% if not forloop.last %}<span class="rail-arrow">→</span>{% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ── STEP: CONNECT ── -->
+<div class="tab-pane {% if active_step == 'connect' %}active{% endif %}" id="step-connect">
+  <div class="settings-card connect-hero">
+    <div class="big-icon">💬</div>
+    <h2>Connect Facebook Messenger</h2>
+    <p>This is where your customers message you. Connecting takes ~30 seconds — you'll pick the Facebook Page that represents your store.</p>
+
+    {% if messenger_connected %}
+      <div class="connect-ok">
+        <strong>Messenger connected ✓</strong> — "{{ messenger.page_name|default:'Your Page' }}" is live.
+        {% if integrations|length > 1 %}
+          <br><small>Instagram (via the same page) was also connected when available.</small>
+        {% endif %}
+        <div style="margin-top:14px"><a class="btn-save" style="text-decoration:none" href="?step=store">Continue → Store setup</a></div>
+      </div>
+    {% else %}
+      <a class="btn-connect" href="{% url 'api:meta-oauth-start' %}?next={% url 'back:setup' %}">🔵 Continue with Facebook</a>
+      <p style="margin-top:16px;font-size:.82rem;color:var(--muted);">You'll be asked to pick a Page. After it connects you'll return here to finish setup.</p>
+    {% endif %}
+
+    <!-- Optional channels -->
+    <div class="optional-channels">
+      <div class="optional-card">
+        <div class="oc-icon">🟢</div>
+        <h5>WhatsApp</h5>
+        <p>Manual token — optional</p>
+        <a class="btn-ghost" href="{% url 'back:options' %}">Set up later</a>
+      </div>
+      <div class="optional-card">
+        <div class="oc-icon">📸</div>
+        <h5>Instagram</h5>
+        <p>Connects automatically with the same Page</p>
+        <a class="btn-ghost" href="{% url 'back:options' %}">Manage</a>
+      </div>
+      <div class="optional-card">
+        <div class="oc-icon">✈️</div>
+        <h5>Telegram</h5>
+        <p>Manual token — optional</p>
+        <a class="btn-ghost" href="{% url 'back:options' %}">Set up later</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── STEP: STORE ── -->
+<div class="tab-pane {% if active_step == 'store' %}active{% endif %}" id="step-store">
+  {% include 'back/settings_sections.html' with active_tab='store' continue_label='Save & Continue →' only %}
+  <div class="wizard-actions">
+    <a class="back-link" href="?step=connect">← Back</a>
+  </div>
+</div>
+
+<!-- ── STEP: AGENT ── -->
+<div class="tab-pane {% if active_step == 'agent' %}active{% endif %}" id="step-agent">
+  {% include 'back/settings_sections.html' with active_tab='agent' continue_label='Save & Continue →' only %}
+  <div class="wizard-actions">
+    <a class="back-link" href="?step=store">← Back</a>
+  </div>
+</div>
+
+<!-- ── STEP: BEHAVIOR ── -->
+<div class="tab-pane {% if active_step == 'behavior' %}active{% endif %}" id="step-behavior">
+  {% include 'back/settings_sections.html' with active_tab='behavior' continue_label='Save & Continue →' only %}
+  <div class="wizard-actions">
+    <a class="back-link" href="?step=agent">← Back</a>
+  </div>
+</div>
+
+<!-- ── STEP: KNOWLEDGE ── -->
+<div class="tab-pane {% if active_step == 'knowledge' %}active{% endif %}" id="step-knowledge">
+  {% include 'back/settings_sections.html' with active_tab='knowledge' continue_label='Save & Continue →' only %}
+  <div class="wizard-actions">
+    <a class="back-link" href="?step=behavior">← Back</a>
+  </div>
+</div>
+
+<!-- ── STEP: AI MODEL ── -->
+<div class="tab-pane {% if active_step == 'ai_model' %}active{% endif %}" id="step-ai_model">
+  {% include 'back/settings_sections.html' with active_tab='ai_model' continue_label='Save & Continue →' only %}
+  <div class="wizard-actions">
+    <a class="back-link" href="?step=knowledge">← Back</a>
+  </div>
+</div>
+
+<!-- ── STEP: DONE ── -->
+<div class="tab-pane {% if active_step == 'done' %}active{% endif %}" id="step-done">
+  <div class="settings-card">
+    <h2>🎉 You're all set!</h2>
+    <p class="desc">Here's a quick recap of your setup. You can change any of this anytime from the sidebar.</p>
+
+    <div class="done-summary">
+      <div class="done-item">
+        <div class="k">Messenger</div>
+        <div class="v">{{ messenger.page_name|default:'Not connected' }}</div>
+      </div>
+      <div class="done-item">
+        <div class="k">Store</div>
+        <div class="v">{{ store.store_name|default:'Not set' }}</div>
+      </div>
+      <div class="done-item">
+        <div class="k">Agent</div>
+        <div class="v">{{ identity.name|default:'Assistant' }}</div>
+      </div>
+      <div class="done-item">
+        <div class="k">Language</div>
+        <div class="v">{{ identity.language|upper }}</div>
+      </div>
+    </div>
+
+    <form method="post" action="{% url 'back:setup' %}">
+      {% csrf_token %}
+      <input type="hidden" name="section" value="finish">
+      <div class="save-row">
+        <button type="submit" class="btn-save">Start chatting — go to Dashboard →</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
