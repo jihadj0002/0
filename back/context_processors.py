@@ -4,7 +4,12 @@ from django.conf import settings
 
 
 def meta_pixel(request):
-    return {"meta_pixel_id": settings.META_PIXEL_ID}
+    return {
+        "meta_pixel_id": settings.META_PIXEL_ID,
+        "meta_app_id": settings.META_APP_ID,
+        "meta_graph_version": settings.META_GRAPH_VERSION,
+        "meta_oauth_scope": settings.META_OAUTH_SCOPES,
+    }
 
 
 def integration_status(request):

@@ -134,6 +134,11 @@ def _summarize_tool_result(tool_name, result):
 
     if tool_name == "search_products":
         products = result.get("products", [])
+        if result.get("matched") is False:
+            return (
+                f"No match for query — {len(products)} product(s) shown as "
+                "conversation history only"
+            )
         names = [p.get("name", p.get("pid", "?"))[:40] for p in products[:5]]
         extra = f" (+{len(products)-5} more)" if len(products) > 5 else ""
         return f"Found {result.get('total', len(products))} products: {', '.join(names)}{extra}"
@@ -482,16 +487,20 @@ def run(conversation, incoming_message):
             if fn_name == "send_images" and isinstance(result, dict) and customer_text:
                 prods = result.get("products") or []
                 if len(prods) > 1:
-                    from .tools import _content_tokens as _tok
+                    from .tools import _content_tokens as _tok, _latinize_bn
                     q_toks = set(_tok(customer_text))
                     if q_toks:
                         kept = []
                         for p in prods:
                             p_toks = set(_tok(p.get("name", "")))
                             overlap = len(q_toks & p_toks)
-                            # Keep if ≥2 tokens overlap, or a longer query token matches exactly
+                            # Keep if ≥2 tokens overlap, or a longer query token matches
+                            # the name — or its romanized form, since Bengali names
+                            # ("লেবুর আচার") never share latin tokens with the query.
+                            p_name = (p.get("name", "") or "").lower()
+                            p_latin = _latinize_bn(p_name).lower() if p_name else ""
                             if overlap >= 2 or any(
-                                qt in p.get("name", "").lower()
+                                qt in p_name or (p_latin and qt in p_latin)
                                 for qt in q_toks if len(qt) > 3
                             ):
                                 kept.append(p)

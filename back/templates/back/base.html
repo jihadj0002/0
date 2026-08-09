@@ -6,6 +6,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}Matrix AI Dashboard{% endblock %}</title>
   {% include "front/includes/meta_pixel.html" %}
+  {% if meta_app_id %}
+  <script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+  <script>
+    window._metaAppId = "{{ meta_app_id }}";
+    window._metaSdkScope = "{{ meta_oauth_scope|default:'' }}";
+    window._metaSdkVersion = "{{ meta_graph_version|default:'v23.0' }}";
+    function initMetaSdk() {
+      if (!window.FB || !window.FB.init || window._metaSdkInited) return;
+      FB.init({ appId: window._metaAppId, autoLogAppEvents: false, xfbml: false, version: window._metaSdkVersion });
+      window._metaSdkInited = true;
+    }
+    if (window.FB && window.FB.init) initMetaSdk();
+  </script>
+  {% endif %}
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
 
@@ -390,6 +404,65 @@ html, body {
     });
   </script>
 
+
+  <script>
+    {% comment %} Mobile-friendly Meta Connect: use FB.login() (JS SDK) when available — works in mobile
+    browsers and in-app WebViews where the full-page redirect flow gets stuck. Falls back to the
+    classic server-side redirect flow (plain link) whenever the SDK is unavailable or unconfigured. {% endcomment %}
+    document.addEventListener('DOMContentLoaded', function () {
+      if (!window._metaAppId) return;
+      var buttons = document.querySelectorAll('.btn-connect, #connectBtn');
+      if (!buttons.length) return;
+
+      function getNextFromHref(href) {
+        try {
+          var u = new URL(href, window.location.origin);
+          return u.searchParams.get('next') || '';
+        } catch (e) { return ''; }
+      }
+      function csrfToken() {
+        var m = document.cookie.match(/csrftoken=([^;]+)/);
+        return m ? m[1] : '';
+      }
+
+      buttons.forEach(function (btn) {
+        btn.addEventListener('click', function (e) {
+          if (!window.FB || !window.FB.login) return;   // SDK not ready → server flow
+          e.preventDefault();
+          var href = btn.getAttribute('href') || '';
+          var scope = (window._metaSdkScope || '').replace(/[, ]+/g, ' ').trim() ||
+                      'pages_show_list,pages_messaging,public_profile,email';
+          FB.login(function (response) {
+            if (!response || !response.authResponse || !response.authResponse.accessToken) {
+              return;   // user cancelled the dialog → stay put
+            }
+            var body = new URLSearchParams({
+              access_token: response.authResponse.accessToken,
+              next: getNextFromHref(href)
+            });
+            fetch("{% url 'api:meta-oauth-token' %}", {
+              method: 'POST',
+              credentials: 'same-origin',
+              redirect: 'manual',
+              headers: {
+                'X-CSRFToken': csrfToken(),
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: body.toString()
+            }).then(function (resp) {
+              if (resp && resp.url) {
+                window.location.href = resp.url;        // follow server redirect (wizard / options / page picker)
+              } else {
+                window.location.reload();
+              }
+            }).catch(function () {
+              window.location.href = href;              // network error → classic flow
+            });
+          }, { scope: scope });
+        });
+      });
+    });
+  </script>
 
   {% block extra_js %}{% endblock %}
 </body>

@@ -299,13 +299,15 @@ def _connect_page(user, page, meta_user_id, expires_in):
 
 
 def _clear_oauth_session(request):
+    # NOTE: `meta_oauth_next` is intentionally NOT cleared here — it is a
+    # navigation token consumed only by `_redirect_after_oauth()` (which runs
+    # after this function in the callback/select flows).
     for key in (
         "meta_oauth_state",
         "meta_oauth_pages",
         "meta_oauth_user_id",
         "meta_oauth_expires_in",
         "meta_oauth_token",
-        "meta_oauth_next",
     ):
         request.session.pop(key, None)
 
@@ -314,11 +316,23 @@ def _redirect_after_oauth(request, default="back:options"):
     """Redirect the user after an OAuth outcome.
 
     Honors a sanitized ``?next=`` stored in the session (used by the setup
-    wizard to keep the user in flow); falls back to the Integrations page.
+    wizard to keep the user in flow); falls back to the Integrations page —
+    or to the setup wizard when the user has not completed first-run setup.
     """
     target = request.session.pop("meta_oauth_next", None)
     if target and target.startswith("/") and not target.startswith("//"):
         return redirect(target)
+
+    # User hasn't finished onboarding → keep them in the wizard.
+    user = getattr(request, "user", None)
+    if user is not None and user.is_authenticated:
+        try:
+            from back.views import _needs_setup
+            if _needs_setup(user):
+                return redirect(reverse("back:setup"))
+        except Exception:
+            pass
+
     return redirect(default)
 
 
@@ -326,63 +340,14 @@ def _redirect_after_oauth(request, default="back:options"):
 # Dashboard views (browser, session-authenticated).
 # ---------------------------------------------------------------------------
 
-@login_required
-def meta_oauth_start(request):
-    """Kick off the OAuth flow: store state in session, redirect to Facebook."""
-    if not settings.META_APP_ID:
-        messages.error(request, "Facebook app not configured")
-        return _redirect_after_oauth(request)
+def _finish_token_flow(request, user_token, expires_in):
+    """Common continuation after a long-lived user token is available.
 
-    state = secrets.token_urlsafe(24)
-    request.session["meta_oauth_state"] = state
-
-    # Optional sanitized ?next= — the setup wizard passes /dbsetup/ so the
-    # user returns to the wizard (not the Integrations page) after connecting.
-    next_url = request.GET.get("next", "")
-    if next_url.startswith("/") and not next_url.startswith("//"):
-        request.session["meta_oauth_next"] = next_url
-
-    redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
-        reverse("api:meta-oauth-callback")
-    )
-    return redirect(build_auth_url(redirect_uri, state))
-
-
-@login_required
-def meta_oauth_callback(request):
-    """Handle the OAuth redirect: validate state, exchange tokens, list pages."""
-    if request.GET.get("error"):
-        messages.error(request, "Facebook connection was cancelled or denied.")
-        return _redirect_after_oauth(request)
-
-    # CSRF: state must match what we stored (and is single-use).
-    expected_state = request.session.pop("meta_oauth_state", None)
-    if not expected_state or request.GET.get("state") != expected_state:
-        messages.error(request, "Invalid OAuth state. Please try connecting again.")
-        return _redirect_after_oauth(request)
-
-    code = request.GET.get("code")
-    if not code:
-        messages.error(request, "No authorization code returned from Facebook.")
-        return _redirect_after_oauth(request)
-
-    redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
-        reverse("api:meta-oauth-callback")
-    )
-
-    short = exchange_code_for_token(code, redirect_uri)
-    if short.get("error") or not short.get("access_token"):
-        messages.error(request, "Could not complete Facebook login. Please try again.")
-        return _redirect_after_oauth(request)
-
-    long_lived = get_long_lived_token(short["access_token"])
-    if long_lived.get("error") or not long_lived.get("access_token"):
-        messages.error(request, "Could not obtain a long-lived token. Please try again.")
-        return _redirect_after_oauth(request)
-
-    user_token = long_lived["access_token"]
-    expires_in = long_lived.get("expires_in")
-
+    Resolves the user's Pages and then either connects the single page
+    (→ `_redirect_after_oauth`) or stashes the list and sends the user to
+    the page-picker (→ `meta-oauth-choose`). Shared by the server-side
+    redirect flow and the mobile JS SDK flow.
+    """
     me = get_me(user_token)
     meta_user_id = me.get("id", "") if isinstance(me, dict) else ""
 
@@ -424,7 +389,120 @@ def meta_oauth_callback(request):
             messages.success(request, f"Connected Facebook Page: {name}")
         return _redirect_after_oauth(request)
 
-    # Multiple pages → let the user choose.
+    # Multiple pages → let the user choose (GET view so the SDK fetch can
+    # follow the redirect and land on the picker).
+    return redirect(reverse("api:meta-oauth-choose"))
+
+
+@login_required
+def meta_oauth_start(request):
+    """Kick off the OAuth flow: store state in session, redirect to Facebook."""
+    if not settings.META_APP_ID:
+        messages.error(request, "Facebook app not configured")
+        return _redirect_after_oauth(request)
+
+    state = secrets.token_urlsafe(24)
+    request.session["meta_oauth_state"] = state
+
+    # Optional sanitized ?next= — the setup wizard passes /dbsetup/ so the
+    # user returns to the wizard (not the Integrations page) after connecting.
+    # On a retry the previous next value (if any) is preserved.
+    next_url = request.GET.get("next", "")
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        request.session["meta_oauth_next"] = next_url
+
+    redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
+        reverse("api:meta-oauth-callback")
+    )
+    return redirect(build_auth_url(redirect_uri, state))
+
+
+@login_required
+def meta_oauth_callback(request):
+    """Handle the OAuth redirect: validate state, exchange tokens, list pages."""
+    if request.GET.get("error"):
+        messages.error(request, "Facebook connection was cancelled or denied.")
+        return _redirect_after_oauth(request)
+
+    # CSRF: state must match what we stored (and is single-use).
+    expected_state = request.session.pop("meta_oauth_state", None)
+    if not expected_state or request.GET.get("state") != expected_state:
+        if not request.session.get("meta_oauth_retried"):
+            # Mobile in-app browsers sometimes drop the session cookie during
+            # the Facebook round-trip → one automatic re-initiation instead of
+            # hard-failing (loop stays bounded by the retried flag).
+            request.session["meta_oauth_retried"] = True
+            return redirect(reverse("api:meta-oauth-start"))
+        request.session.pop("meta_oauth_retried", None)
+        messages.error(request, "Invalid OAuth state. Please try connecting again.")
+        return _redirect_after_oauth(request)
+    request.session.pop("meta_oauth_retried", None)
+
+    code = request.GET.get("code")
+    if not code:
+        messages.error(request, "No authorization code returned from Facebook.")
+        return _redirect_after_oauth(request)
+
+    redirect_uri = settings.META_OAUTH_REDIRECT_URI or request.build_absolute_uri(
+        reverse("api:meta-oauth-callback")
+    )
+
+    short = exchange_code_for_token(code, redirect_uri)
+    if short.get("error") or not short.get("access_token"):
+        messages.error(request, "Could not complete Facebook login. Please try again.")
+        return _redirect_after_oauth(request)
+
+    long_lived = get_long_lived_token(short["access_token"])
+    if long_lived.get("error") or not long_lived.get("access_token"):
+        messages.error(request, "Could not obtain a long-lived token. Please try again.")
+        return _redirect_after_oauth(request)
+
+    return _finish_token_flow(
+        request,
+        long_lived["access_token"],
+        long_lived.get("expires_in"),
+    )
+
+
+@login_required
+@require_POST
+def meta_oauth_token(request):
+    """Complete the connection from the FB JS SDK flow (mobile-friendly).
+
+    Receives the user access token returned by ``FB.login()`` in the browser
+    and continues exactly like the server-side callback. The token transits
+    the client by design (Meta's SDK flow); Page tokens stay server-side.
+    """
+    user_token = (request.POST.get("access_token") or "").strip()
+    if not user_token:
+        messages.error(request, "No access token received from Facebook.")
+        return _redirect_after_oauth(request)
+
+    # The JS SDK flow has no ?next= in the URL — the page JS sends it as a
+    # form field. Sanitized the same way as meta_oauth_start.
+    next_url = request.POST.get("next", "")
+    if next_url.startswith("/") and not next_url.startswith("//"):
+        request.session["meta_oauth_next"] = next_url
+
+    long_lived = get_long_lived_token(user_token)
+    if long_lived.get("error") or not long_lived.get("access_token"):
+        messages.error(request, "Could not complete Facebook login. Please try again.")
+        return _redirect_after_oauth(request)
+
+    return _finish_token_flow(
+        request,
+        long_lived["access_token"],
+        long_lived.get("expires_in"),
+    )
+
+
+@login_required
+def meta_oauth_choose(request):
+    """Render the page-picker. Used by both the redirect and SDK flows."""
+    page_list = request.session.get("meta_oauth_pages") or []
+    if not page_list:
+        messages.error(request, "Your connection session expired. Please try again.")
+        return _redirect_after_oauth(request)
     return render(request, "back/meta_select_pages.html", {"pages": page_list})
 
 

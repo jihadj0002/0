@@ -3,6 +3,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 
 from django.core.files.storage import default_storage
@@ -338,7 +339,7 @@ _STOPWORDS = frozenset({
     "dekhaben", "dekho", "dekhte", "dilo", "dilen", "dile", "diben", "den",
     # transliterated Bengali fillers / connectors (not product words)
     "ache", "ase", "achi", "hobe", "hbe", "ki", "kichu", "ektu", "ata", "eita",
-    "eta", "ei", "der", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
+    "eta", "ei", "der", "er", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
     "chailam", "chail", "chacchi", "chaichi", "chaite", "koto", "dam", "taka",
     "tk", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
     "select", "sku", "koro", "koren", "korun", "korte", "kore", "korbo",
@@ -353,6 +354,62 @@ def _content_tokens(text):
     """Tokenize text into meaningful lowercase tokens (no stopwords/pure digits)."""
     toks = re.findall(r"[a-z0-9]+", (text or "").lower())
     return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
+
+
+
+
+def _tok_matches_name(tok, word):
+    """True when a query token matches a latinized name word: exact match, a
+    prefix truncation ("leburer" → "lebur"), a shared 3-letter root
+    ("borui" vs "boriyer" — different romanizations of বরই), or close phonetic
+    variants ("tetul" vs "tentuler" for তেঁতুল)."""
+    if len(tok) < 3 or len(word) < 3:
+        return False
+    if tok == word:
+        return True
+    if len(tok) >= 4 and (tok.startswith(word) or word.startswith(tok)):
+        return True
+    if tok[:3] == word[:3]:
+        return True
+    if len(tok) >= 4 and len(word) >= 4:
+        return SequenceMatcher(None, tok, word).ratio() >= 0.72
+    return False
+
+
+def _latinized_search(user, query, limit=10):
+    """Romanized-Bengali query → Bengali product names.
+
+    "lebur achar" can never match a catalog named "লেবুর আচার" through the DB
+    icontains, so latinize each product name and score the query's meaningful
+    tokens against its words. Only the top-scoring tier is returned — a
+    distinctive query ("lebur achar") then yields just লেবুর আচার instead of
+    every product that merely shares the category word ("achar"). Pure-English
+    queries (and pure-Bengali ones — the DB handles those) return nothing,
+    keeping this a narrow bridge instead of a second full search.
+    """
+    tokens = _content_tokens(query)
+    if not tokens:
+        return []
+    candidates = list(Product.objects.filter(user=user, status=True)[:500])
+    scored = []
+    for p in candidates:
+        name_latin = _latinize_bn(p.name or "").lower()
+        if not name_latin:
+            continue
+        words = set(re.findall(r"[a-z0-9]+", name_latin))
+        if not words:
+            continue
+        score = 0
+        for tok in tokens:
+            if any(_tok_matches_name(tok, w) for w in words):
+                score += 1
+        if score:
+            scored.append((score, p))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    if not scored:
+        return []
+    top = scored[0][0]
+    return [_product_row(p) for s, p in scored if s == top][:limit]
 
 
 
@@ -1030,6 +1087,21 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
 
     results = [_product_row(p) for p in products_list]
 
+    # Romanized-Bengali bridge: "lebur achar" must match a catalog named
+    # "লেবুর আচার". The DB icontains can't compare latin against Bengali text,
+    # so when the DB search came up short, score the latinized product names
+    # and append the best (most token matches) matches first.
+    if not generic and query and query.strip() and len(results) < limit:
+        latin_seen = {r["pid"] for r in results}
+        for row in _latinized_search(user, query, limit=limit):
+            if row["pid"] in latin_seen:
+                continue
+            latin_seen.add(row["pid"])
+            results.append(row)
+        if min_price is not None or max_price is not None:
+            results = _filter_by_budget(results, min_price, max_price)
+        results = results[:limit]
+
     if results and conversation:
         _focus_products(conversation, results[:FOCUS_MAX])
 
@@ -1043,13 +1115,19 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
         focus_list = parse_focus_products(getattr(conversation, "current_product", "") if conversation else "")
         if focus_list:
             out["products"] = focus_list
-            out["total"] = len(focus_list)
+            out["total"] = 0
+            out["matched"] = False
             out["_instruction"] = (
-                f'No catalog items matched "{query}". The products above are the ones '
-                "discussed earlier in THIS conversation — if the customer is referring to "
-                "one of them, use its real price/stock data above. Do NOT invent data."
+                f'NO catalog item matched "{query}". The products above are conversation '
+                "history, NOT search results — do NOT send images, quote prices, or present "
+                "any of them as a match for what the customer asked. If the customer is "
+                "clearly referring to one of them (see 'Conversation so far'), its real data "
+                "is above; otherwise tell the customer it is currently unavailable. Do NOT "
+                "present unrelated products."
             )
         else:
+            out["products"] = []
+            out["matched"] = False
             out["_instruction"] = (
                 f'No catalog items matched "{query}". Either try ONE more search with a '
                 "different/simpler keyword or synonym, or tell the customer it's currently "

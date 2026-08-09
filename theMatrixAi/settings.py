@@ -42,7 +42,7 @@ AI_ORCHESTRATOR_ENABLED = os.environ.get("AI_ORCHESTRATOR_ENABLED", "True") == "
 META_APP_ID = env("META_APP_ID", default="")
 META_APP_SECRET = env("META_APP_SECRET", default="")
 META_WEBHOOK_VERIFY_TOKEN = env("META_WEBHOOK_VERIFY_TOKEN", default="")
-META_GRAPH_VERSION = env("META_GRAPH_VERSION", default="v19.0")
+META_GRAPH_VERSION = env("META_GRAPH_VERSION", default="v23.0")
 # Space-separated OAuth scopes requested during Connect-with-Facebook.
 META_OAUTH_SCOPES = env(
     "META_OAUTH_SCOPES",

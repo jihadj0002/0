@@ -4,7 +4,14 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from . import views
 from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView, MetaAppWebhookView
-from .meta_oauth import meta_oauth_start, meta_oauth_callback, meta_oauth_select, meta_disconnect
+from .meta_oauth import (
+    meta_oauth_start,
+    meta_oauth_callback,
+    meta_oauth_select,
+    meta_oauth_token,
+    meta_oauth_choose,
+    meta_disconnect,
+)
 
 
 @csrf_exempt
@@ -94,6 +101,8 @@ urlpatterns = [
     path('connect/meta/start/', meta_oauth_start, name='meta-oauth-start'),
     path('connect/meta/callback/', meta_oauth_callback, name='meta-oauth-callback'),
     path('connect/meta/select/', meta_oauth_select, name='meta-oauth-select'),
+    path('connect/meta/token/', meta_oauth_token, name='meta-oauth-token'),
+    path('connect/meta/choose/', meta_oauth_choose, name='meta-oauth-choose'),
     path('connect/meta/disconnect/<str:platform>/', meta_disconnect, name='meta-disconnect'),
 
     # App-level webhook — single endpoint for ALL OAuth-connected pages
