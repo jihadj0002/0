@@ -80,6 +80,17 @@ def _fallback_reply(last_search, pending_images, product_cards):
     return "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
 
 
+def _limit_questions(text):
+    if not text:
+        return text
+    count = text.count("?")
+    if count <= 1:
+        return text
+    first = text.find("?")
+    cleaned = text[:first + 1] + text[first + 1:].replace("?", "।")
+    return cleaned
+
+
 
 
 def _summarize_tool_result(tool_name, result):
@@ -245,11 +256,20 @@ def run(conversation, incoming_message):
     image_promise_corrected = False
     search_called = False
     focus_hinted = False
+    kb_called = False
     last_search = None
+    last_order = None
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
-        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|"
-        r"ki.?ki.?ache|কি কি আছে|show|দেখান|want)",
+        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|pic|"
+        r"ki.?ki.?ache|কি কি আছে|ki ache|কি আছে|show|দেখান|dekhan|want|"
+        r"koto|কত|dam koto|দাম কত|stock ache|স্টক আছে)",
+        re.IGNORECASE,
+    )
+    _policy_keywords = re.compile(
+        r"(delivery|shipping|return|refund|exchange|warranty|payment|bkash|nagad|"
+        r"cash on delivery|cod|ডেলিভারি|ডেলিভারি চার্জ|রিটার্ন|রিফান্ড|"
+        r"এক্সচেঞ্জ|ওয়ারেন্টি|পেমেন্ট|বিকাশ|নগদ|ক্যাশ অন ডেলিভারি)",
         re.IGNORECASE,
     )
 
@@ -278,6 +298,8 @@ def run(conversation, incoming_message):
                 fn = tc.function.name
                 if fn == "search_products":
                     search_called = True
+                if fn == "search_knowledge_base":
+                    kb_called = True
 
         # No tool calls → LLM is done (guard: force think or search first)
         if not llm_msg.tool_calls:
@@ -313,6 +335,20 @@ def run(conversation, incoming_message):
                     })
                     continue
                 # has_focus + already hinted → fall through to final_text
+
+            # GUARD: force knowledge base search for policy/FAQ questions
+            is_policy_query = bool(_policy_keywords.search(customer_text or ""))
+            if is_policy_query and not is_product_query and not kb_called:
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "The customer is asking about policy/FAQ. You MUST call "
+                        "search_knowledge_base with a short keyword query (e.g. 'delivery charge', "
+                        "'return policy', 'payment methods') before replying."
+                    ),
+                })
+                continue
 
             # Safety net for the "promised images but never sent them" failure:
             # if the reply claims to send photos but send_images was never called
@@ -354,6 +390,8 @@ def run(conversation, incoming_message):
 
             if fn_name == "search_products":
                 last_search = result
+            if fn_name == "create_order":
+                last_order = result
 
             # Log every tool call to ToolCallLog for audit trail
             try:
@@ -455,11 +493,24 @@ def run(conversation, incoming_message):
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
-        final_text = _fallback_reply(last_search, pending_images, product_cards)
+        if last_order and isinstance(last_order, dict):
+            if last_order.get("order_id"):
+                final_text = f"অর্ডারটি তৈরি হয়েছে (আইডি: {last_order['order_id']}). আর কিছু যোগ করবেন?"
+            elif last_order.get("error"):
+                details = last_order.get("details") or []
+                if details:
+                    final_text = f"অর্ডার করতে একটু তথ্য দরকার: {details[0]}। বলবেন?"
+                else:
+                    final_text = "অর্ডার করতে কিছু তথ্য দরকার। নাম, ফোন আর ঠিকানা দিবেন?"
+            else:
+                final_text = _fallback_reply(last_search, pending_images, product_cards)
+        else:
+            final_text = _fallback_reply(last_search, pending_images, product_cards)
 
     # Safety net: the AI must never put image URLs in text — images go only via
     # send_images. Strip any that slipped through before saving/sending.
     final_text = _strip_image_urls(final_text)
+    final_text = _limit_questions(final_text)
 
     # Deduplicate image URLs, cap at 5
     seen = set()

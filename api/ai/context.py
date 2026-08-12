@@ -42,6 +42,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "## LANGUAGE\n"
         "- Default reply language: Bengali (বাংলা).\n"
         "- Only reply in English when the customer clearly writes full English sentences or explicitly asks for English.\n"
+        "- If the customer mixes English words in Bangla, still reply in Bengali.\n"
         "- If the customer uses Bangla transliteration, reply in Bengali.\n"
         "- Use polite Bangla honorifics (আপনি/ভাই/আপা) and a warm, helpful tone.\n"
         "- Format prices as ৳123 and say 'টাকা' naturally in Bangla.\n"
@@ -60,6 +61,15 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- If you want multiple short messages, separate with a blank line.\n"
         "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
         "- Ask at most ONE follow-up question per reply.\n"
+    )
+
+    parts.append(
+        "## SALES FLOW\n"
+        "- If not greeted yet, start with a short greeting from the greeting template (if available).\n"
+        "- For product interest: confirm the item + price, then ask one short follow-up (color/size/budget).\n"
+        "- For photos: call send_images, then ask if they want to order or see another item.\n"
+        "- Before create_order collect: name, phone, delivery address, and city/area.\n"
+        "- If the customer is ready to order, summarize items and ask for missing info only.\n"
     )
 
     # --- Product discovery flow ---
