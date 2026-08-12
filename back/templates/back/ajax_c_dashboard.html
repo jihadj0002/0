@@ -505,7 +505,6 @@
   <aside class="rp" id="rpPanel">
     <div class="rp-tabs">
       <button class="rp-tab active" data-pane="profile" onclick="switchRpTab(this,'profile')">👤 Profile</button>
-      <button class="rp-tab" data-pane="preview" onclick="switchRpTab(this,'preview')">🤖 Bot Preview</button>
     </div>
 
     <div class="rp-body">
@@ -528,22 +527,6 @@
 
         <div class="profile-section-title" id="rpSummaryTitle" style="display:none">Summary</div>
         <div class="profile-summary" id="rpSummary" style="display:none"></div>
-      </div>
-
-      <!-- Bot Preview pane -->
-      <div id="panePreview" class="preview-pane" style="display:none;">
-        <div class="preview-notice">
-          🧪 <strong>Dry-run mode.</strong> The bot responds using your full context + tools. Nothing is sent to customers and no credits are deducted.
-        </div>
-        <div class="preview-messages" id="previewMessages">
-          <div class="preview-empty" id="previewEmpty">Pick a conversation on the left, then type a message to test how the bot responds.</div>
-        </div>
-        <div class="pm-typing" id="pmTyping">Bot is thinking…</div>
-        <div class="preview-input-row">
-          <input type="text" class="preview-input" id="previewInput" placeholder="Type a test message…" autocomplete="off">
-          <button class="preview-clear" onclick="clearPreview()" title="Clear chat">🗑</button>
-          <button class="preview-send" id="previewSendBtn" onclick="sendPreview()">Ask</button>
-        </div>
       </div>
 
     </div>
@@ -971,89 +954,7 @@ convPollTimer = setInterval(() => loadConversations(activePlatform), 5000);
 function switchRpTab(btn, pane) {
   document.querySelectorAll(".rp-tab").forEach(t => t.classList.remove("active"));
   btn.classList.add("active");
-  document.getElementById("paneProfile").style.display = pane === "profile" ? "block" : "none";
-  document.getElementById("panePreview").style.display = pane === "preview" ? "flex" : "none";
-}
-
-/* ==============================
-   BOT PREVIEW
-============================== */
-function sendPreview() {
-  if (!currentConvId) {
-    alert("Select a conversation first."); return;
-  }
-  const input = document.getElementById("previewInput");
-  const text = input.value.trim();
-  if (!text) return;
-
-  input.value = "";
-  const btn = document.getElementById("previewSendBtn");
-  btn.disabled = true;
-
-  /* hide empty state */
-  document.getElementById("previewEmpty").style.display = "none";
-
-  /* user bubble */
-  const box = document.getElementById("previewMessages");
-  const userDiv = document.createElement("div");
-  userDiv.className = "pm-user";
-  userDiv.textContent = text;
-  box.appendChild(userDiv);
-
-  /* typing indicator */
-  const typing = document.getElementById("pmTyping");
-  typing.classList.add("visible");
-  box.scrollTop = 9e9;
-
-  fetch("{% url 'back:bot_preview' %}", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
-    body: JSON.stringify({ conversation_id: currentConvId, message: text }),
-  })
-  .then(r => r.json())
-  .then(data => {
-    typing.classList.remove("visible");
-    btn.disabled = false;
-
-    const botDiv = document.createElement("div");
-    botDiv.className = "pm-bot";
-
-    if (data.error) {
-      botDiv.innerHTML = `<div class="pm-error">Error: ${escHtml(data.error)}</div>`;
-    } else {
-      const toolTags = (data.tool_calls || []).map(tc =>
-        `<span class="pm-tool-tag">🔧 ${tc.name}</span>`
-      ).join(" ");
-      botDiv.innerHTML = `
-        <div class="pm-bot-bubble">${escHtml(data.response)}</div>
-        <div class="pm-bot-meta">
-          ${toolTags}
-          <span>${data.input_tokens + data.output_tokens} tokens</span>
-          <span>${data.model}</span>
-        </div>`;
-    }
-
-    box.appendChild(botDiv);
-    box.scrollTop = 9e9;
-  })
-  .catch(err => {
-    typing.classList.remove("visible");
-    btn.disabled = false;
-    const errDiv = document.createElement("div");
-    errDiv.className = "pm-bot";
-    errDiv.innerHTML = `<div class="pm-error">Request failed: ${err}</div>`;
-    box.appendChild(errDiv);
-    box.scrollTop = 9e9;
-  });
-}
-
-document.getElementById("previewInput").addEventListener("keydown", e => {
-  if (e.key === "Enter") { e.preventDefault(); sendPreview(); }
-});
-
-function clearPreview() {
-  document.getElementById("previewMessages").innerHTML =
-    `<div class="preview-empty" id="previewEmpty">Pick a conversation on the left, then type a message to test how the bot responds.</div>`;
+  document.getElementById("paneProfile").style.display = "block";
 }
 
 /* ==============================

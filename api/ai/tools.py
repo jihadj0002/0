@@ -1,10 +1,6 @@
 import json
 import logging
 import re
-import time
-from dataclasses import dataclass, field
-from difflib import SequenceMatcher
-from typing import Any
 
 from django.core.files.storage import default_storage
 from django.db import transaction
@@ -15,108 +11,6 @@ from back.models import Conversation, OrderItem, Product, ProductImages, Sale
 from context.models import AgentIdentity, StoreConfig, BehaviorRules
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Shared Dataclasses (used across all components)
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ToolResult:
-    state: str = "success"  # "success" | "error" | "empty" | "permission_denied"
-    tool: str = ""
-    data: dict | None = None
-    error: str | None = None
-    execution_time_ms: int = 0
-    cached: bool = False
-
-    @classmethod
-    def success(cls, data=None, tool="", execution_time_ms=0):
-        return cls(state="success", tool=tool, data=data, execution_time_ms=execution_time_ms)
-
-    @classmethod
-    def as_error(cls, message, tool="", execution_time_ms=0):
-        return cls(state="error", tool=tool, error=message, execution_time_ms=execution_time_ms)
-
-    @classmethod
-    def empty(cls, tool="", execution_time_ms=0):
-        return cls(state="empty", tool=tool, execution_time_ms=execution_time_ms)
-
-    @classmethod
-    def permission_denied(cls, tool="", execution_time_ms=0):
-        return cls(state="permission_denied", tool=tool, execution_time_ms=execution_time_ms)
-
-
-# ---------------------------------------------------------------------------
-# BaseTool — all tools inherit from this
-# ---------------------------------------------------------------------------
-
-class BaseTool:
-    name: str = ""
-    description: str = ""
-    parameters: dict = {}
-    permission: str = "public"  # "public" | "customer" | "staff" | "manager" | "owner"
-    timeout_ms: int = 10000
-    retry_count: int = 1
-
-    def execute(self, args: dict, user, conversation) -> ToolResult:
-        raise NotImplementedError
-
-
-# ---------------------------------------------------------------------------
-# ToolRegistry — central registry for all tools
-# ---------------------------------------------------------------------------
-
-class ToolRegistry:
-    _tools: dict[str, BaseTool] = {}
-
-    @classmethod
-    def register(cls, tool):
-        if isinstance(tool, type):
-            tool = tool()
-        cls._tools[tool.name] = tool
-
-    @classmethod
-    def get(cls, name) -> BaseTool | None:
-        return cls._tools.get(name)
-
-    @classmethod
-    def execute(cls, name, args, user, conversation, timeout=None, retries=None):
-        tool = cls.get(name)
-        if not tool:
-            return ToolResult.as_error(f"Unknown tool: {name}", tool=name)
-        t0 = time.time()
-        try:
-            result = tool.execute(args, user, conversation)
-            result.execution_time_ms = int((time.time() - t0) * 1000)
-            return result
-        except Exception as exc:
-            elapsed = int((time.time() - t0) * 1000)
-            return ToolResult.as_error(str(exc), tool=name, execution_time_ms=elapsed)
-
-    @classmethod
-    def get_definitions(cls):
-        """Return OpenAI-compatible tool definitions for all registered tools."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": tool.parameters,
-                },
-            }
-            for tool in cls._tools.values()
-        ]
-
-    @classmethod
-    def get_all_tools(cls) -> list[BaseTool]:
-        return list(cls._tools.values())
-
-    @classmethod
-    def reset(cls):
-        """Clear all registered tools (for testing)."""
-        cls._tools = {}
 
 
 # ---------------------------------------------------------------------------
@@ -314,13 +208,13 @@ def _search_result_instruction(total, query=""):
     )
     if total <= 1:
         return prefix + (
-            "If this matches, mention the name + price in one short line. "
-            "If the tool results include images, tell the customer the image is attached."
+            "If this matches, send_images(pid=...) so the customer sees it, "
+            "and mention the name + price in one short line."
         )
     return prefix + (
-        "If several genuinely match and the customer is browsing, present them as a "
-        "short list with prices; if the tool results include images, mention the images "
-        "are attached. If the customer asked about one specific item, focus on that one. "
+        "If several genuinely match and the customer is browsing, show them with "
+        "send_images(pids=[...]) as a carousel and give a short text. "
+        "If the customer asked about one specific item, focus on that one. "
         "Do NOT search for each product individually."
     )
 
@@ -333,17 +227,10 @@ _STOPWORDS = frozenset({
     "my", "me", "i", "we", "this", "that", "these", "those", "it", "do", "does",
     "you", "your", "our", "please", "pls", "show", "need", "want", "looking",
     "have", "has", "had", "any", "some", "all", "new", "get", "give", "send",
-    # image-request words — "pic dekhi" must NOT search the word "pic"
-    "pic", "pics", "photo", "photos", "picture", "pictures", "image", "images",
-    "img", "chobi", "ছবি", "ফটো", "dekhi", "dekha", "dekhan", "dekhao",
-    "dekhaben", "dekho", "dekhte", "dilo", "dilen", "dile", "diben", "den",
     # transliterated Bengali fillers / connectors (not product words)
     "ache", "ase", "achi", "hobe", "hbe", "ki", "kichu", "ektu", "ata", "eita",
-    "eta", "ei", "der", "er", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
-    "chailam", "chail", "chacchi", "chaichi", "chaite", "koto", "dam", "taka",
-    "tk", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
-    "select", "sku", "koro", "koren", "korun", "korte", "kore", "korbo",
-    "krbo", "dite", "dita", "dawar", "asole", "mane", "mtlb", "hoise", "hoy",
+    "eta", "ei", "der", "jonno", "lagbe", "lagbe", "chai", "chaii", "chaai",
+    "koto", "dam", "amar", "ami", "apnar", "apni", "ta", "tar", "ar", "o", "na",
 })
 
 
@@ -354,62 +241,6 @@ def _content_tokens(text):
     """Tokenize text into meaningful lowercase tokens (no stopwords/pure digits)."""
     toks = re.findall(r"[a-z0-9]+", (text or "").lower())
     return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
-
-
-
-
-def _tok_matches_name(tok, word):
-    """True when a query token matches a latinized name word: exact match, a
-    prefix truncation ("leburer" → "lebur"), a shared 3-letter root
-    ("borui" vs "boriyer" — different romanizations of বরই), or close phonetic
-    variants ("tetul" vs "tentuler" for তেঁতুল)."""
-    if len(tok) < 3 or len(word) < 3:
-        return False
-    if tok == word:
-        return True
-    if len(tok) >= 4 and (tok.startswith(word) or word.startswith(tok)):
-        return True
-    if tok[:3] == word[:3]:
-        return True
-    if len(tok) >= 4 and len(word) >= 4:
-        return SequenceMatcher(None, tok, word).ratio() >= 0.72
-    return False
-
-
-def _latinized_search(user, query, limit=10):
-    """Romanized-Bengali query → Bengali product names.
-
-    "lebur achar" can never match a catalog named "লেবুর আচার" through the DB
-    icontains, so latinize each product name and score the query's meaningful
-    tokens against its words. Only the top-scoring tier is returned — a
-    distinctive query ("lebur achar") then yields just লেবুর আচার instead of
-    every product that merely shares the category word ("achar"). Pure-English
-    queries (and pure-Bengali ones — the DB handles those) return nothing,
-    keeping this a narrow bridge instead of a second full search.
-    """
-    tokens = _content_tokens(query)
-    if not tokens:
-        return []
-    candidates = list(Product.objects.filter(user=user, status=True)[:500])
-    scored = []
-    for p in candidates:
-        name_latin = _latinize_bn(p.name or "").lower()
-        if not name_latin:
-            continue
-        words = set(re.findall(r"[a-z0-9]+", name_latin))
-        if not words:
-            continue
-        score = 0
-        for tok in tokens:
-            if any(_tok_matches_name(tok, w) for w in words):
-                score += 1
-        if score:
-            scored.append((score, p))
-    scored.sort(key=lambda x: x[0], reverse=True)
-    if not scored:
-        return []
-    top = scored[0][0]
-    return [_product_row(p) for s, p in scored if s == top][:limit]
 
 
 
@@ -522,41 +353,11 @@ def _clear_focus_product(conversation):
     conversation.current_product = ""
 
 
-def _focus_match_for_query(query, conversation):
-    """Best focused product for a follow-up query, or None.
-
-    Empty-token queries ("eta koto taka?", "pic dekhi") → the most recent
-    focus product. Token queries → the focus item whose name contains the
-    most query tokens (ties go to the most recent — the product under
-    discussion). Explicit IDs/SKUs ("select SKU 31553") return None so the
-    fan-out search resolves them exactly.
-    """
-    if not conversation or not query or not query.strip():
-        return None
-    if any(c.isdigit() for c in query):
-        return None
-    items = parse_focus_products(getattr(conversation, "current_product", ""))
-    if not items:
-        return None
-    toks = _content_tokens(query)
-    if not toks:
-        return items[0]
-    best, best_score = None, 0
-    for item in items:
-        name = (item.get("name") or "").lower()
-        score = sum(1 for t in toks if t in name)
-        if score > best_score:
-            best, best_score = item, score
-    return best if best_score > 0 else None
-
-
 def _external_row(r):
-    eff = r.get("discounted_price") or r.get("price")
     row = {
         "pid": r["external_id"],
         "name": r["name"],
-        "price": eff,
-        "original_price": r.get("price") if r.get("discounted_price") else None,
+        "price": r["price"],
         "discounted_price": r.get("discounted_price"),
         "in_stock": r.get("in_stock", True),
         "stock": r.get("stock", 0),
@@ -574,46 +375,12 @@ def _external_row(r):
             {
                 "variation_id": v.get("variation_id"),
                 "name": v.get("name"),
-                "price": v.get("promotion_price") or v.get("price"),
-                "original_price": v.get("price") if v.get("promotion_price") else None,
+                "price": v.get("price"),
                 "in_stock": v.get("in_stock", True),
             }
             for v in variations
         ]
     return row
-
-
-_GENERIC_QUERY_RE = re.compile(
-    r"^(ki|কি|কী|kono|কোনো|kon|কোন|apnader|আপনাদের|tumar|তোমার)"
-    r".*(ache|আছে|product|পণ্য|dekhan|দেখান|kis|কিস|ki|কি)",
-    re.IGNORECASE,
-)
-_GENERIC_PHRASES = {
-    "product", "products", "show", "show products", "show all", "list",
-    "all", "all products", "product list", "catalog", "catalogue",
-    "inventory", "stock", "ache", "dekhan", "দেখান", "সব", "সবগুলো",
-    "what do you have", "what products", "what you got", "everything",
-}
-
-
-def _is_generic_catalog_query(query: str) -> bool:
-    """True when the query asks to see the catalog rather than a specific item.
-
-    Handles Bengali, romanized Bengali ("ki ache", "ki product ache",
-    "dekhan"), and English ("what do you have", "show products").
-    """
-    if not query or not query.strip():
-        return True
-    q = query.strip()
-    lowered = q.lower()
-    if lowered in _GENERIC_PHRASES:
-        return True
-    if "show" in lowered and "product" in lowered:
-        return True
-    if "ache" in lowered and ("ki " in lowered or lowered.startswith("ki")
-                              or "apnader" in lowered or "product" in lowered):
-        return True
-    return bool(_GENERIC_QUERY_RE.search(q))
 
 
 def _generate_search_queries(original):
@@ -628,10 +395,8 @@ def _generate_search_queries(original):
         seen.add(cleaned)
         yield cleaned
 
-    # 2. Remove non-alphanumeric (keep spaces). Bengali vowel signs (া ি ী …)
-    #    are combining marks and NOT matched by \w — they must be kept, or
-    #    every Bengali query is corrupted before latinization.
-    stripped = re.sub(r"[^\w\s\u0980-\u09FF]", "", cleaned).strip()
+    # 2. Remove non-alphanumeric (keep spaces)
+    stripped = re.sub(r"[^\w\s]", "", cleaned).strip()
     if stripped and stripped not in seen:
         seen.add(stripped)
         yield stripped
@@ -658,204 +423,6 @@ def _generate_search_queries(original):
         if w and w not in seen and w.lower() not in _STOPWORDS and len(w) >= 3:
             seen.add(w)
             yield w
-
-    # 6. Bengali → romanized latin (e.g. "জলপাইয়ের আচার" → "jolpaiyer achar").
-    #    Customers often type Bengali words in latin script ("jolpai achar"),
-    #    so each Bengali query is also searched in its romanized form.
-    latin = _latinize_bn(cleaned)
-    if latin and latin not in seen:
-        seen.add(latin)
-        yield latin
-    for w in stripped.split():
-        wl = _latinize_bn(w)
-        if wl and len(wl) >= 3 and wl not in seen and wl.lower() not in _STOPWORDS:
-            seen.add(wl)
-            yield wl
-        # 7. Prefix truncations: Bengali inflections ("জলপাইয়ের" → "jolpaiyer")
-        #    carry a suffix that blocks substring matches against the base name
-        #    ("Jolpaia achar"). Matching on a leading prefix recovers them.
-        if wl and len(wl) > 6:
-            for pre in (wl[:6], wl[:4]):
-                if len(pre) >= 4 and pre not in seen:
-                    seen.add(pre)
-                    yield pre
-
-    # 8. Bengali → English synonyms for common store terms. The catalog is
-    #    English-named ("Mastela ... Cradle"), so a Bengali query like
-    #    "Dolna ache?" must also search "cradle" or it finds nothing and the
-    #    bot wrongly claims the item is unavailable.
-    for w in words:
-        wl = _latinize_bn(w) or w.lower()
-        en = _BN_EN_SYNONYMS.get(wl)
-        if en and en not in seen:
-            seen.add(en)
-            yield en
-
-    # 9. Common misspellings / phonetic variants ("aveno" → "aveeno",
-    #    "sudocream" → "sudocrem", "sunscream" → "sunscreen"). Customers type
-    #    brand names from memory; exact-match search then finds nothing and the
-    #    bot claims the item is unavailable.
-    for w in words:
-        wl = _latinize_bn(w) or w.lower()
-        fixed = _MISSPELL_MAP.get(wl)
-        if fixed and fixed not in seen:
-            seen.add(fixed)
-            yield fixed
-
-
-_MISSPELL_MAP = {
-    "aveno": "aveeno", "avenoo": "aveeno", "avino": "aveeno",
-    "sudocream": "sudocrem", "sudocreem": "sudocrem", "sudokrem": "sudocrem",
-    "sudocrem": "sudocrem", "sunscream": "sunscreen", "suncream": "sunscreen",
-    "sunscrren": "sunscreen", "spf": "spf",
-    "johnson": "johnson's", "johnsons": "johnson's", "jonson": "johnson's",
-    "nivia": "nivea", "nivea": "nivea", "vaslin": "vaseline",
-    "vaseline": "vaseline", "pamper": "pampers", "pampers": "pampers",
-    "huggies": "huggies", "hugies": "huggies",
-    "cerelac": "cerelac", "serelac": "cerelac", "cerelak": "cerelac",
-    "mammy": "mammy", "mamy": "mammy", "mammypoko": "mammy poko",
-    "dettol": "dettol", "detol": "dettol", "savlon": "savlon",
-    "lifbuoy": "lifebuoy", "lifeboy": "lifebuoy", "lifebuoy": "lifebuoy",
-    "colgate": "colgate", "calgate": "colgate",
-    "pedialyte": "pedialyte", "pedialite": "pedialyte",
-    "paracetamol": "paracetamol", "parasitamol": "paracetamol",
-    "tylenol": "tylenol", "mejico": "mejico", "mejico": "mejico",
-    "kinder": "kinder", "cadbury": "cadbury", "cadbory": "cadbury",
-    "nutella": "nutella", "nuttela": "nutella",
-    "horlicks": "horlicks", "horliks": "horlicks", "milo": "milo",
-    "kurkure": "kurkure", "kurrkure": "kurkure", "chanachur": "chanachur",
-    "shampoo": "shampoo", "sampu": "shampoo", "shampo": "shampoo",
-    "conditioner": "conditioner", "kondishonar": "conditioner",
-    "feeder": "feeding", "feeding": "feeding", "bottle": "bottle",
-    "bottel": "bottle", "botol": "bottle", "froker": "frock",
-    "pijama": "pajama", "pajama": "pajama", "genji": "genji",
-    "gengi": "genji", "toothbrush": "toothbrush", "toofbrush": "toothbrush",
-    "toothpaste": "toothpaste", "toofpaste": "toothpaste",
-    "cream": "cream", "creame": "cream", "krim": "cream", "kreem": "cream",
-    "powder": "powder", "pauder": "powder", "powdar": "powder",
-    "lotion": "lotion", "losun": "lotion",
-    "diaper": "diaper", "dayapar": "diaper", "daiper": "diaper",
-    "napkin": "napkin", "napkkin": "napkin",
-    "wet wipe": "wet wipes", "wetwipes": "wet wipes", "wipes": "wipes",
-    "tissue": "tissue", "tisu": "tissue",
-    "mosquito": "mosquito", "mosquito net": "mosquito net", "moskito": "mosquito",
-    "moshari": "mosquito net", "moshary": "mosquito net",
-    "cradle": "cradle", "craddle": "cradle", "dolna": "cradle",
-    "crib": "crib", "cryb": "crib", "cot": "cot", "khat": "cot",
-    "stroller": "stroller", "strolar": "stroller", "stoler": "stroller",
-    "pram": "stroller", "perambulator": "stroller",
-    "walker": "walker", "walkar": "walker", "bouncer": "bouncer",
-    "swing": "swing", "juicer": "juicer", "juisar": "juicer",
-    "blender": "blender", "blendar": "blender",
-}
-
-
-_BN_EN_SYNONYMS = {
-    "dolna": "cradle", "ডোলনা": "cradle", "দোলনা": "cradle",
-    "khat": "bed", "khata": "bed", "palonk": "bed",
-    "strolar": "stroller", "stroller": "stroller",
-    "botol": "bottle", "bottle": "bottle",
-    "saban": "soap", "sampoo": "shampoo", "sampu": "shampoo",
-    "shampoo": "shampoo", "lotion": "lotion", "cream": "cream",
-    "pauder": "powder", "powder": "powder",
-    "juto": "shoes", "shoes": "shoes", "moja": "socks", "socks": "socks",
-    "frok": "frock", "frock": "frock", "pijama": "pajama", "pajama": "pajama",
-    "dayapar": "diaper", "diaper": "diaper", "napkin": "napkin",
-    "wipes": "wipes", "toothbrush": "toothbrush", "toothpaste": "toothpaste",
-    "khilna": "toy", "toys": "toy",
-    "boi": "book", "books": "book", "bag": "bag", "bags": "bag",
-    "ghori": "watch", "watch": "watch", "cap": "cap", "caps": "cap",
-    "mukho": "mask", "mask": "mask", "lunchbox": "lunchbox", "tiffin": "lunchbox",
-    "kanthi": "necklace", "necklace": "necklace", "bala": "bracelet",
-    "brecel": "bracelet", "bracelet": "bracelet", "jomidar": "jewellery",
-    "jewellery": "jewellery", "earring": "earring", "kando": "earring",
-    "salwar": "salwar", "salwar kameez": "salwar", "kameez": "salwar",
-    "genji": "genji", "gengi": "genji", "sando": "sando",
-    "t-shirt": "t-shirt", "tshirt": "t-shirt", "shirt": "shirt",
-    "pants": "pants", "pant": "pants", "short": "shorts", "shorts": "shorts",
-    "panjabi": "panjabi", "fatua": "fatua",
-    "khata": "notebook", "notebook": "notebook",
-    "pencil": "pencil", "pen": "pen", "kalam": "pen",
-    "umbrella": "umbrella", "chata": "umbrella", "chata": "umbrella",
-    "sunscreen": "sunscreen", "sunscream": "sunscreen",
-    "mosquito": "mosquito", "net": "net", "moshari": "net", "moskito": "mosquito",
-    "cradle": "cradle", "crib": "crib", "cot": "cot",
-    "feeding": "feeding", "pump": "pump", "breast pump": "pump",
-}
-
-
-_BN_LATIN_MAP = {
-    "আ": "a", "অ": "o", "ই": "i", "ঈ": "i", "উ": "u", "ঊ": "u",
-    "এ": "e", "ঐ": "oi", "ও": "o", "ঔ": "ou",
-    "ক": "k", "খ": "kh", "গ": "g", "ঘ": "gh", "ঙ": "ng",
-    "চ": "ch", "ছ": "ch", "জ": "j", "ঝ": "jh", "ঞ": "n",
-    "ট": "t", "ঠ": "th", "ড": "d", "ঢ": "dh", "ণ": "n",
-    "ত": "t", "থ": "th", "দ": "d", "ধ": "dh", "ন": "n",
-    "প": "p", "ফ": "ph", "ব": "b", "ভ": "bh", "ম": "m",
-    "য": "j", "র": "r", "ল": "l", "শ": "sh", "ষ": "sh", "স": "s", "হ": "h",
-    "ড়": "r", "ঢ়": "rh", "য়": "y", "ৎ": "t", "ং": "ng", "ঃ": "h", "ঁ": "n",
-    "া": "a", "ি": "i", "ী": "i", "ু": "u", "ূ": "u",
-    "ৃ": "ri", "ে": "e", "ৈ": "oi", "ো": "o", "ৌ": "ou", "ৗ": "o",
-}
-
-# Consonants get an inherent vowel ("o") unless followed by a vowel sign,
-# virama (conjunct marker), or the end of a word.
-_BN_CONSONANTS = set("কখগঘঙচছজঝঞটঠডঢণতথদধনপফবভমযরলশষসহড়ঢ়য়ৎ")
-_BN_VOWEL_SIGNS = set("ািীুূৃেৈোৌৗঁংঃ")
-
-_BN_VIROMA = "্"
-
-# Nukta pairs must be handled before the letter loop ("য়" is two codepoints)
-_BN_NUKTA_PAIRS = {"ড়": "r", "ঢ়": "rh", "য়": "y"}
-
-
-def _latinize_bn(text: str) -> str:
-    """Best-effort Bengali → romanized latin transliteration.
-
-    Letter-by-letter with a single inherent vowel ("o") per word:
-    "জলপাইয়ের আচার" → "jolpaiyer achar", "আমের" → "amer", "আচার" → "achar".
-    Approximate, but sufficient for substring search against latin product
-    names ("jolpai" ⊂ "jolpaiyer achar").
-    """
-    if not text or not any("\u0980" <= c <= "\u09FF" for c in text):
-        return ""
-    out = []
-    i = 0
-    n = len(text)
-    word_has_inherent = False
-    while i < n:
-        c = text[i]
-        if c.isspace():
-            out.append(c)
-            word_has_inherent = False
-            i += 1
-            continue
-        pair = text[i:i + 2]
-        if pair in _BN_NUKTA_PAIRS:
-            out.append(_BN_NUKTA_PAIRS[pair])
-            if pair[0] in _BN_CONSONANTS:
-                nxt = text[i + 2] if i + 2 < n else ""
-                if not word_has_inherent and nxt not in _BN_VOWEL_SIGNS \
-                        and nxt != _BN_VIROMA and nxt and "\u0980" <= nxt <= "\u09FF":
-                    out.append("o")
-                    word_has_inherent = True
-            i += 2
-            continue
-        if c == _BN_VIROMA:
-            i += 1
-            continue
-        if c in _BN_LATIN_MAP:
-            out.append(_BN_LATIN_MAP[c])
-            if c in _BN_CONSONANTS:
-                nxt = text[i + 1] if i + 1 < n else ""
-                if not word_has_inherent and nxt not in _BN_VOWEL_SIGNS \
-                        and nxt != _BN_VIROMA and nxt and "\u0980" <= nxt <= "\u09FF":
-                    out.append("o")
-                    word_has_inherent = True
-        else:
-            out.append(c)
-        i += 1
-    return re.sub(r"\s+", " ", "".join(out)).strip()
 
 
 def _dedup_external(results):
@@ -908,44 +475,14 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     out["_instruction"] = _search_result_instruction(len(results))
                     return out
 
-            # Focus shortcut: the query is about a product already in the
-            # conversation ("eta koto taka?", "pic dekhi", "crib er pic dekhun",
-            # "chailam crib er pic dilen earwax?" — the earwax mention refers
-            # to what was wrongly sent, "crib" to the product under discussion).
-            # Explicit ID/SKU queries ("select SKU 31553") skip it — the
-            # fan-out below resolves those exactly.
-            if not _is_generic_catalog_query(query):
-                match = _focus_match_for_query(query, conversation)
-                if match:
-                    focus_row = None
-                    try:
-                        prow = provider.get_product(match["pid"])
-                        if prow:
-                            focus_row = _external_row(prow)
-                    except Exception:
-                        focus_row = None
-                    if focus_row:
-                        focus_row = _filter_by_budget([focus_row], min_price, max_price)
-                        if focus_row:
-                            out = {"products": focus_row, "total": 1,
-                                   "selected_product": True}
-                            out["_instruction"] = (
-                                "The customer is referring to the focused product above "
-                                "— use it directly."
-                            )
-                            return out
-
             # Multi-strategy: try ALL successive query variations (don't break on
             # first batch — the first variation can return irrelevant results
             # while individual words match perfectly). Dedup by external_id.
             all_results = []
             seen_ids = set()
-            attempted = 0
-            errored = 0
             for variation in _generate_search_queries(query):
                 if len(seen_ids) >= max_external_attempts * limit:
                     break
-                attempted += 1
                 try:
                     rows = provider.search(variation, limit)
                     rows = rows or []
@@ -955,7 +492,6 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                             seen_ids.add(eid)
                             all_results.append(_external_row(r))
                 except Exception:
-                    errored += 1
                     logger.exception("External search failed for variation=%s", variation)
 
             all_results = _filter_by_budget(all_results, min_price, max_price)
@@ -965,18 +501,6 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 out = {"products": all_results, "total": len(all_results)}
                 out["_instruction"] = _search_result_instruction(len(all_results), query)
                 return out
-            # The provider was unreachable (every variation raised) — never
-            # serve the local catalog (different store) or claim "no items".
-            if attempted and (errored == attempted or provider.last_error is not None):
-                return {
-                    "products": [],
-                    "total": 0,
-                    "_instruction": (
-                        "The store catalog is temporarily unavailable (connection error). "
-                        "Tell the customer the catalog is being loaded and ask them to try "
-                        "again in a moment. Do NOT present local/demo products."
-                    ),
-                }
             # Nothing matched the query — tell the model so it can say unavailable
             # or try a genuinely different keyword (don't fall through to junk).
             if query and query.strip():
@@ -984,72 +508,47 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     "products": [],
                     "total": 0,
                     "_instruction": (
-                        f'No catalog items matched "{query}". Try ONE more search with a '
-                        "different/simpler keyword, spelling or synonym (products may be "
-                        "listed under English names). If still nothing: tell the customer "
-                        "\"দুঃখিত, আমরা এটা আমাদের ক্যাটালগে খুঁজে পাইনি\" — you MUST NOT say "
-                        "the item is out of stock (স্টকে নেই / নাই) — 'no match' does not "
-                        "mean 'not in stock'. The customer may be referring to a product "
-                        "discussed earlier (see 'Conversation so far'). Do NOT present "
-                        "unrelated products."
+                        f'No catalog items matched "{query}". Either try ONE more search with a '
+                        "different/simpler keyword or synonym, or tell the customer it's currently "
+                        "unavailable. Do NOT present unrelated products."
                     ),
                 }
             # Empty query — fall through to local DB / featured handling.
     except Exception:
-        logger.exception("Live search_products failed for user=%s; NOT falling back to local DB (wrong store)", user.pk)
-        # External live store but the provider is unreachable → never serve the
-        # LOCAL catalog (it belongs to a different store). Say unavailable.
-        try:
-            source = get_active_source(user)
-            if source and source.mode == "live" and is_external(user):
-                return {
-                    "products": [],
-                    "total": 0,
-                    "_instruction": (
-                        "The store catalog is temporarily unavailable (connection error). "
-                        "Tell the customer the catalog is being loaded and ask them to try "
-                        "again in a moment. Do NOT present local/demo products."
-                    ),
-                }
-        except Exception:
-            pass
+        logger.exception("Live search_products failed; falling back to local DB")
 
-    # If a product is already focused for this conversation, return it directly
-    # — but ONLY when the query actually refers to it. Without this guard the
-    # shortcut hijacks every later search ("jolpai" would return the stale
-    # "Amer Achar" focus). Generic catalog queries skip the shortcut entirely.
-    if not _is_generic_catalog_query(query):
-        focus_pid = _focus_pid(conversation)
-        if focus_pid:
-            try:
-                product = Product.objects.get(user=user, pid=focus_pid, status=True)
-                if _query_matches_product(query, product):
-                    if min_price is not None or max_price is not None:
-                        eff = float(product.discounted_price or product.price or 0)
-                        in_budget = True
-                        if min_price is not None and eff < min_price:
-                            in_budget = False
-                        if max_price is not None and eff > max_price:
-                            in_budget = False
-                        if not in_budget:
-                            _clear_focus_product(conversation)
-                        else:
-                            return {
-                                "products": [_product_row(product)],
-                                "total": 1,
-                                "selected_product": True,
-                            }
-                    else:
-                        return {
-                            "products": [_product_row(product)],
-                            "total": 1,
-                            "selected_product": True,
-                        }
-            except Product.DoesNotExist:
-                _clear_focus_product(conversation)
+    # If a product is already selected for this conversation, return it directly
+    # (but check budget — if the focused product doesn't fit, fall through to search).
+    focus_pid = _focus_pid(conversation)
+    if focus_pid:
+        try:
+            product = Product.objects.get(user=user, pid=focus_pid, status=True)
+            if min_price is not None or max_price is not None:
+                eff = float(product.discounted_price or product.price or 0)
+                in_budget = True
+                if min_price is not None and eff < min_price:
+                    in_budget = False
+                if max_price is not None and eff > max_price:
+                    in_budget = False
+                if not in_budget:
+                    _clear_focus_product(conversation)
+                else:
+                    return {
+                        "products": [_product_row(product)],
+                        "total": 1,
+                        "selected_product": True,
+                    }
+            else:
+                return {
+                    "products": [_product_row(product)],
+                    "total": 1,
+                    "selected_product": True,
+                }
+        except Product.DoesNotExist:
+            _clear_focus_product(conversation)
 
     # Generic / empty query → show featured first, then fill with anything
-    generic = _is_generic_catalog_query(query)
+    generic = not query or query.strip().lower() in ("", "product", "products", "show", "list", "all")
     if generic:
         qs = Product.objects.filter(user=user, status=True).order_by("-featured_product", "name")
         products_list = list(qs[:limit])
@@ -1085,37 +584,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 if len(products_list) >= limit:
                     break
 
-        # F6 relevance guard: the OR-combined query floods on loose tokens —
-        # "Komlar achar nai?" matches every "achar" product. When the query has
-        # ≥2 meaningful tokens, only keep products that match at least half of
-        # them (name tokens), so a specific query returns specific results.
-        tokens = [t for t in re.split(r"[\s,.;:!?/]+", (query or "").lower())
-                  if len(t) >= 3 and t not in _STOPWORDS]
-        if len(tokens) >= 2 and len(products_list) > (limit or 10):
-            def _token_hits(p):
-                name = ((p.name or "") + " " + (p.description or "")).lower()
-                return sum(1 for t in tokens if t in name)
-            need = max(1, len(tokens) // 2)
-            kept = [p for p in products_list if _token_hits(p) >= need]
-            if kept:
-                products_list = kept[:limit]
-
     results = [_product_row(p) for p in products_list]
-
-    # Romanized-Bengali bridge: "lebur achar" must match a catalog named
-    # "লেবুর আচার". The DB icontains can't compare latin against Bengali text,
-    # so when the DB search came up short, score the latinized product names
-    # and append the best (most token matches) matches first.
-    if not generic and query and query.strip() and len(results) < limit:
-        latin_seen = {r["pid"] for r in results}
-        for row in _latinized_search(user, query, limit=limit):
-            if row["pid"] in latin_seen:
-                continue
-            latin_seen.add(row["pid"])
-            results.append(row)
-        if min_price is not None or max_price is not None:
-            results = _filter_by_budget(results, min_price, max_price)
-        results = results[:limit]
 
     if results and conversation:
         _focus_products(conversation, results[:FOCUS_MAX])
@@ -1124,51 +593,12 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
     if results:
         out["_instruction"] = _search_result_instruction(len(results), query)
     elif not generic and query and query.strip():
-        # No match — but the conversation may have discussed products before.
-        # Return those as candidates so the LLM can answer from real data
-        # (e.g. price-negotiation messages that name no product).
-        focus_list = parse_focus_products(getattr(conversation, "current_product", "") if conversation else "")
-        if focus_list:
-            # F6: history candidates are NOT matches — a separate field so no
-            # downstream consumer (prompt renderer, media extractor) can ever
-            # present them as found products or attach images/prices to them.
-            out["products"] = []
-            out["total"] = 0
-            out["matched"] = False
-            out["history_candidates"] = focus_list
-            out["_instruction"] = (
-                f'NO catalog item matched "{query}". The "history_candidates" above are '
-                "conversation history, NOT search results — do NOT send images, quote "
-                "prices, or present any of them as a match for what the customer asked. "
-                "If the customer is clearly referring to one of them (see 'Conversation "
-                "so far'), its real data is above; otherwise tell the customer it is "
-                "currently unavailable. Do NOT present unrelated products."
-            )
-        else:
-            out["products"] = []
-            out["total"] = 0
-            out["matched"] = False
-            out["history_candidates"] = []
-            out["_instruction"] = (
-                f'No catalog items matched "{query}". Either try ONE more search with a '
-                "different/simpler keyword or synonym, or tell the customer it's currently "
-                "unavailable. The customer may be referring to a product discussed earlier "
-                "in the conversation (see 'Conversation so far'). Do NOT present unrelated products."
-            )
+        out["_instruction"] = (
+            f'No catalog items matched "{query}". Either try ONE more search with a '
+            "different/simpler keyword or synonym, or tell the customer it's currently "
+            "unavailable. Do NOT present unrelated products."
+        )
     return out
-
-
-def _query_matches_product(query, product):
-    """True when the query directly names the product (name substring either
-    way). Token matching is deliberately NOT used here — a token like "achar"
-    matches several products, and the full search handles those cases."""
-    if not query or not query.strip():
-        return True
-    lowered = query.strip().lower()
-    name = (product.name or "").strip().lower()
-    if not name:
-        return False
-    return name in lowered or lowered in name
 
 
 def _product_row(p):
@@ -1214,28 +644,24 @@ def tool_get_product_details(user, pid, conversation=None):
 
     # 1) Live external source.
     fallback_to_db = False
-    external_error = False
     try:
         source = get_active_source(user)
         if source and source.mode == "live" and is_external(user):
             provider = get_provider(user)
             r = provider.get_product(pid)
-            if not r and provider.last_error is None:
+            if not r:
                 try:
                     results = provider.search(pid, limit=1)
                     r = results[0] if results else None
                 except Exception:
                     pass
             if not r:
-                if provider.last_error is not None:
-                    external_error = True
                 fallback_to_db = True
             else:
                 details = {
                     "pid": r.get("sku") or r["external_id"],
                     "name": r["name"],
-                    "price": r.get("discounted_price") or r["price"],
-                    "original_price": r.get("price") if r.get("discounted_price") else None,
+                    "price": r["price"],
                     "discounted_price": r.get("discounted_price"),
                     "stock": r.get("stock", 0),
                     "in_stock": r.get("in_stock", True),
@@ -1251,8 +677,7 @@ def tool_get_product_details(user, pid, conversation=None):
                         {
                             "variation_id": v.get("variation_id"),
                             "name": v.get("name"),
-                            "price": v.get("promotion_price") or v.get("price"),
-                            "original_price": v.get("price") if v.get("promotion_price") else None,
+                            "price": v.get("price"),
                             "in_stock": v.get("in_stock", True),
                         }
                         for v in variations
@@ -1262,22 +687,6 @@ def tool_get_product_details(user, pid, conversation=None):
     except Exception:
         logger.exception("Live get_product_details failed; falling back to local DB")
         fallback_to_db = True
-        external_error = True
-
-    # External live store + provider ERROR → never serve local DB rows
-    # (they belong to a different store). A clean "not found" still falls
-    # through — the local lookup simply won't match external pids.
-    if external_error:
-        try:
-            source = get_active_source(user)
-            if source and source.mode == "live" and is_external(user):
-                return {
-                    "pid": "",
-                    "name": "",
-                    "error": "Catalog temporarily unavailable (connection error)",
-                }
-        except Exception:
-            pass
 
     if not fallback_to_db:
         pass
@@ -1308,7 +717,6 @@ def tool_get_product_details(user, pid, conversation=None):
 
 def tool_send_images(user, pid="", pids=None, conversation=None):
     from api.products.factory import get_active_source, get_provider, is_external
-    from back.models import Product
 
     # Collect all requested PIDs.
     requested = []
@@ -1321,39 +729,6 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
         if fallback:
             requested.append(fallback)
     if not requested:
-        # Catalog browse: "sob product er photo pathan" with no product in
-        # focus — send cards for the whole catalog instead of erroring.
-        source = get_active_source(user)
-        external_active = bool(source) and is_external(user)
-        live_mode = bool(source) and source.mode == "live" and external_active
-        if live_mode:
-            # External live store: fetch the provider's catalog (local DB rows
-            # belong to a different store — never send those).
-            catalog_error = False
-            try:
-                provider = get_provider(user)
-                for r in provider.list_products(limit=10)[:8]:
-                    eid = r.get("external_id")
-                    if eid and eid not in requested:
-                        requested.append(eid)
-                if not requested and getattr(provider, "last_error", None):
-                    catalog_error = True
-            except Exception:
-                logger.exception("External catalog browse failed for user=%s", user.pk)
-                catalog_error = True
-            if catalog_error:
-                return {
-                    "error": "Store catalog temporarily unavailable (connection error). Do NOT present local/demo products.",
-                    "products": [],
-                }
-        if not requested and not live_mode:
-            all_pids = list(
-                Product.objects.filter(user=user, status=True)
-                .values_list("pid", flat=True)[:8]
-            )
-            if all_pids:
-                requested.extend(all_pids)
-    if not requested:
         return {"error": "No product selected — search for a product first", "products": []}
 
     source = get_active_source(user)
@@ -1362,7 +737,6 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
 
     products = []
     seen_pids = set()
-    external_error = False
 
     for raw_pid in requested:
         if raw_pid in seen_pids:
@@ -1372,13 +746,12 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
         name = ""
         images = []
         price = ""
-        original_price = ""
         discounted_price = ""
         sku = ""
 
         if live_mode:
-            provider = get_provider(user)
             try:
+                provider = get_provider(user)
                 r = provider.get_product(raw_pid)
                 if not r:
                     try:
@@ -1389,16 +762,13 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                 if r:
                     name = r.get("name") or ""
                     images = r.get("images") or ([r["image"]] if r.get("image") else [])
-                    price = str(r.get("discounted_price") or r.get("price") or "")
-                    original_price = str(r.get("price") or "") if r.get("discounted_price") else ""
+                    price = str(r.get("price") or "")
                     discounted_price = str(r.get("discounted_price") or "")
                     sku = r.get("sku") or ""
             except Exception:
-                logger.exception("Live send_images failed for %s", raw_pid)
-            if not name and getattr(provider, "last_error", None):
-                external_error = True
+                logger.exception("Live send_images failed for %s; falling back to local DB", raw_pid)
 
-        if not name and not live_mode:
+        if not name:
             try:
                 p = Product.objects.get(user=user, pid=raw_pid)
                 name = p.name
@@ -1420,17 +790,11 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
                 "name": name,
                 "images": images,
                 "price": price,
-                "original_price": original_price,
                 "discounted_price": discounted_price,
                 "sku": sku,
             })
 
     if not products:
-        if live_mode and external_error:
-            return {
-                "error": "Store catalog temporarily unavailable (connection error). Do NOT present local/demo products.",
-                "products": [],
-            }
         return {"error": "No products found", "products": []}
 
     return {"products": products, "total": len(products)}
@@ -1678,170 +1042,6 @@ def tool_think(notes):
     return {"ok": True, "notes": notes}
 
 
-def tool_check_inventory(user, sku_or_name="", min_stock=None):
-    """P2-1: Stock level by SKU/name with optional low-stock threshold alerts."""
-    qs = Product.objects.filter(user=user, status=True)
-    if sku_or_name and sku_or_name.strip():
-        qs = qs.filter(
-            Q(name__icontains=sku_or_name)
-            | Q(pid__icontains=sku_or_name)
-            | Q(external_id__icontains=sku_or_name)
-        )
-    products = list(qs[:20])
-    if not products:
-        return {"error": "No products found", "items": []}
-
-    items = []
-    low = []
-    for p in products:
-        row = {
-            "pid": p.pid,
-            "name": p.name,
-            "stock": p.stock_quantity,
-            "in_stock": p.stock_quantity > 0,
-            "price": str(p.price),
-        }
-        items.append(row)
-        threshold = min_stock if min_stock is not None else 5
-        if p.stock_quantity <= threshold:
-            low.append({"pid": p.pid, "name": p.name, "stock": p.stock_quantity})
-
-    return {"items": items, "total": len(items), "low_stock_alerts": low}
-
-
-def tool_find_previous_tickets(user, conversation=None, keyword="", status=""):
-    """P2-4: Search customer ticket history by keyword/status."""
-    from back.models import SupportTicket
-
-    qs = SupportTicket.objects.filter(conversation__user=user)
-    if conversation:
-        qs = qs.filter(conversation=conversation)
-    if status and status.strip():
-        qs = qs.filter(status=status.strip())
-    if keyword and keyword.strip():
-        qs = qs.filter(Q(subject__icontains=keyword) | Q(description__icontains=keyword))
-
-    tickets = list(qs.order_by("-created_at")[:10])
-    return {
-        "tickets": [
-            {
-                "id": t.pk,
-                "subject": t.subject,
-                "status": t.status,
-                "priority": t.priority,
-                "created_at": t.created_at.isoformat() if t.created_at else "",
-            }
-            for t in tickets
-        ],
-        "total": len(tickets),
-    }
-
-
-def tool_get_payment_link(user, order_id):
-    """P2-6: Generate a payment link for a pending order."""
-    try:
-        sale = Sale.objects.get(user=user, oid=order_id)
-    except Sale.DoesNotExist:
-        return {"error": f"Order '{order_id}' not found"}
-
-    if sale.status not in ("pending", "draft"):
-        return {"error": f"Order '{order_id}' is {sale.status} — only pending orders can be paid"}
-
-    # Payment link is deterministic per order (placeholder for real gateway)
-    from django.conf import settings
-
-    base = getattr(settings, "PAYMENT_BASE_URL", "")
-    token = sale.oid  # simple token — replace with signed token when a gateway ships
-    link = f"{base}/pay/{token}" if base else f"/db/orders/pay/{sale.oid}"
-    return {
-        "order_id": sale.oid,
-        "payment_link": link,
-        "amount": str(sale.amount),
-        "status": sale.status,
-    }
-
-
-def tool_track_shipment(user, order_id):
-    """P2-7: Tracking info for an order by ID."""
-    try:
-        sale = Sale.objects.select_related("conversation").get(user=user, oid=order_id)
-    except Sale.DoesNotExist:
-        return {"error": f"Order '{order_id}' not found"}
-
-    # Orders have no courier integration yet — derive status text from Sale status
-    status_map = {
-        "draft": "not placed yet",
-        "pending": "pending — awaiting confirmation",
-        "delivering": "out for delivery",
-        "completed": "delivered",
-        "refunded": "refunded",
-    }
-    return {
-        "order_id": sale.oid,
-        "status": sale.status,
-        "status_text": status_map.get(sale.status, sale.status),
-        "address": sale.customer_address or "",
-        "city": sale.customer_city or "",
-        "carrier": "pending assignment",
-        "tracking_number": None,
-        "estimated_delivery": None,
-    }
-
-
-def tool_get_sales_summary(user, period="today", limit=5):
-    """P2-11: Revenue, order count, AOV, top products by period.
-
-    period: today | yesterday | week | month | all
-    """
-    from datetime import timedelta
-
-    from django.db.models import Sum
-    from django.utils import timezone
-
-    now = timezone.now()
-    if period == "today":
-        start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == "yesterday":
-        start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    elif period == "week":
-        start = now - timedelta(days=7)
-    elif period == "month":
-        start = now - timedelta(days=30)
-    else:
-        start = None
-
-    qs = Sale.objects.filter(user=user)
-    if start:
-        qs = qs.filter(created_at__gte=start)
-
-    sales = list(qs)
-    revenue = sum((float(s.amount) for s in sales if s.amount), 0.0)
-    count = len(sales)
-    aov = round(revenue / count, 2) if count else 0
-
-    # Top products by units sold (from order items)
-    top = []
-    if sales:
-        from back.models import OrderItem
-
-        item_rows = (
-            OrderItem.objects.filter(order__in=sales)
-            .values("product_name")
-            .annotate(units=Sum("quantity"))
-            .order_by("-units")[:limit]
-        )
-        for r in item_rows:
-            top.append({"name": r["product_name"] or "Unknown", "units": r["units"]})
-
-    return {
-        "period": period,
-        "orders": count,
-        "revenue": str(round(revenue, 2)),
-        "average_order_value": str(aov),
-        "top_products": top,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Dispatcher
 # ---------------------------------------------------------------------------
@@ -1913,353 +1113,3 @@ def execute_tool(name, arguments, user, conversation):
     except Exception as exc:
         logger.exception("Tool '%s' raised an exception", name)
         return {"error": str(exc)}
-
-
-# ---------------------------------------------------------------------------
-# BaseTool subclasses (wrap old-style functions for ToolRegistry)
-# ---------------------------------------------------------------------------
-
-class SearchProductsTool(BaseTool):
-    name = "search_products"
-    description = "Search products by SKU, name, or keyword. You can optionally specify min_price and/or max_price to narrow results by budget. Try calling this MULTIPLE times with different keywords (try English, synonyms, simpler terms) until you find what the customer wants. Call this before quoting any price."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "Search term — SKU code, product name, or keyword"},
-            "limit": {"type": "integer", "description": "Max results (default 10)"},
-            "min_price": {"type": "number", "description": "Minimum price / budget floor — optional; omit if no lower bound"},
-            "max_price": {"type": "number", "description": "Maximum price / budget ceiling — optional; e.g. if customer says 'budget of 500 taka' pass 500"},
-        },
-        "required": ["query"],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_search_products(
-            user,
-            args.get("query", ""),
-            int(args.get("limit", 5)),
-            conversation=conversation,
-            min_price=args.get("min_price"),
-            max_price=args.get("max_price"),
-        )
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class GetProductDetailsTool(BaseTool):
-    name = "get_product_details"
-    description = "Get fresh price/stock for a product by PID. Only use as last resort — focused products (in system prompt) already have complete data including price, stock, description, variations. For focused products just call send_images."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "pid": {"type": "string", "description": "Product PID e.g. sku_abc123"},
-        },
-        "required": ["pid"],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class SendImagesTool(BaseTool):
-    name = "send_images"
-    description = "Send product images to the customer. Returns name and price. For a single PID, all product images are sent one-by-one. For multiple PIDs via pids=[...], a scrollable carousel is shown. Mention name and price briefly in your reply after sending."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "pid": {"type": "string", "description": "Single product PID (use when showing one product)"},
-            "pids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "One or more product PIDs to show as a card carousel (prefer this over calling send_images multiple times)",
-            },
-        },
-        "required": [],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_send_images(user, pid=args.get("pid", ""), pids=args.get("pids"), conversation=conversation)
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class CreateOrderTool(BaseTool):
-    name = "create_order"
-    description = "Create a new pending order. Only call after you have confirmed the items with the customer and collected name, phone, and address."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "customer_name": {"type": "string"},
-            "customer_phone": {"type": "string"},
-            "customer_address": {"type": "string"},
-            "customer_city": {"type": "string"},
-            "delivery_zone": {
-                "type": "string",
-                "enum": ["inside_dhaka", "outside_dhaka"],
-                "description": "Used to apply correct delivery charge",
-            },
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "pid": {"type": "string"},
-                        "quantity": {"type": "integer"},
-                        "variation_id": {
-                            "type": "string",
-                            "description": "Required for products that have variations (size/color). Use the variation_id from search_products/get_product_details.",
-                        },
-                    },
-                    "required": ["pid"],
-                },
-            },
-        },
-        "required": ["customer_name", "customer_phone", "customer_address", "items"],
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_create_order(
-            user=user,
-            conversation=conversation,
-            customer_name=args.get("customer_name", ""),
-            customer_phone=args.get("customer_phone", ""),
-            customer_address=args.get("customer_address", ""),
-            customer_city=args.get("customer_city", ""),
-            delivery_zone=args.get("delivery_zone", "inside_dhaka"),
-            items=args.get("items", []),
-        )
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(str(result.get("details", result["error"])), tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class GetOrderStatusTool(BaseTool):
-    name = "get_order_status"
-    description = "Look up an existing order by its order ID."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "order_id": {"type": "string", "description": "Order oid e.g. ord_abc123"},
-        },
-        "required": ["order_id"],
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_get_order_status(user, args.get("order_id", ""))
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class UpdateCustomerTool(BaseTool):
-    name = "update_customer"
-    description = "Save or update customer contact details in the conversation record."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "name": {"type": "string"},
-            "phone": {"type": "string"},
-            "city": {"type": "string"},
-            "address": {"type": "string"},
-        },
-        "required": [],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_update_customer(
-            conversation=conversation,
-            name=args.get("name"),
-            phone=args.get("phone"),
-            city=args.get("city"),
-            address=args.get("address"),
-        )
-        return ToolResult.success(result, tool=self.name)
-
-
-class CreateTicketTool(BaseTool):
-    name = "create_ticket"
-    description = "Create a support ticket and hand the conversation to a human agent. Use when: customer requests human, complaint escalation, or issue is beyond AI scope."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "subject": {"type": "string", "description": "Short summary of the issue"},
-            "description": {"type": "string", "description": "Detailed description of the issue"},
-            "priority": {
-                "type": "string",
-                "enum": ["low", "medium", "high", "urgent"],
-                "description": "Issue priority (default medium)",
-            },
-        },
-        "required": ["subject", "description"],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_create_ticket(
-            conversation=conversation,
-            subject=args.get("subject", ""),
-            description=args.get("description", ""),
-            priority=args.get("priority", "medium"),
-        )
-        return ToolResult.success(result, tool=self.name)
-
-
-class SearchKnowledgeBaseTool(BaseTool):
-    name = "search_knowledge_base"
-    description = "Search business knowledge: policies, FAQs, return/exchange info, shipping, payment methods, company info, and training Q&A. Do NOT use for product queries — use search_products."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "What to look up (e.g. 'return policy', 'shipping time', 'payment methods')"},
-            "limit": {"type": "integer", "description": "Max results (default 3)"},
-        },
-        "required": ["query"],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_search_knowledge_base(
-            user=user,
-            query=args.get("query", ""),
-            limit=int(args.get("limit", 3)),
-        )
-        return ToolResult.success(result, tool=self.name)
-
-
-class ThinkTool(BaseTool):
-    name = "think"
-    description = "Private thinking step. Use to outline your next actions before calling tools. Do NOT include customer-facing text. This does not message the customer."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "notes": {"type": "string", "description": "Short internal plan (1-3 lines)"},
-        },
-        "required": ["notes"],
-    }
-    permission = "public"
-
-    def execute(self, args, user, conversation):
-        result = tool_think(args.get("notes", ""))
-        return ToolResult.success(result, tool=self.name)
-
-
-class CheckInventoryTool(BaseTool):
-    name = "check_inventory"
-    description = "Check stock levels by product name or SKU. Returns current stock, availability, and low-stock alerts."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "sku_or_name": {"type": "string", "description": "Product name, SKU (pid), or external id. Empty = all products."},
-            "min_stock": {"type": "integer", "description": "Optional threshold — products at or below this stock are flagged as low"},
-        },
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_check_inventory(user, args.get("sku_or_name", ""), args.get("min_stock"))
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class FindPreviousTicketsTool(BaseTool):
-    name = "find_previous_tickets"
-    description = "Search the customer's previous support tickets by keyword or status."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "keyword": {"type": "string", "description": "Keyword to match against ticket subject/description"},
-            "status": {"type": "string", "description": "Filter by status (e.g. open, resolved)"},
-        },
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_find_previous_tickets(user, conversation, args.get("keyword", ""), args.get("status", ""))
-        return ToolResult.success(result, tool=self.name)
-
-
-class GetPaymentLinkTool(BaseTool):
-    name = "get_payment_link"
-    description = "Generate a payment link for a pending order so the customer can pay."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "order_id": {"type": "string", "description": "Order oid e.g. ord_abc123"},
-        },
-        "required": ["order_id"],
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_get_payment_link(user, args.get("order_id", ""))
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class TrackShipmentTool(BaseTool):
-    name = "track_shipment"
-    description = "Get tracking / delivery status for an order by order ID."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "order_id": {"type": "string", "description": "Order oid e.g. ord_abc123"},
-        },
-        "required": ["order_id"],
-    }
-    permission = "customer"
-
-    def execute(self, args, user, conversation):
-        result = tool_track_shipment(user, args.get("order_id", ""))
-        if isinstance(result, dict) and "error" in result:
-            return ToolResult.as_error(result["error"], tool=self.name)
-        return ToolResult.success(result, tool=self.name)
-
-
-class GetSalesSummaryTool(BaseTool):
-    name = "get_sales_summary"
-    description = "Get sales metrics: order count, revenue, average order value, and top products for a period."
-    parameters = {
-        "type": "object",
-        "properties": {
-            "period": {"type": "string", "enum": ["today", "yesterday", "week", "month", "all"], "description": "Time window. Default: today"},
-            "limit": {"type": "integer", "description": "Max number of top products. Default: 5"},
-        },
-    }
-    permission = "owner"
-
-    def execute(self, args, user, conversation):
-        result = tool_get_sales_summary(user, args.get("period", "today"), args.get("limit", 5))
-        return ToolResult.success(result, tool=self.name)
-
-
-# ---------------------------------------------------------------------------
-# Register all tools
-# ---------------------------------------------------------------------------
-
-ToolRegistry.register(SearchProductsTool)
-ToolRegistry.register(GetProductDetailsTool)
-ToolRegistry.register(SendImagesTool)
-ToolRegistry.register(CreateOrderTool)
-ToolRegistry.register(GetOrderStatusTool)
-ToolRegistry.register(UpdateCustomerTool)
-ToolRegistry.register(CreateTicketTool)
-ToolRegistry.register(SearchKnowledgeBaseTool)
-ToolRegistry.register(ThinkTool)
-ToolRegistry.register(CheckInventoryTool)
-ToolRegistry.register(FindPreviousTicketsTool)
-ToolRegistry.register(GetPaymentLinkTool)
-ToolRegistry.register(TrackShipmentTool)
-ToolRegistry.register(GetSalesSummaryTool)

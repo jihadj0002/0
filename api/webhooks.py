@@ -134,7 +134,6 @@ def _fire_batch_pipeline(conversation_id):
 
         close_old_connections()
         from types import SimpleNamespace
-        from django.conf import settings
 
         conversation = Conversation.objects.get(id=conversation_id)
 
@@ -173,7 +172,7 @@ def _fire_batch_pipeline(conversation_id):
         # "Pic den") stay in the Message history and must not pollute the
         # search query ("Ji\nPic den" searches junk). The newest message best
         # reflects what the customer currently wants; the older ones already
-        # exist as history rows the orchestrator context builds on.
+        # exist as history rows the pipeline context builds on.
         batch_items = [
             b for b in MessageBatch.objects.filter(pk__in=batch_pks)
             .order_by("timestamp")
@@ -186,11 +185,8 @@ def _fire_batch_pipeline(conversation_id):
 
         unified = SimpleNamespace(text=combined_text)
         try:
-            # Single canonical AI path: the Orchestrator (intent → workflow →
-            # planner → executor → response generator). Legacy pipeline.py is
-            # no longer dispatched from here — see run_via_orchestrator().
-            from api.ai.orchestrator import run_via_orchestrator
-            run_via_orchestrator(conversation, unified)
+            from api.ai.pipeline import run
+            run(conversation, unified)
         except Exception:
             logger.exception(
                 "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
@@ -223,8 +219,8 @@ def _fire_batch_pipeline(conversation_id):
                 if combined_text.strip():
                     unified = SimpleNamespace(text=combined_text)
                     try:
-                        from api.ai.orchestrator import run_via_orchestrator
-                        run_via_orchestrator(conversation, unified)
+                        from api.ai.pipeline import run
+                        run(conversation, unified)
                         MessageBatch.objects.filter(pk__in=fresh_pks).update(processed=True)
                     except Exception:
                         logger.exception(
