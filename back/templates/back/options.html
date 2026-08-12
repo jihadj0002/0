@@ -477,25 +477,31 @@
       <details class="advanced">
         <summary>Advanced — manual setup (paste tokens yourself)</summary>
         <div class="advanced-body">
-          <div class="field-group">
-            <label class="field-label">Page ID</label>
-            <input class="field-input" type="text" name="integration_id" placeholder="Messenger Page ID" value="{{ intg.integration_id|default:'' }}">
-          </div>
+          {% if intg.is_connected and intg.connection_method == "oauth" %}
+            <div class="setup-hint">
+              Manual webhook setup is disabled because this account is connected through the app-level Meta webhook.
+            </div>
+          {% else %}
+            <div class="field-group">
+              <label class="field-label">Page ID</label>
+              <input class="field-input" type="text" name="integration_id" placeholder="Messenger Page ID" value="{{ intg.integration_id|default:'' }}">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">Page Access Token</label>
-            <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">Page Access Token</label>
+              <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
-            <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
+              <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="setup-hint">
-            <strong>Setup:</strong> Go to Meta Developers → Your App → Messenger → Webhooks → Add Callback URL.
-            Paste the Webhook URL and Verify Token above. Subscribe to <code>messages</code> + <code>messaging_postbacks</code>.
-          </div>
+            <div class="setup-hint">
+              <strong>Setup:</strong> Go to Meta Developers → Your App → Messenger → Webhooks → Add Callback URL.
+              Paste the Webhook URL and Verify Token above. Subscribe to <code>messages</code> + <code>messaging_postbacks</code>.
+            </div>
+          {% endif %}
         </div>
       </details>
 
@@ -552,25 +558,31 @@
       <details class="advanced">
         <summary>Advanced — manual setup (paste tokens yourself)</summary>
         <div class="advanced-body">
-          <div class="field-group">
-            <label class="field-label">Phone Number ID</label>
-            <input class="field-input" type="text" name="integration_id" placeholder="WhatsApp Phone Number ID" value="{{ intg.integration_id|default:'' }}">
-          </div>
+          {% if intg.is_connected and intg.connection_method == "oauth" %}
+            <div class="setup-hint">
+              Manual webhook setup is disabled because this account is connected through the app-level Meta webhook.
+            </div>
+          {% else %}
+            <div class="field-group">
+              <label class="field-label">Phone Number ID</label>
+              <input class="field-input" type="text" name="integration_id" placeholder="WhatsApp Phone Number ID" value="{{ intg.integration_id|default:'' }}">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">Access Token</label>
-            <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">Access Token</label>
+              <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
-            <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
+              <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="setup-hint">
-            <strong>Setup:</strong> Meta Developers → Your App → WhatsApp → Configuration → Webhook.
-            Paste the URL and Verify Token. Subscribe to <code>messages</code>. Copy your Phone Number ID from the API Setup tab.
-          </div>
+            <div class="setup-hint">
+              <strong>Setup:</strong> Meta Developers → Your App → WhatsApp → Configuration → Webhook.
+              Paste the URL and Verify Token. Subscribe to <code>messages</code>. Copy your Phone Number ID from the API Setup tab.
+            </div>
+          {% endif %}
         </div>
       </details>
 
@@ -656,25 +668,31 @@
       <details class="advanced">
         <summary>Advanced — manual setup (paste tokens yourself)</summary>
         <div class="advanced-body">
-          <div class="field-group">
-            <label class="field-label">Instagram Business Account ID</label>
-            <input class="field-input" type="text" name="integration_id" placeholder="IG Business Account ID" value="{{ intg.integration_id|default:'' }}">
-          </div>
+          {% if intg.is_connected and intg.connection_method == "oauth" %}
+            <div class="setup-hint">
+              Manual webhook setup is disabled because this account is connected through the app-level Meta webhook.
+            </div>
+          {% else %}
+            <div class="field-group">
+              <label class="field-label">Instagram Business Account ID</label>
+              <input class="field-input" type="text" name="integration_id" placeholder="IG Business Account ID" value="{{ intg.integration_id|default:'' }}">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">Page Access Token</label>
-            <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">Page Access Token</label>
+              <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="field-group">
-            <label class="field-label">App Secret</label>
-            <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
-          </div>
+            <div class="field-group">
+              <label class="field-label">App Secret</label>
+              <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
+            </div>
 
-          <div class="setup-hint">
-            <strong>Setup:</strong> Meta Developers → Your App → Instagram → Webhooks.
-            Paste the URL and Verify Token. Subscribe to <code>messages</code>. Your app must have <em>instagram_manage_messages</em> permission.
-          </div>
+            <div class="setup-hint">
+              <strong>Setup:</strong> Meta Developers → Your App → Instagram → Webhooks.
+              Paste the URL and Verify Token. Subscribe to <code>messages</code>. Your app must have <em>instagram_manage_messages</em> permission.
+            </div>
+          {% endif %}
         </div>
       </details>
 

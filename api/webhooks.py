@@ -617,6 +617,15 @@ class _MetaWebhookView(_BaseWebhookView):
         if not integration:
             return HttpResponse("EVENT_RECEIVED", status=200)
 
+        # When the integration is connected via OAuth (app-level webhook),
+        # ignore per-user webhook deliveries to avoid duplicate messages.
+        if integration.is_connected and integration.connection_method == "oauth":
+            logger.info(
+                "Per-user webhook skipped (app-level OAuth active) user=%s platform=%s",
+                username, self.platform,
+            )
+            return HttpResponse("EVENT_RECEIVED", status=200)
+
         if not _verify_meta_signature(body, integration.app_secret, request.headers.get("X-Hub-Signature-256", "")):
             logger.warning("Signature mismatch on %s webhook for user=%s", self.platform, username)
             return HttpResponse("EVENT_RECEIVED", status=200)
