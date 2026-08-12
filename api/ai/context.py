@@ -38,6 +38,15 @@ def build_system_prompt(user, conversation, image_analysis=None):
     if rules and rules.custom_instructions:
         parts.append(f"## Custom Instructions (user-defined)\n{rules.custom_instructions}")
 
+    parts.append(
+        "## LANGUAGE\n"
+        "- Default reply language: Bengali (বাংলা).\n"
+        "- If the customer writes in English, reply in English; if they use Bangla transliteration, reply in Bengali.\n"
+        "- Use polite Bangla honorifics (আপনি/ভাই/আপা) and a warm, helpful tone.\n"
+        "- Format prices as ৳123 and say 'টাকা' naturally in Bangla.\n"
+        "- Keep replies short and natural for chat.\n"
+    )
+
     # --- Core task rules (these override custom instructions above) ---
     tone = identity.tone if identity else "friendly"
     style = identity.style if identity else "concise"
@@ -49,6 +58,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- If multiple options, use send_images(pids=[...]) to send carousel as names and price are already in the carousel.\n"
         "- If you want multiple short messages, separate with a blank line.\n"
         "- Delivery/payment questions: answer directly; don't collect details unless ordering.\n"
+        "- Ask at most ONE follow-up question per reply.\n"
     )
 
     # --- Product discovery flow ---
@@ -59,10 +69,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "3) Verify names match; if not, search again.\n"
         "4) Respond with genuine matches or say out of stock.\n"
     )
-    if external_catalog:
-        parts.append("- For images: search SKU first, then name.\n")
-    else:
-        parts.append("- For images: search SKU first, then name.\n")
+    parts.append("- For images: search SKU first, then name.\n")
     parts.append(
         "- NEVER state a price or name you didn't just get from a tool.\n"
         "- If search results don't include any product relevant to the "
@@ -71,6 +78,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- If product has variations (size/color), show options before ordering.\n"
         "- If product not found → say out of stock (not 'not found').\n"
         "- Use get_order_status for existing orders.\n"
+        "- If customer gives a budget (e.g. 500 taka), pass min_price/max_price to search_products.\n"
         "- Complaints/policy questions: check search_knowledge_base FIRST (return, "
         "refund, delivery, payment, warranty); answer from it. Use create_ticket only "
         "to escalate genuine complaints, angry customers, or out-of-scope requests.\n"
@@ -143,6 +151,8 @@ def build_system_prompt(user, conversation, image_analysis=None):
         cust.append(f"Phone: {conversation.customer_phone}")
     if conversation.customer_city:
         cust.append(f"City: {conversation.customer_city}")
+    if conversation.customer_address:
+        cust.append(f"Address: {conversation.customer_address}")
     if conversation.greeted:
         cust.append("Already greeted: yes")
     if conversation.detected_intent:
@@ -166,13 +176,8 @@ def build_system_prompt(user, conversation, image_analysis=None):
     # --- Catalogue snapshot ---
     # For an external/live source, do NOT inline a list — the live catalog is
     # large and dynamic; the AI must use search_products (enforced in the rules).
-    if external_catalog:
-        parts.append(
-            "## END Of Recent searched Products\n"
-            
-        )
-    else:
-        available_products = list(Product.objects.filter(user=user, status=True)[:20])
+    if not external_catalog and not focus_list:
+        available_products = list(Product.objects.filter(user=user, status=True)[:10])
         if available_products:
             lines = ["## Available Products (sample — use search_products for the full catalog)"]
             for p in available_products:
@@ -267,6 +272,8 @@ def get_conversation_history(conversation, limit=20):
 
     history = []
     for m in msgs:
+        if m.sender == "agent":
+            continue
         role = "assistant" if m.sender == "bot" else "user"
         content = m.text or ""
         if not content and m.attachments:

@@ -45,7 +45,7 @@ _conv_locks_lock = threading.Lock()
 _pending_batches: dict[int, list[int]] = {}
 _pending_batches_lock = threading.Lock()
 
-BATCH_TIMER_SECONDS = 7  # wait for burst to settle (was 5s; increased for image analysis)
+BATCH_TIMER_SECONDS = 4  # wait for burst to settle (snappier chat UX)
 
 
 # ---------------------------------------------------------------------------
@@ -76,7 +76,7 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 
 def _schedule_batch_pipeline(conversation_id):
     """
-    (Re)start the 7-second batch timer for a conversation.
+    (Re)start the 4-second batch timer for a conversation.
     Cancels any existing timer so rapid message bursts are collapsed into one
     pipeline run that fires 7 seconds after the LAST message in the burst.
 
@@ -96,7 +96,7 @@ def _schedule_batch_pipeline(conversation_id):
 
 def _fire_batch_pipeline(conversation_id):
     """
-    Called (via executor) after 7 seconds of silence for a conversation.
+    Called (via executor) after 4 seconds of silence for a conversation.
     Combines all unprocessed MessageBatch rows into a single AI turn.
 
     Locks per-conversation so overlapping runs never happen.  Batch rows are

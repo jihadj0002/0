@@ -822,6 +822,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
     #   (product_or_None, qty, unit_price, product_name, external_id, variation_id)
     resolved = []
     errors = []
+    warnings = []
 
     for item in items:
         pid = item.get("pid", "")
@@ -839,9 +840,11 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
             if product.stock_quantity < qty:
                 errors.append(f"{product.name}: only {product.stock_quantity} left in stock")
                 continue
+            if requested_vid:
+                warnings.append(f"{product.name}: variation_id ignored for local product")
             unit_price = product.discounted_price or product.price
             resolved.append((product, qty, unit_price, product.name,
-                             product.external_id or None, requested_vid or None))
+                              product.external_id or None, None))
             continue
 
         # 3) Live external product with no local row — look up via provider.
@@ -958,7 +961,7 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
         logger.exception("push_order_to_source failed for order %s", sale.oid)
         push_result = {}
 
-    return {
+    result = {
         "order_id": sale.oid,
         "status": sale.status,
         "total": str(sale.amount),
@@ -966,6 +969,9 @@ def tool_create_order(user, conversation, customer_name, customer_phone, custome
         "synced_to_store": bool(push_result.get("ok") and not push_result.get("skipped")),
         "external_order_id": sale.external_order_id,
     }
+    if warnings:
+        result["warnings"] = warnings
+    return result
 
 
 def tool_get_order_status(user, order_id):
@@ -1032,7 +1038,7 @@ def tool_create_ticket(conversation, subject, description, priority="medium"):
 def tool_search_knowledge_base(user, query, limit=3):
     """Search RAG chunks (sample Q&A, knowledge base) via vector similarity."""
     from context.search import search_chunks
-    results = search_chunks(user, query, top_k=limit, min_score=0.0)
+    results = search_chunks(user, query, top_k=limit, min_score=0.3)
     if not results:
         return {"results": [], "total": 0, "note": "No matching knowledge found"}
     return {"results": results, "total": len(results)}

@@ -50,6 +50,7 @@ from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 7
+MAX_RUN_SECONDS = 90
 
 
 def _split_text_messages(text):
@@ -231,7 +232,11 @@ def run(conversation, incoming_message):
         re.IGNORECASE,
     )
 
+    start_time = time.monotonic()
     for iteration in range(MAX_TOOL_ITERATIONS):
+        if time.monotonic() - start_time > MAX_RUN_SECONDS:
+            final_text = "দুঃখিত, উত্তর দিতে একটু সময় লাগছে। আবার সংক্ষেপে বলবেন?"
+            break
         try:
             llm_msg, usage = call_llm(
                 messages=messages,
@@ -426,7 +431,7 @@ def run(conversation, incoming_message):
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
-        return
+        final_text = "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
 
     # Safety net: the AI must never put image URLs in text — images go only via
     # send_images. Strip any that slipped through before saving/sending.
