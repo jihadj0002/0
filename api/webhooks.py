@@ -263,6 +263,10 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
 
         conversation_ids = set()
         for msg_data in unified_messages:
+            # Refresh the thread's DB connection before each message so a dead
+            # connection from a previous (failed) message can never kill the
+            # rest of the batch — Django transparently reconnects afterwards.
+            close_old_connections()
             try:
                 conv_id = _persist_message(user, platform, msg_data, access_token, ai_enabled)
                 if conv_id:
@@ -272,6 +276,10 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
                     "Failed to persist message mid=%s user=%s platform=%s",
                     msg_data.get("message_id"), user_id, platform,
                 )
+                # Drop the broken connection NOW — the next iteration must
+                # start clean instead of raising "connection already closed"
+                # for every remaining message in this batch.
+                close_old_connections()
         # Only schedule the AI pipeline when AI is active for this platform
         if ai_enabled:
             for cid in conversation_ids:
@@ -341,6 +349,11 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     has_credits = UserBalance.objects.filter(
         user=conv.user, credits_remaining__gt=0
     ).exists()
+    # Release the DB connection before the long HTTP work below (OpenRouter
+    # vision/transcription calls take 10-40s). Holding it would let Postgres /
+    # the Railway proxy idle-timeout the connection mid-call; Django reconnects
+    # transparently on the next query.
+    close_old_connections()
     if att_type == "image" and media_url and ai_enabled and has_credits:
         try:
             import uuid as _uuid
