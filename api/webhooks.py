@@ -168,15 +168,21 @@ def _fire_batch_pipeline(conversation_id):
         if not batch_pks:
             return
 
-        combined_text = "\n".join(
-            b.message_text
-            for b in MessageBatch.objects.filter(pk__in=batch_pks)
+        # F4: multiple messages collapsed into one batch are handled as ONE turn
+        # whose query is the LAST message — earlier burst messages ("Ji" then
+        # "Pic den") stay in the Message history and must not pollute the
+        # search query ("Ji\nPic den" searches junk). The newest message best
+        # reflects what the customer currently wants; the older ones already
+        # exist as history rows the orchestrator context builds on.
+        batch_items = [
+            b for b in MessageBatch.objects.filter(pk__in=batch_pks)
+            .order_by("timestamp")
             if b.message_text.strip()
-        )
-
-        if not combined_text.strip():
+        ]
+        if not batch_items:
             MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
             return
+        combined_text = batch_items[-1].message_text
 
         unified = SimpleNamespace(text=combined_text)
         try:

@@ -1085,6 +1085,21 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 if len(products_list) >= limit:
                     break
 
+        # F6 relevance guard: the OR-combined query floods on loose tokens —
+        # "Komlar achar nai?" matches every "achar" product. When the query has
+        # ≥2 meaningful tokens, only keep products that match at least half of
+        # them (name tokens), so a specific query returns specific results.
+        tokens = [t for t in re.split(r"[\s,.;:!?/]+", (query or "").lower())
+                  if len(t) >= 3 and t not in _STOPWORDS]
+        if len(tokens) >= 2 and len(products_list) > (limit or 10):
+            def _token_hits(p):
+                name = ((p.name or "") + " " + (p.description or "")).lower()
+                return sum(1 for t in tokens if t in name)
+            need = max(1, len(tokens) // 2)
+            kept = [p for p in products_list if _token_hits(p) >= need]
+            if kept:
+                products_list = kept[:limit]
+
     results = [_product_row(p) for p in products_list]
 
     # Romanized-Bengali bridge: "lebur achar" must match a catalog named
@@ -1114,20 +1129,26 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
         # (e.g. price-negotiation messages that name no product).
         focus_list = parse_focus_products(getattr(conversation, "current_product", "") if conversation else "")
         if focus_list:
-            out["products"] = focus_list
+            # F6: history candidates are NOT matches — a separate field so no
+            # downstream consumer (prompt renderer, media extractor) can ever
+            # present them as found products or attach images/prices to them.
+            out["products"] = []
             out["total"] = 0
             out["matched"] = False
+            out["history_candidates"] = focus_list
             out["_instruction"] = (
-                f'NO catalog item matched "{query}". The products above are conversation '
-                "history, NOT search results — do NOT send images, quote prices, or present "
-                "any of them as a match for what the customer asked. If the customer is "
-                "clearly referring to one of them (see 'Conversation so far'), its real data "
-                "is above; otherwise tell the customer it is currently unavailable. Do NOT "
-                "present unrelated products."
+                f'NO catalog item matched "{query}". The "history_candidates" above are '
+                "conversation history, NOT search results — do NOT send images, quote "
+                "prices, or present any of them as a match for what the customer asked. "
+                "If the customer is clearly referring to one of them (see 'Conversation "
+                "so far'), its real data is above; otherwise tell the customer it is "
+                "currently unavailable. Do NOT present unrelated products."
             )
         else:
             out["products"] = []
+            out["total"] = 0
             out["matched"] = False
+            out["history_candidates"] = []
             out["_instruction"] = (
                 f'No catalog items matched "{query}". Either try ONE more search with a '
                 "different/simpler keyword or synonym, or tell the customer it's currently "

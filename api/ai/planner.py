@@ -50,6 +50,9 @@ _INTENT_ALLOWED_TOOLS: dict[str, set[str]] = {
     "BILLING_QUERY": {"search_knowledge_base"},
     "STORE_SYNC": {"search_knowledge_base"},
     "FRUSTRATION": {"search_knowledge_base", "create_ticket"},
+    "AFFIRM": set(),
+    "PROVIDE_QUANTITY": set(),
+    "STORE_INFO": {"search_knowledge_base"},
 }
 
 # Tools that can NEVER appear in a software-executed plan step — reserved for
@@ -112,6 +115,7 @@ _DIRECT_MAP: dict[str, str | list[PlanStep]] = {
     "ASK_FAQ": "search_knowledge_base",
     "HUMAN_SUPPORT": "create_ticket",
     "ANALYTICS_QUERY": "get_sales_summary",
+    "STORE_INFO": "search_knowledge_base",
 }
 
 # ---------------------------------------------------------------------------
@@ -167,6 +171,9 @@ _INTENT_GOALS: dict[str, tuple[str, str]] = {
     "UPGRADE_PLAN": ("answer_plan_question", "support"),
     "BILLING_QUERY": ("answer_billing_question", "support"),
     "STORE_SYNC": ("answer_sync_question", "support"),
+    "AFFIRM": ("acknowledge", "browsing"),
+    "PROVIDE_QUANTITY": ("capture_quantity", "browsing"),
+    "STORE_INFO": ("answer_store_info", "support"),
 }
 
 
@@ -180,7 +187,7 @@ class Planner:
         The LLM tier is used only for intents with no canned plan, and its
         output is software-validated before it reaches the executor.
         """
-        if intent in ("GREETING", "SMALL_TALK", "UNKNOWN", "FRUSTRATION"):
+        if intent in ("GREETING", "SMALL_TALK", "UNKNOWN", "FRUSTRATION", "AFFIRM", "PROVIDE_QUANTITY"):
             # First-contact greeting: text-only (a welcome line). The catalog
             # carousel is shown only when the customer asks to browse ("ki
             # product ache?") — dumping the whole carousel on "hi" is spammy.

@@ -206,6 +206,7 @@ class SessionContext(models.Model):
     workflow_step = models.IntegerField(default=0)
     collected_data = models.JSONField(default=dict, blank=True)
     pending_confirmation = models.JSONField(null=True, blank=True)
+    pre_collected = models.JSONField(default=dict, blank=True)
     verified = models.BooleanField(default=False)
     verification_method = models.CharField(max_length=50, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)

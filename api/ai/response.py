@@ -238,6 +238,14 @@ class ResponseGenerator:
         search_forced = False
         image_promise_corrected = False
         final_text = None
+        # F7: two consecutive 0-match searches → stop searching, answer from
+        # the canned guard instead of another LLM search loop (the Aug-12
+        # session replied "The search results indicate 'Ho re bhai' is not a
+        # recognized product…").
+        consecutive_misses = 1 if (
+            not seed_has_products
+            and any(r.tool == "search_products" for r in seed_results)
+        ) else 0
 
         for iteration in range(MAX_AGENT_ITERATIONS):
             try:
@@ -258,12 +266,14 @@ class ResponseGenerator:
                 candidate = (msg.content or "").strip()
 
                 # Guard 1: the seed search found nothing and the model replied
-                # without searching — force one more search attempt.
+                # without searching — force one more search attempt (unless
+                # two 0-match searches already happened; then stop, F7).
                 loop_searched = any(
                     r.tool == "search_products"
                     for r in all_results[len(seed_results):]
                 )
-                if not seed_has_products and not loop_searched and not search_forced:
+                if (not seed_has_products and not loop_searched
+                        and not search_forced and consecutive_misses < 2):
                     search_forced = True
                     messages.append({"role": "assistant", "content": candidate})
                     messages.append({"role": "system", "content": (
@@ -273,6 +283,21 @@ class ResponseGenerator:
                         "singular/plural, or a related category)."
                     )})
                     continue
+
+                # Guard 1b (F7): two 0-match searches in a row — never loop a
+                # third time, and never leak English meta-text ("The search
+                # results indicate…") to the customer. Answer as the store's
+                # polite assistant in the customer's language.
+                if consecutive_misses >= 2 and ResponseGenerator._search_meta_text(candidate):
+                    lang = _detect_lang(context)
+                    final_text = (
+                        "দুঃখিত, আমরা এই প্রোডাক্টটি খুঁজে পাচ্ছি না। নামটা কি আবার বলবেন? "
+                        "অথবা আমাদের ক্যাটালগ দেখতে চাইলে জানাবেন।"
+                        if lang == "bn" else
+                        "Sorry, we couldn't find that product. Could you double-check the "
+                        "name? Or tell me to show our catalog."
+                    )
+                    break
 
                 # Guard 2: reply claims to send images but send_images never ran.
                 loop_sent_images = any(
@@ -303,10 +328,49 @@ class ResponseGenerator:
                     args = json.loads(tc.function.arguments or "{}")
                 except (json.JSONDecodeError, TypeError):
                     args = {}
+
+                # F9: the same image set was already sent this turn (planner
+                # seed step + agentic loop re-call duplication) — skip it and
+                # tell the model, instead of resending images to the customer.
+                if fn == "send_images":
+                    wanted = set(args.get("pids") or ())
+                    if args.get("pid"):
+                        wanted.add(args["pid"])
+                    if not wanted:
+                        wanted = None  # empty args → focus default; skip if any prior send
+                    already_sent = False
+                    for r in all_results:
+                        if r.tool != "send_images" or r.state != "success":
+                            continue
+                        rpids = {p.get("pid") for p in ((r.data or {}).get("products") or [])}
+                        if wanted is None or (rpids and rpids == wanted):
+                            already_sent = True
+                            break
+                    if already_sent:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps({
+                                "state": "skipped",
+                                "note": "These images were already sent to this customer at the "
+                                        "start of this turn (send_images ran once). Do NOT call "
+                                        "send_images again — just cite the product name and price.",
+                            }, ensure_ascii=False),
+                        })
+                        continue
+
                 t0 = time.time()
                 result = ToolRegistry.execute(fn, args, context.user, context.conversation)
                 result.execution_time_ms = int((time.time() - t0) * 1000)
                 all_results.append(result)
+
+                # F7: track consecutive 0-match product searches.
+                if fn == "search_products":
+                    products = (result.data or {}).get("products") or []
+                    if not products:
+                        consecutive_misses += 1
+                    else:
+                        consecutive_misses = 0
 
                 try:
                     from back.models import ToolCallLog
@@ -346,6 +410,24 @@ class ResponseGenerator:
             final_text = ResponseGenerator._fallback_text(all_results, context)
 
         return Response(text=final_text, images=images, cards=cards)
+
+    @staticmethod
+    def _search_meta_text(text: str) -> bool:
+        """True when a draft reply leaks internal/tool meta-text to the
+        customer — "The search results indicate…", "not a recognized
+        product", "catalog item", "tool", "API call". Those must never reach
+        the customer's screen (F7 persona guard)."""
+        if not text:
+            return False
+        lowered = text.lower()
+        return any(
+            phrase in lowered
+            for phrase in (
+                "search result", "search resultss", "not a recognized product",
+                "catalog item", "no catalog", "did not find", "couldn't find a match",
+                "no match", "not found in", "tool call", "api call", "checking the catalog",
+            )
+        )
 
     @staticmethod
     def _tool_content_for_model(result: ToolResult) -> dict:
@@ -570,6 +652,24 @@ asks about products:
         specialist = ResponseGenerator._specialist_fragment(context)
         if specialist:
             parts.append(specialist)
+
+        # F7 persona guard: the reply must stay in the customer's language and
+        # never leak internal meta-text ("The search results indicate…", tool
+        # names, catalog internals). The customer talks to a store assistant,
+        # not to an API.
+        lang = _detect_lang(context)
+        parts.append(
+            "\n## Reply style\n"
+            "You are this store's friendly assistant. Reply ONLY as the assistant.\n"
+            "- Write in the customer's language (Bengali unless they clearly write English).\n"
+            "- NEVER mention searches, tools, catalogs, databases, results or how you work "
+            "internally. Never say 'the search results indicate…', 'not a recognized "
+            "product' or similar meta text.\n"
+            "- If a product is unavailable, say so simply and offer the catalog or a "
+            "clarifying question. Keep replies short, warm and polite."
+            + ("\n- Example tone: ভাই, এটি বর্তমানে আমাদের কাছে নেই। অন্য কিছু দেখতে চাইলে জানাবেন।"
+               if lang == "bn" else "")
+        )
 
         parts.append(f"""
 Write a natural, {style} reply in the customer's language (default: {language}).

@@ -142,6 +142,7 @@ class ConversationContext:
     tool_results: list[Any] | None = None
     incoming_text: str = ""
     model: str | None = None
+    stage: str = "browsing"
 
     def summary(self, max_products=5, max_orders=3):
         parts = [f"Platform: {self.platform}"]

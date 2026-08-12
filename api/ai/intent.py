@@ -33,7 +33,33 @@ INTENT_GROUPS = {
     "ANALYTICS_QUERY": ["analytics"],
     "CONTENT_REQUEST": ["content generation"],
     "RECOMMEND": ["recommendation"],
+    "AFFIRM": ["confirmation", "affirmative answer"],
+    "PROVIDE_QUANTITY": ["quantity answer"],
+    "STORE_INFO": ["store identity", "contact info"],
 }
+
+# AFFIRM (F1): an affirmative answer to the CURRENT bot question. Detection is
+# stage-dependent — inside an order workflow these tokens confirm the step;
+# outside one they are plain chit-chat answers (never a product search).
+_AFFIRM_PATTERN = re.compile(
+    r"^(?:"
+    r"j+i+|hm+|hmm+|mm+|ha+h*|hae+|yes|yeah|yep|yup|ok|okay|sure|done|"
+    r"confirmed|confirm|correct|alright|hobe|hbe|hoy|hoi|thik|"
+    r"ho re (?:bhai|vai|ভাই)|are re|re bhai|"
+    r"হ্যাঁ|হ্যা|হুম|হুঁ|অবশ্যই|ঠিক আছে|ঠিক|করছি|করুন|নিব|নিন|দিবেন|দেবেন|"
+    r"অর্ডার করুন|অর্ডার কনফার্ম|অর্ডার কনফার্ম করুন"
+    r")(?:\s*[!.।]*\s*)$",
+    re.IGNORECASE,
+)
+
+# PROVIDE_QUANTITY (F1/F2): the customer answers with a quantity+unit ("2 pcs",
+# "2 pack den", "৫টা"). Detected before any product-search re-interpretation.
+_QUANTITY_TOKEN_RE = re.compile(
+    r"(?:^|\s)(?P<qty>\d+|[০-৯]+|এক|দুই|তিন|চার|পাঁচ|one|two|three|four|five)"
+    r"\s*(?:pcs|pc|pieces?|piece|pack|packs|টা|টি|ta|পিস|প্যাক|খানা|"
+    r"kg|কেজি|gm|গ্রাম|কেজি)(?!\w)",
+    re.IGNORECASE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +266,23 @@ _INTENT_PATTERNS: list[tuple[str, re.Pattern, float]] = [
         r"(recommend|suggest|popular|best.?seller|সাজেস্ট|রিকমেন্ডেড|"
         r"সাজেশন|popular|trending)", re.IGNORECASE
     ), 0.8),
+
+    # Store identity ("nam ki apnar?", "phone number den", "address kothay?")
+    # — must NOT fall into product search (R6/F5). Tight patterns only:
+    # "Ei address e din" (order edit) must not match → address requires a
+    # question/possession word ("kothay", "apnader", "your", "apnar").
+    ("STORE_INFO", re.compile(
+        r"(nam ki apnar|ki nam|ki nam tomader|apnader nam|apnar nam|"
+        r"tumar nam|আপনার নাম|তোমার নাম|"
+        r"phone number (den|ta)?|number (ta )?den|apnader (?:phone )?number|"
+        r"apnar (?:phone )?number|phone (?:ta|no)?(?: ?den)?$|"
+        r"hotline|হটলাইন|contact number|যোগাযোগ নম্বর|"
+        r"apnader (?:delivery )?address|your (?:shop |store )?address|"
+        r"address kothay|shop (?:er )?address|সম্পূর্ণ ঠিকানা কী|"
+        r"দোকান কোথায়|স্টোর কোথায়|আপনাদের ঠিকানা|আপনার ঠিকানা কোথায়|"
+        r"kothay achen|kothay acho|কোথায় আছেন)",
+        re.IGNORECASE
+    ), 0.9),
 ]
 
 # Single-word/no-context small talk patterns
@@ -295,6 +338,29 @@ class IntentDetector:
         if _SMALL_TALK_RE.fullmatch(cleaned):
             return "SMALL_TALK", 0.75
 
+        # F1: AFFIRM (ji/hm/ho re bhai/হ্যাঁ) — an answer to the current bot
+        # question, never a product search. Inside an active order workflow
+        # the orchestrator's first-strike routing consumes these via the
+        # workflow; here we only tag them so the pipeline replies chat-style.
+        stage = IntentDetector._stage_of(context)
+        affirm = bool(_AFFIRM_PATTERN.match(cleaned))
+        if affirm:
+            if stage in ("order_collecting", "awaiting_confirmation"):
+                return "AFFIRM", 0.95
+            # Outside an order context a bare confirmation is chit-chat — the
+            # "confirm right after an ORDER question" gate (2a, orchestrator)
+            # still upgrades it to CREATE_ORDER when the last bot question
+            # asked for an order.
+            return "SMALL_TALK", 0.75
+
+        # F1/F2: PROVIDE_QUANTITY ("2 pcs", "2 pack den", "৫টা") — captured
+        # into the session's pre_collected before anything else interprets it
+        # as a search ("pack" matches products like "Fly Glue Trap (10 Pcs)").
+        if _QUANTITY_TOKEN_RE.search(cleaned):
+            if stage in ("order_collecting", "awaiting_confirmation"):
+                return "PROVIDE_QUANTITY", 0.9
+            return "PROVIDE_QUANTITY", 0.9
+
         scores: dict[str, float] = {}
 
         for intent_name, pattern, confidence in _INTENT_PATTERNS:
@@ -316,7 +382,7 @@ class IntentDetector:
             # Bare product-name messages ("cradle?", "bottle?", "dolna?") match
             # no pattern but are clearly product queries — search them instead
             # of falling to UNKNOWN (which answers from memory without tools).
-            if IntentDetector._is_short_product_query(cleaned):
+            if IntentDetector._is_short_product_query(cleaned, context):
                 return "SEARCH_PRODUCT", 0.7
             product_intent = IntentDetector._match_catalog_product(text, context)
             return (product_intent or "UNKNOWN", 0.65 if product_intent else 0.0)
@@ -344,20 +410,64 @@ class IntentDetector:
         return best_intent, best_conf
 
     @staticmethod
-    def _is_short_product_query(text: str) -> bool:
+    def _stage_of(context) -> str:
+        """Coarse conversation stage (F1) — 'browsing' when unknown."""
+        try:
+            if context is None:
+                return "browsing"
+            conv = getattr(context, "conversation", None)
+            if conv is None:
+                return "browsing"
+            from .state import get_stage
+            return get_stage(conv)
+        except Exception:
+            return "browsing"
+
+    @staticmethod
+    def _is_short_product_query(text: str, context=None) -> bool:
         """True when a short message is likely a bare product query.
 
         "cradle?", "bottle ache?", "dolna?" — no intent pattern matched, but a
         short message containing a real content word should be searched, not
         answered from memory. Pure filler/acknowledgments ("na", "ok", "ha",
         "thik") are excluded — they're caught earlier as SMALL_TALK.
+
+        F1 demotion: this must NEVER fire when
+        - an order workflow is active (the customer is answering the flow:
+          "5 pcs den" is a quantity, "Basundhara..." is an address),
+        - the text carries ≥10 digits or address keywords ("R/A block Rd 04",
+          "House 12, Bari") — those are details, not catalog queries,
+        - the message is only pronouns/deictics ("eita", "koto", "ki") —
+          leave those to deixis resolution / UNKNOWN extraction.
         """
         if not text or len(text.strip()) > 40:
             return False
+
+        # F1: stage-aware demotion
+        stage = IntentDetector._stage_of(context)
+        if stage in ("order_collecting", "awaiting_confirmation", "post_order"):
+            return False
+        if len(re.sub(r"\D", "", text)) >= 10:
+            return False
+        if re.search(
+            r"(road|block|r/a|house|bari|বাড়ি|বাসা|ঠিকানা|street|rd|"
+            r"sector|bhaban|ভবন|thikana|flat|apartment)", text.lower()
+        ):
+            return False
+
         words = [w for w in re.split(r"[\s,.;:!?/]+", text.lower()) if w]
         if not words or len(words) > 4:
             return False
         if all(w in _QUICK_FILLER_WORDS for w in words):
+            return False
+        # Pronouns/deictics only ("eita", "koto", "ki", "eta", "সেটা") — no
+        # content word, so nothing to search.
+        if all(
+            w in _QUICK_FILLER_WORDS or w in ("eita", "eta", "aita", "ei", "oi",
+                                              "এইটা", "এটা", "ওটা", "সেটা", "ওই",
+                                              "koto", "ki", "kono", "kon")
+            for w in words
+        ):
             return False
         return any(len(w) >= 3 for w in words)
 

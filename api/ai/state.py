@@ -55,6 +55,37 @@ FIELD_LABELS_EN = {
 }
 
 # ---------------------------------------------------------------------------
+# Conversation stages (F1) — coarse routing stage derived from the workflow
+# state. The orchestrator uses this BEFORE intent detection so confirmations,
+# quantities and addresses are never re-interpreted as product searches.
+# ---------------------------------------------------------------------------
+
+STAGES = ("browsing", "order_collecting", "awaiting_confirmation", "post_order")
+
+STATE_TO_STAGE = {
+    "idle": "browsing",
+    "browsing": "browsing",
+    "product_selected": "browsing",
+    "awaiting_product_selection": "order_collecting",
+    "awaiting_variation": "order_collecting",
+    "awaiting_details": "order_collecting",
+    "awaiting_confirmation": "awaiting_confirmation",
+    "checkout": "awaiting_confirmation",
+    "payment": "awaiting_confirmation",
+    "completed": "post_order",
+    "escalated": "browsing",
+}
+
+
+def get_stage(conversation) -> str:
+    """Coarse conversation stage for turn routing (F1)."""
+    try:
+        session = get_session(conversation)
+        return STATE_TO_STAGE.get(session.state, "browsing")
+    except Exception:
+        return "browsing"
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -81,7 +112,8 @@ def transition(conversation, new_state, **updates):
     session.state = new_state
     session.save(update_fields=["state", "current_workflow", "workflow_step",
                                 "collected_data", "pending_confirmation",
-                                "verified", "verification_method", "updated_at"])
+                                "pre_collected", "verified",
+                                "verification_method", "updated_at"])
     return session
 
 
@@ -93,10 +125,12 @@ def reset_session(conversation):
     session.workflow_step = 0
     session.collected_data = {}
     session.pending_confirmation = None
+    session.pre_collected = {}
     session.verified = False
     session.save(update_fields=["state", "current_workflow", "workflow_step",
                                 "collected_data", "pending_confirmation",
-                                "verified", "updated_at"])
+                                "pre_collected", "verified",
+                                "updated_at"])
     return session
 
 
@@ -315,6 +349,61 @@ def _ask_for_missing_fields(missing, lang):
     return f"To complete your order, could you tell me {parts}?"
 
 
+def capture_pre_collected(conversation, text) -> bool:
+    """F3: extract structured details (phone/address/name/quantity) from a
+    message that is NOT inside an active workflow and persist them so a later
+    order flow can seed collected_data from them.
+
+    Without this, a volunteered "Basundhara R/A B Block Rd 04 01935467644"
+    during browsing dies in the UNKNOWN chat path and the order falls back to
+    stale conversation defaults (R4). Never overwrites good data with
+    fragments — only plausible values (≥4 chars, phone-shaped) are kept.
+    """
+    try:
+        details = WorkflowEngine._parse_details(text)
+        qty = WorkflowEngine._parse_quantity(text)
+        digits_total = len(re.sub(r"\D", "", text or ""))
+        session = get_session(conversation)
+        pre = dict(session.pre_collected or {})
+        updated = False
+        for k, v in (details or {}).items():
+            v = (v or "").strip()
+            if not v:
+                continue
+            if k == "customer_phone":
+                digits = re.sub(r"\D", "", v)
+                if len(digits) < 10 and "1" not in v:
+                    continue
+            elif len(v) < 4 and k != "customer_phone":
+                continue
+            # F3 guards: never store garbage names — a message that is a
+            # quantity ("2 pack den"), carries many digits, or is a
+            # confirm/cancel token is not a name.
+            if k == "customer_name":
+                if (qty or digits_total >= 4
+                        or WorkflowEngine.CONFIRM_RE.search(v)
+                        or WorkflowEngine.CANCEL_RE.search(v)):
+                    continue
+            pre[k] = v
+            updated = True
+        if qty:
+            pre["quantity"] = qty
+            updated = True
+        if not updated:
+            return False
+        pre["ts"] = timezone.now().isoformat()
+        session.pre_collected = pre
+        session.save(update_fields=["pre_collected", "updated_at"])
+        logger.info(
+            "pre_collected captured conv=%s keys=%s",
+            conversation.pk, [k for k in list(pre.keys()) if k != "ts"],
+        )
+        return True
+    except Exception as exc:
+        logger.warning("pre_collected capture failed conv=%s: %s", getattr(conversation, "pk", "?"), exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Order workflow (P1-11/P1-12)
 # ---------------------------------------------------------------------------
@@ -329,7 +418,8 @@ class WorkflowEngine:
     CONFIRM_RE = re.compile(
         r"^(yes|yep|yeah|confirm|ok|okay|sure|done|correct|ha|han|hmm|hm|"
         r"ji|jii|hobe|ঠিক|হ্যাঁ|হ্যা|হুম|হুঁ|অবশ্যই|ঠিক আছে|অর্ডার করুন|confirm|ship it|"
-        r"হবে|করছি|করুন|নিব|নিন|দিবেন|দেবেন)",
+        r"হবে|করছি|করুন|নিব|নিন|দিবেন|দেবেন|"
+        r"ho re ?(bhai|vai|ভাই)|are re bhai|ha re bhai)",
         re.IGNORECASE
     )
     CANCEL_RE = re.compile(
@@ -371,7 +461,8 @@ class WorkflowEngine:
     )
     _QUANTITY_RE = re.compile(
         r"(?P<qty>\d+|[০-৯]+|এক|দুই|তিন|চার|পাঁচ|one|two|three|four|five)"
-        r"\s*(?:pcs|pc|pieces?|piece|kg|কেজি|পিস|টা|টি|ta|খানা)(?!\w)", re.IGNORECASE
+        r"\s*(?:pcs|pc|pieces?|piece|pack|packs|প্যাক|খানা|"
+        r"kg|কেজি|পিস|টা|টি|ta)(?!\w)", re.IGNORECASE
     )
     _BN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
@@ -731,15 +822,34 @@ class WorkflowEngine:
         if repeat_from and not quantity:
             quantity = int(repeat_from.get("quantity") or 1)
 
+        # F3: freshly volunteered details (pre_collected, e.g. "Basundhara
+        # R/A B Block Rd 04 01935467644" said minutes ago mid-browsing) beat
+        # stale conversation defaults (a June address must not silently
+        # resurface on a new order). Seeded once; consumed values stay for
+        # the whole flow so mid-flow re-entry keeps them.
+        pre_collected = {}
+        try:
+            pre_session = get_session(conversation)
+            pre_collected = dict(pre_session.pre_collected or {})
+        except Exception:
+            pre_collected = {}
+
+        def _seed(field):
+            fresh = (pre_collected.get(field) or "").strip()
+            if fresh:
+                return fresh
+            return ""
+
+        name_def = (context.customer.name or "").strip() or (repeat_from or {}).get("customer_name", "") or ""
+        phone_def = (context.customer.phone or "").strip() or (repeat_from or {}).get("customer_phone", "") or ""
+        addr_def = (context.customer.address or "").strip() or (repeat_from or {}).get("customer_address", "") or ""
+
         collected = {
-            "customer_name": (context.customer.name or "").strip()
-                             or (repeat_from or {}).get("customer_name", "") or "",
-            "customer_phone": (context.customer.phone or "").strip()
-                              or (repeat_from or {}).get("customer_phone", "") or "",
-            "customer_address": (context.customer.address or "").strip()
-                                or (repeat_from or {}).get("customer_address", "") or "",
+            "customer_name": _seed("customer_name") or name_def,
+            "customer_phone": _seed("customer_phone") or phone_def,
+            "customer_address": _seed("customer_address") or addr_def,
             "pid": pid,
-            "quantity": quantity or 1,
+            "quantity": quantity or int(pre_collected.get("quantity") or 1),
             "product_name": selected.get("name", ""),
         }
 
@@ -950,22 +1060,42 @@ class WorkflowEngine:
         name = ""
         address = ""
         named_parts = []
+        # Address-shaped content — a name never contains these; "Basundhara
+        # Ra b block Rd 04" is an address even without an explicit label.
+        _ADDR_KW_RE = re.compile(
+            r"(road|block|r/a|rd(?:\s|$)|house|street|sector|bhaban|flat|"
+            r"apartment|bari|বাড়ি|বাসা|ঠিকানা|ভবন|নগর|city|dhaka|ঢাকা|"
+            r"moholla|মহল্লা|goli|গলি|lane|tower|টাওয়ার|shopping)", re.IGNORECASE
+        )
         for p in parts:
             digits = re.sub(r"\D", "", p)
             if len(digits) >= 10:
-                phone = digits
+                # Phone = the mobile-shaped number in the message, NOT every
+                # digit ("Basundhara Rd 04 01935467644" → 01935467644, never
+                # "0401935467644" — the "04" belongs to the address).
+                m_phone = re.search(r"(?:\+?88)?0?1\d{9}\b", p)
+                if m_phone:
+                    phone = m_phone.group(0).lstrip("+88")
+                else:
+                    phone = digits[:15]
                 rest = re.sub(r"\d", "", p).strip(" ,;-")
                 rest = _strip_lead(rest)
-                if len(rest) >= 3 and not name:
-                    name = rest
+                if len(rest) >= 3:
+                    if _ADDR_KW_RE.search(rest):
+                        address = rest  # address-shaped remainder, not a name
+                    elif not name:
+                        name = rest
             else:
                 cleaned = _strip_lead(p)
                 if cleaned:
-                    named_parts.append(cleaned)
+                    if _ADDR_KW_RE.search(cleaned) and not address:
+                        address = cleaned
+                    else:
+                        named_parts.append(cleaned)
         if not name and named_parts:
             name = _strip_lead(named_parts.pop(0))
         if named_parts:
-            address = ", ".join(named_parts)
+            address = ", ".join(named_parts) or address
         return {
             "customer_name": name,
             "customer_phone": phone,
@@ -990,6 +1120,23 @@ class WorkflowEngine:
             if len(_re.sub(r"\D", "", value)) >= 4:
                 return ("দুঃখিত, নামটা বুঝতে পারিনি — ওটা নম্বর মনে হচ্ছে। আপনার নাম জানাবেন? 🛒" if lang == "bn"
                         else "Sorry, that looks like a number. What is your name? 🛒")
+            # Address-shaped values ("Basundhara Ra b block Rd 04") are never
+            # names — keep them out of the name field.
+            if _re.search(
+                r"(road|block|r/a|rd(?:\s|$)|house|street|sector|bhaban|flat|"
+                r"apartment|bari|বাড়ি|বাসা|ঠিকানা|ভবন|dhaka|ঢাকা|moholla|গলি)",
+                value.lower()
+            ):
+                return ("দুঃখিত, সেটা ঠিকানা মনে হচ্ছে। আপনার নামটা জানাবেন? 🛒" if lang == "bn"
+                        else "Sorry, that looks like an address. What is your name? 🛒")
+            # Order-speak ("order confirm koren", "2 pcs den") is never a name.
+            if _re.search(
+                r"\b(order|confirm|confirm kor|koren|অর্ডার|নিশ্চিত|কনফার্ম|"
+                r"den|diben|দেন|দিবেন|nibo|নিবো|নিব|চাই|corbo|korbo)\b",
+                value.lower()
+            ):
+                return ("দুঃখিত, নামটা বুঝতে পারিনি। আপনার নাম জানাবেন? 🛒" if lang == "bn"
+                        else "Sorry, I didn't catch that. What is your name? 🛒")
         if field == "customer_phone":
             digits = _re.sub(r"\D", "", value)
             if len(digits) < 10:

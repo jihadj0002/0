@@ -128,12 +128,43 @@ class Orchestrator:
             except Exception:
                 pass
 
+        # Step 1c (F1): STAGE-FIRST routing. When an order workflow is active,
+        # the workflow consumes order-ish messages BEFORE intent detection runs —
+        # a quantity ("2 pcs"), details ("Basundhara R/A B Block Rd 04
+        # 01935467644") or a confirmation ("Ho re bhai") is a flow answer,
+        # never a product search (R1/R4/R5). Non-order content (questions,
+        # browse requests) returns None and the normal pipeline answers while
+        # the flow stays paused.
+        from .state import WorkflowEngine, get_stage
+        stage = get_stage(conversation)
+        context.stage = stage
+        if stage in ("order_collecting", "awaiting_confirmation"):
+            wf_result = WorkflowEngine.handle_message(conversation, customer_text, context)
+            if wf_result:
+                response = Response(text=wf_result.get("text", ""))
+                self.last_response = response
+                self.last_reply_id = reply_id
+                self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
+                logger.info("Orchestrator stage-first workflow consumed conv=%s", conversation.pk)
+                return
+
         # Step 2: Detect intent
         intent_name, intent_conf = self.intent_detector.detect_with_confidence(customer_text, context)
         from .context import Intent as IntentDC
         context.intent = IntentDC(name=intent_name, confidence=intent_conf)
         self._intent_name = intent_name
         self._intent_conf = intent_conf
+
+        # F1: AFFIRM outside a live workflow is chit-chat — never a product
+        # search ("Ho re bhai" used to search the catalog). The 2a gate below
+        # still upgrades it to CREATE_ORDER right after an order question, so
+        # a "Ji" answer to "...অর্ডার করতে চান?" starts the order flow.
+        if intent_name == "AFFIRM":
+            intent_name = "SMALL_TALK"
+            context.intent = IntentDC(name=intent_name, confidence=0.75)
+            self._intent_name = intent_name
+            self._intent_conf = 0.75
+            logger.info("Orchestrator AFFIRM → SMALL_TALK conv=%s", conversation.pk)
 
         # Step 2a: A confirmation ("ok", "হ্যাঁ") right after an ORDER question
         # ("...নিতে আগ্রহী?") means the customer wants that product → order flow.
@@ -177,6 +208,18 @@ class Orchestrator:
                     logger.info("Captured volunteered phone conv=%s", conversation.pk)
                 except Exception:
                     logger.exception("Phone capture failed conv=%s", conversation.pk)
+
+        # F3: structured details volunteered mid-browsing ("Basundhara R/A B
+        # Block Rd 04 01935467644") are captured into session.pre_collected
+        # so a later order flow seeds from them instead of stale conversation
+        # defaults (R4). Runs before the repeated-UNKNOWN → CATALOG gate so
+        # both paths keep the extracted data.
+        if intent_name == "UNKNOWN":
+            try:
+                from .state import capture_pre_collected
+                capture_pre_collected(conversation, customer_text)
+            except Exception:
+                logger.exception("pre_collected capture failed conv=%s", conversation.pk)
 
         # Repeated "didn't understand": after one failed turn, proactively show
         # the catalog (text + cards) instead of looping the same canned apology.
@@ -241,6 +284,34 @@ class Orchestrator:
                 self.last_reply_id = reply_id
                 self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
                 return
+
+        # F2: PROVIDE_QUANTITY ("2 pack den", "5টা") with an active stage was
+        # already consumed by the workflow (step 1c). In browsing stage this
+        # starts the order flow immediately when a product resolves — waiting
+        # for an explicit "order" word is how the Aug-12 session lost the
+        # quantity (R2/R3). With no resolvable product the quantity is safely
+        # pre-captured and the flow asks which product.
+        if intent_name == "PROVIDE_QUANTITY":
+            try:
+                from .state import capture_pre_collected
+                capture_pre_collected(conversation, customer_text)
+            except Exception:
+                logger.exception("PROVIDE_QUANTITY pre-capture failed conv=%s", conversation.pk)
+            started = WorkflowEngine.start_order_flow(conversation, context)
+            if started:
+                response = Response(text=started.get("text", ""))
+                self.last_response = response
+                self.last_reply_id = reply_id
+                self._save_and_send(conversation, response, reply_id, dry_run=self.dry_run)
+                logger.info(
+                    "Orchestrator PROVIDE_QUANTITY → order flow conv=%s",
+                    conversation.pk,
+                )
+                return
+            intent_name = "UNKNOWN"
+            context.intent = IntentDC(name=intent_name, confidence=0.0)
+            self._intent_name = intent_name
+            self._intent_conf = 0.0
 
         # Step 3: Generate plan (structured AIPlan — deterministic tiers are
         # free; the LLM tier is software-validated before anything executes)
