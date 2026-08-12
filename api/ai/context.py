@@ -32,7 +32,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
             f"Name: {identity.name}\n"
             f"Role: {identity.role or 'Sales & Support Agent'}\n"
             f"Tone: {identity.tone}  |  Style: {identity.style}  |  Language: {identity.language}\n"
-            f"Always respond in the customer's detected language, defaulting to {identity.language}."
+            "Default reply language is Bengali; only switch if the customer clearly uses another language or asks for English."
         )
 
     if rules and rules.custom_instructions:
@@ -41,7 +41,8 @@ def build_system_prompt(user, conversation, image_analysis=None):
     parts.append(
         "## LANGUAGE\n"
         "- Default reply language: Bengali (বাংলা).\n"
-        "- If the customer writes in English, reply in English; if they use Bangla transliteration, reply in Bengali.\n"
+        "- Only reply in English when the customer clearly writes full English sentences or explicitly asks for English.\n"
+        "- If the customer uses Bangla transliteration, reply in Bengali.\n"
         "- Use polite Bangla honorifics (আপনি/ভাই/আপা) and a warm, helpful tone.\n"
         "- Format prices as ৳123 and say 'টাকা' naturally in Bangla.\n"
         "- Keep replies short and natural for chat.\n"
@@ -111,6 +112,8 @@ def build_system_prompt(user, conversation, image_analysis=None):
     parts.append(
         "## RESPONSE FLOW\n"
         "- For images: use analyzed SKU/name first, then search.\n"
+        "- If the customer asks for photos (ছবি/pic), call send_images using focused products or search results.\n"
+        "- If the customer provides a PID/SKU, search by that exact code or call get_product_details.\n"
         "- Never claim to send images without send_images.\n"
         "- send_images(pid=...) for one, send_images(pids=[...]) for many.\n"
         "- Keep reply short: name + price + one follow-up.\n"

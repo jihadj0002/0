@@ -60,6 +60,26 @@ def _split_text_messages(text):
     return parts if len(parts) > 1 else [text]
 
 
+def _fallback_reply(last_search, pending_images, product_cards):
+    if pending_images or product_cards:
+        return "ছবিগুলো পাঠালাম। কোনটা পছন্দ হয়েছে?"
+
+    products = (last_search or {}).get("products") or []
+    if products:
+        labels = []
+        for p in products[:3]:
+            name = (p.get("name") or p.get("pid") or "").strip()
+            price = p.get("discounted_price") or p.get("price")
+            if name and price:
+                labels.append(f"{name} (৳{price})")
+            elif name:
+                labels.append(name)
+        if labels:
+            return f"এইগুলো আছে: {', '.join(labels)}। কোনটা দেখতে চান?"
+
+    return "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
+
+
 
 
 def _summarize_tool_result(tool_name, result):
@@ -225,6 +245,7 @@ def run(conversation, incoming_message):
     image_promise_corrected = False
     search_called = False
     focus_hinted = False
+    last_search = None
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|"
@@ -331,6 +352,9 @@ def run(conversation, incoming_message):
             result = execute_tool(fn_name, fn_args, user, conversation)
             elapsed = int((time.time() - t0) * 1000)
 
+            if fn_name == "search_products":
+                last_search = result
+
             # Log every tool call to ToolCallLog for audit trail
             try:
                 ToolCallLog.objects.create(
@@ -426,12 +450,12 @@ def run(conversation, incoming_message):
             })
 
         if transferred:
-            final_text = "I'm connecting you with a human agent now. Please wait a moment."
+            final_text = "আমি এখন একজন মানুষ এজেন্টের সাথে যুক্ত করে দিচ্ছি। একটু অপেক্ষা করুন।"
             break
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
-        final_text = "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
+        final_text = _fallback_reply(last_search, pending_images, product_cards)
 
     # Safety net: the AI must never put image URLs in text — images go only via
     # send_images. Strip any that slipped through before saving/sending.
