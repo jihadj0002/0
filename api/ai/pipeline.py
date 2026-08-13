@@ -91,6 +91,34 @@ def _limit_questions(text):
     return cleaned
 
 
+# Canned English phrases that leak through generic replies. The AI must speak
+# Bengali by default, so translate the common ones instead of sending English.
+_EN_TO_BN_PHRASES = [
+    ("How can I help you today?", "আজ আপনাকে কিভাবে সাহায্য করতে পারি?"),
+    ("How can I help you?", "আপনাকে কিভাবে সাহায্য করতে পারি?"),
+    ("Can I help you with anything else?", "আর কিছুতে সাহায্য লাগবে?"),
+    ("Please wait a moment.", "একটু অপেক্ষা করুন।"),
+    ("Thank you!", "ধন্যবাদ!"),
+    ("You're welcome!", "একদম! আবার আসবেন।"),
+    ("Sorry,", "দুঃখিত,"),
+    ("Sorry!", "দুঃখিত!"),
+]
+
+
+def _translate_canned_english(text):
+    if not text:
+        return text
+    # Only touch replies that are predominantly Latin-script (English leak).
+    latin = sum(1 for ch in text if ch.isascii() and ch.isalpha())
+    if text and latin < max(4, len(text) // 4):
+        return text
+    out = text
+    for en, bn in _EN_TO_BN_PHRASES:
+        if en in out:
+            out = out.replace(en, bn)
+    return out
+
+
 
 
 def _summarize_tool_result(tool_name, result):
@@ -257,6 +285,7 @@ def run(conversation, incoming_message):
     search_called = False
     focus_hinted = False
     kb_called = False
+    kb_empty = False
     last_search = None
     last_order = None
     _product_keywords = re.compile(
@@ -269,7 +298,9 @@ def run(conversation, incoming_message):
     _policy_keywords = re.compile(
         r"(delivery|shipping|return|refund|exchange|warranty|payment|bkash|nagad|"
         r"cash on delivery|cod|ডেলিভারি|ডেলিভারি চার্জ|রিটার্ন|রিফান্ড|"
-        r"এক্সচেঞ্জ|ওয়ারেন্টি|পেমেন্ট|বিকাশ|নগদ|ক্যাশ অন ডেলিভারি)",
+        r"এক্সচেঞ্জ|ওয়ারেন্টি|পেমেন্ট|বিকাশ|নগদ|ক্যাশ অন ডেলিভারি|"
+        r"delivery time|time lage|koidin|kotodin|koto din|days|দিন লাগে|"
+        r"dhakar baire|বাইরে|outside dhaka|bole dewa|দেওয়া|চার্জ|charge)",
         re.IGNORECASE,
     )
 
@@ -370,6 +401,20 @@ def run(conversation, incoming_message):
                     ),
                 })
                 continue
+
+            if kb_empty:
+                kb_empty = False
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "The knowledge base has no answer for this. Reply from the "
+                        "## Store section (store name, address, delivery charge inside/"
+                        "outside Dhaka, support hours, WhatsApp) and keep it human and "
+                        "brief. Do NOT list products and do NOT ask for an order."
+                    ),
+                })
+                continue
             final_text = candidate
             break
 
@@ -435,6 +480,9 @@ def run(conversation, incoming_message):
             # NEVER expose raw URLs back to the LLM — the model only gets
             # a confirmation; visuals are sent separately by send_reply.
             tool_content = result
+            if fn_name == "search_knowledge_base" and isinstance(result, dict):
+                if result.get("total", 0) == 0 and not (result.get("results") or []):
+                    kb_empty = True
             if fn_name == "send_images" and isinstance(result, dict):
                 products = result.get("products")
                 if products:
@@ -511,6 +559,7 @@ def run(conversation, incoming_message):
     # send_images. Strip any that slipped through before saving/sending.
     final_text = _strip_image_urls(final_text)
     final_text = _limit_questions(final_text)
+    final_text = _translate_canned_english(final_text)
 
     # Deduplicate image URLs, cap at 5
     seen = set()

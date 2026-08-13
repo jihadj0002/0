@@ -35,6 +35,30 @@ def build_system_prompt(user, conversation, image_analysis=None):
             "Default reply language is Bengali; only switch if the customer clearly uses another language or asks for English."
         )
 
+    # --- Store info (early — the most-asked questions are store facts) ---
+    if store:
+        parts.append(
+            f"## Store\n"
+            f"Name: {store.store_name or 'Our Store'}\n"
+            f"Address: {store.address or 'Not set'}\n"
+            f"WhatsApp: {store.whatsapp_number or 'Not set'}\n"
+            f"Support hours: {store.support_open_time} – {store.support_close_time} ({store.timezone})\n"
+            f"Currency: {store.currency}\n"
+            f"Delivery inside: {store.delivery_charge_inside} {store.currency}  |  "
+            f"Outside: {store.delivery_charge_outside} {store.currency}"
+        )
+
+        # Explicit rules for the most common customer questions — answer these
+        # DIRECTLY from the Store block above (never list products for them).
+        parts.append(
+            "## STORE Q&A RULES (answer directly, never list products)\n"
+            f"- Customer asks for the shop name → say '{store.store_name or 'our store'}'\n"
+            "- Customer asks delivery charge → give the exact inside/outside numbers from ## Store\n"
+            "- Customer asks delivery time, hours of operation, address, or payment → answer from ## Store\n"
+            "- If the knowledge base has no answer, still answer from ## Store.\n"
+            "- Do NOT collect an address or push an order for these questions.\n"
+        )
+
     if rules and rules.custom_instructions:
         parts.append(f"## Custom Instructions (user-defined)\n{rules.custom_instructions}")
 
@@ -76,7 +100,9 @@ def build_system_prompt(user, conversation, image_analysis=None):
     parts.append(
         "## WORKFLOW (product requests)\n"
         "1) think(): plan 2-3 queries.\n"
-        "2) search_products with different keywords (Bengali → English).\n"
+        "2) search_products with different keywords — try the product's BENGALI name "
+        "(names are stored in Bengali), an English translation, and the customer's "
+        "transliteration (e.g. 'বরইয়ের আচার', 'boroi achar', 'pickle').\n"
         "3) Verify names match; if not, search again.\n"
         "4) Respond with genuine matches or say out of stock.\n"
     )
@@ -95,7 +121,11 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "to escalate genuine complaints, angry customers, or out-of-scope requests.\n"
         "- Use search_knowledge_base for FAQs, policies, delivery info — not for products.\n"
         "- Never paste image URLs in text — use send_images only.\n"
-        "- Before create_order collect: customer name, phone, delivery address.\n"
+        "- Before create_order collect: name, phone, delivery address.\n"
+        "- Before create_order, ALWAYS confirm the delivery zone (inside/outside Dhaka) "
+        "when the address doesn't state it, and confirm the final total "
+        "(item total + delivery charge) with the customer BEFORE creating the order.\n"
+        "- After the customer confirms with a clear yes (e.g. 'ok', 'hobe', 'confirm'), create the order.\n"
         f"- Keep replies {tone} and {style}."
     )
 
@@ -129,19 +159,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
         "- Keep reply short: name + price + one follow-up.\n"
         "- Multi-item order: confirm items, then create_order.\n"
     )
-
-    # --- Store info ---
-    if store:
-        parts.append(
-            f"## Store\n"
-            f"Name: {store.store_name or 'Our Store'}\n"
-            f"Address: {store.address or 'Not set'}\n"
-            f"WhatsApp: {store.whatsapp_number or 'Not set'}\n"
-            f"Support hours: {store.support_open_time} – {store.support_close_time} ({store.timezone})\n"
-            f"Currency: {store.currency}\n"
-            f"Delivery inside: {store.delivery_charge_inside} {store.currency}  |  "
-            f"Outside: {store.delivery_charge_outside} {store.currency}"
-        )
 
     # --- Behavior rules ---
     if rules:
@@ -189,15 +206,20 @@ def build_system_prompt(user, conversation, image_analysis=None):
     # --- Catalogue snapshot ---
     # For an external/live source, do NOT inline a list — the live catalog is
     # large and dynamic; the AI must use search_products (enforced in the rules).
-    if not external_catalog and not focus_list:
+    if not external_catalog:
         available_products = list(Product.objects.filter(user=user, status=True)[:10])
         if available_products:
-            lines = ["## Available Products (sample — use search_products for the full catalog)"]
+            lines = ["## Available Products (names are the EXACT catalog entries — search_products uses these names, prices are fetched fresh by the tool)"]
             for p in available_products:
                 desc = (p.description or "")[:80]
                 lines.append(
                     f"- {p.name} (PID: {p.pid}) — {p.price} {currency}"
                     + (f" — {desc}" if desc else "")
+                )
+            if focus_list:
+                lines.append(
+                    "Use these names to translate customer transliterations into the "
+                    "exact Bangla product names when searching."
                 )
             parts.append("\n".join(lines))
         else:

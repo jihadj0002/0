@@ -243,6 +243,137 @@ def _content_tokens(text):
     return [t for t in toks if t not in _STOPWORDS and not t.isdigit() and len(t) >= 2]
 
 
+def _normalize_bangla(text):
+    """Strip Bangla vowel signs + juktakkhor to approximate a Latin search term.
+
+    'বরইয়ের' → 'বরইর' — still Bangla, but matches tokens like 'বরই' more
+    easily than the conjunct 'য়ের' form. Used to catch typo/transliteration
+    variants without a full translator.
+    """
+    return re.sub(
+        r"[\u09BE-\u09CD\u09D7\u09DC\u09DD\u09DF\u200C\u200D]+", "", text or ""
+    )
+
+
+# Rough Bangla → Latin map (only for search hints, not translation).
+_BN_TO_LATIN = {
+    # independent vowels
+    "অ": "o", "আ": "a", "ই": "i", "ঈ": "i", "উ": "u", "ঊ": "u",
+    "এ": "e", "ঐ": "oi", "ও": "o", "ঔ": "ou",
+    # consonants
+    "ক": "k", "খ": "kh", "গ": "g", "ঘ": "gh", "ঙ": "ng",
+    "চ": "c", "ছ": "ch", "জ": "j", "ঝ": "jh", "ঞ": "n",
+    "ট": "t", "ঠ": "th", "ড": "d", "ঢ": "dh", "ণ": "n",
+    "ত": "t", "থ": "th", "দ": "d", "ধ": "dh", "ন": "n",
+    "প": "p", "ফ": "ph", "ব": "b", "ভ": "bh", "ম": "m",
+    "য": "j", "র": "r", "ল": "l", "শ": "sh", "ষ": "sh",
+    "স": "s", "হ": "h", "ড়": "r", "ঢ়": "rh", "য়": "y",
+    # dependent vowel signs
+    "া": "a", "ি": "i", "ী": "i", "ু": "u", "ূ": "u",
+    "ে": "e", "ৈ": "oi", "ো": "o", "ৌ": "ou", "ৃ": "ri",
+    "ঃ": "h", "ং": "ng", "ঁ": "n",
+    "়": "", "্": "", "\u200c": "", "\u200d": "",
+}
+
+_BN_CONSONANTS = frozenset(
+    "কখগঘঙচছজঝঞটঠডঢণতথদধনপফবভমযরলশষসহড়ঢ়য়"
+)
+
+_BN_VOWEL_SIGNS = frozenset("া ি ী ু ূ ে ৈ ো ৌ ৃ".split())
+
+_BN_LETTER_RE = re.compile(
+    "[" + "".join(re.escape(ch) for ch in _BN_TO_LATIN.keys()) + "]", re.UNICODE
+)
+
+
+def _to_latin(text):
+    """Very rough Bangla→Latin phonetic hint (for matching only).
+
+    'বরইয়ের আচার' → 'boriyer achar' — enough to match 'boroi/borui achar'.
+    """
+    chars = text or ""
+    out = []
+    i = 0
+    while i < len(chars):
+        ch = chars[i]
+        nxt = chars[i + 1] if i + 1 < len(chars) else ""
+        # 'য়' is stored as 'য' + nukta (U+09AF + U+09BC) → 'y'
+        if ch == "য" and nxt == "়":
+            out.append("y")
+            i += 2
+            continue
+        latin = _BN_TO_LATIN.get(ch)
+        if latin is None:
+            out.append(ch)
+            i += 1
+            continue
+        if ch in _BN_CONSONANTS:
+            # inherent 'o' (অ) when the consonant is NOT followed by a vowel
+            # sign and NOT part of a conjunct (virama) — 'বরইয়ের' reads
+            # 'boro' + 'iyer' ≈ 'boroi'/'borui', not 'briyer'.
+            if nxt and (nxt in _BN_VOWEL_SIGNS or nxt == "্"):
+                out.append(latin)
+            else:
+                out.append(latin + "o")
+        else:
+            out.append(latin)
+        i += 1
+    return "".join(out)
+
+
+def _strip_trailing_vowels(latin):
+    """Drop trailing a/e/i/o/u per word — customers write 'achar', not 'acaro'."""
+    words = re.split(r"([^a-z0-9]+)", (latin or "").lower())
+    out = []
+    for w in words:
+        if re.fullmatch(r"[a-z0-9]+", w):
+            w = re.sub(r"[aeiou]+$", "", w)
+        out.append(w)
+    return "".join(out)
+
+
+# Bangla grammatical particles that appear in every product name and pollute
+# transliteration matching ('er' in 'আমের', 'আচার' in 'আমের আচার').
+_BN_PARTICLES = frozenset({
+    "er", "der", "ra", "ta", "te", "ke", "diye", "theke", "ar", "ebong",
+    "or", "ir", "erir", "eririr",
+})
+
+
+def _matches_latin(query, name_latin):
+    """True if any Latin query token is contained in the Latin transliteration."""
+    if not query or not name_latin:
+        return False
+    toks = [t for t in re.findall(r"[a-z0-9]+", (query or "").lower())
+            if len(t) >= 2 and t not in _STOPWORDS and t not in _BN_PARTICLES]
+    compact = _strip_trailing_vowels(name_latin).replace(" ", "")
+    if any(t in compact for t in toks):
+        return True
+    # Consonant-skeleton match: 'misri' ≈ 'mishro', 'tentul' ≈ 'tetul'.
+    name_toks = [t for t in re.findall(r"[a-z0-9]+", compact) if len(t) >= 3]
+    for qt in toks:
+        q_sk = re.sub(r"[aeiouy]+", "", qt)
+        if len(q_sk) < 3:
+            continue
+        for nt in name_toks:
+            n_sk = re.sub(r"[aeiouy]+", "", nt)
+            if q_sk and n_sk and (q_sk in n_sk or n_sk in q_sk):
+                return True
+    return False
+
+
+def _bangla_matches(query, name):
+    """True if any query token appears in the Bangla-normalized product name."""
+    if not query or not name:
+        return False
+    q = re.findall(r"[a-z0-9]+", (query or "").lower())
+    q = [t for t in q if len(t) >= 2 and t not in _STOPWORDS and t not in _BN_PARTICLES]
+    if not q:
+        return False
+    compact = _normalize_bangla(name).lower().replace(" ", "")
+    return any(t in compact for t in q)
+
+
 
 
 
@@ -517,9 +648,13 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
 
-    # If a product is already selected for this conversation, return it directly
-    # (but check budget — if the focused product doesn't fit, fall through to search).
+    # If a product is already selected for this conversation, keep it but only
+    # as the FIRST result — never short-circuit the search with it. A stale
+    # focus (e.g. "আমের আচার" selected earlier) must not hijack a NEW query
+    # ("বরইয়ের আচার pic den"); the full search still runs and the LLM sees
+    # which results genuinely match the customer's words.
     focus_pid = _focus_pid(conversation)
+    focus_product = None
     if focus_pid:
         try:
             product = Product.objects.get(user=user, pid=focus_pid, status=True)
@@ -530,25 +665,20 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                     in_budget = False
                 if max_price is not None and eff > max_price:
                     in_budget = False
-                if not in_budget:
-                    _clear_focus_product(conversation)
+                if in_budget:
+                    focus_product = _product_row(product)
                 else:
-                    return {
-                        "products": [_product_row(product)],
-                        "total": 1,
-                        "selected_product": True,
-                    }
+                    _clear_focus_product(conversation)
             else:
-                return {
-                    "products": [_product_row(product)],
-                    "total": 1,
-                    "selected_product": True,
-                }
+                focus_product = _product_row(product)
         except Product.DoesNotExist:
             _clear_focus_product(conversation)
 
     # Generic / empty query → show featured first, then fill with anything
-    generic = not query or query.strip().lower() in ("", "product", "products", "show", "list", "all")
+    generic = not query or query.strip().lower() in (
+        "", "product", "products", "show", "list", "all",
+        "ki", "ki ki", "ache", "ki ache", "ki ki ache", "কি কি আছে", "কি আছে",
+    )
     if generic:
         qs = Product.objects.filter(user=user, status=True).order_by("-featured_product", "name")
         products_list = list(qs[:limit])
@@ -561,6 +691,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 | Q(description__icontains=variation)
                 | Q(pid__icontains=variation)
                 | Q(external_id__icontains=variation)
+                | Q(name__regex=_normalize_bangla(variation))
             )
         qs = Product.objects.filter(user=user, status=True).filter(combined_q).order_by("-featured_product", "name")
 
@@ -584,7 +715,37 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                 if len(products_list) >= limit:
                     break
 
+        # Latin transliteration fallback — Bangla product names can't match
+        # 'borui er achar' directly, so ALSO match the rough Latin transliteration.
+        if query and query.strip():
+            kept = []
+            seen2 = {p.pid for p in products_list}
+            for p in Product.objects.filter(user=user, status=True).order_by("-featured_product", "name"):
+                latin = _to_latin(p.name or "")
+                if p.pid not in seen2 and _matches_latin(query, latin):
+                    seen2.add(p.pid)
+                    kept.append(p)
+                    if len(products_list) + len(kept) >= limit:
+                        break
+            products_list.extend(kept)
+
     results = [_product_row(p) for p in products_list]
+
+    # Merge the focused product as the FIRST candidate — only if it actually
+    # relates to what the customer asked (matches query terms). Keeps context
+    # ("the product we were just looking at") without hijacking new searches.
+    if focus_product and not generic and query and query.strip():
+        pname = focus_product.get("name") or ""
+        if not (_bangla_matches(query, pname) or _matches_latin(query, _to_latin(pname))):
+            focus_product = None
+    if focus_product:
+        merged = [focus_product]
+        seen_pid = {focus_product.get("pid")}
+        for r in results:
+            if r.get("pid") not in seen_pid:
+                seen_pid.add(r.get("pid"))
+                merged.append(r)
+        results = merged
 
     if results and conversation:
         _focus_products(conversation, results[:FOCUS_MAX])
