@@ -1,8 +1,13 @@
 {% load crm_extras %}
 <div class="popup-lead">
   <div class="popup-head">
-    <h2>{{ lead.name }}</h2>
-    {% if lead.company %}<div class="popup-sub">{{ lead.company.name }}</div>{% endif %}
+    <div class="popup-head-title">
+      <h2>{{ lead.name }}</h2>
+      {% if lead.company %}<div class="popup-sub">{{ lead.company.name }}</div>{% endif %}
+    </div>
+    {% if can_edit %}
+    <button class="btn btn-primary btn-sm" type="submit" form="leadStageForm">Update</button>
+    {% endif %}
   </div>
 
   <div class="popup-badges">
@@ -52,32 +57,25 @@
   {% if lead.next_followup %}<div class="popup-row"><span class="popup-label">Next Follow-up</span><span class="popup-value">{{ lead.next_followup|date:"M j, Y · g:i A" }}</span></div>{% endif %}
   {% if lead.expected_value %}<div class="popup-row"><span class="popup-label">Expected Value</span><span class="popup-value">৳{{ lead.expected_value|floatformat:0 }}</span></div>{% endif %}
 
-  {% if lead.notes %}
+  {% if can_edit %}
+  <form class="stage-form" id="leadStageForm" data-lead-id="{{ lead.pk }}">
+    <div class="popup-block">
+      <div class="popup-label">Change Stage</div>
+      <select name="stage" class="stage-select">
+        {% for s in stages %}
+        <option value="{{ s.pk }}" {% if lead.stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="popup-block">
+      <div class="popup-label">Notes</div>
+      <textarea name="notes" class="notes-input" rows="4" placeholder="Add notes about this lead…">{{ lead.notes }}</textarea>
+    </div>
+  </form>
+  {% elif lead.notes %}
   <div class="popup-block">
     <div class="popup-label">Notes</div>
     <div class="popup-notes">{{ lead.notes }}</div>
-  </div>
-  {% endif %}
-
-  {% if can_edit %}
-  <div class="popup-block">
-    <div class="popup-label">Change Stage</div>
-    <form class="stage-form" data-lead-id="{{ lead.pk }}">
-      <div class="stage-form-row">
-        <select name="stage" class="stage-select">
-          {% for s in stages %}
-          <option value="{{ s.pk }}" {% if lead.stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>
-          {% endfor %}
-        </select>
-        <button class="btn btn-primary btn-sm" type="submit">Update</button>
-      </div>
-    </form>
-  </div>
-  {% endif %}
-
-  {% if can_edit and not lead.converted %}
-  <div class="popup-block">
-    <button class="btn btn-primary btn-block" onclick="Crm.convertModal({{ lead.pk }})">🏆 Convert to Customer</button>
   </div>
   {% endif %}
 

@@ -412,10 +412,12 @@ def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
     field = request.POST.get("field")
     value = request.POST.get("value")
-    allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to"}
+    allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to", "notes"}
     if field in allowed and (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
         if field == "score":
             value = max(0, min(100, int(value or 0)))
+        if field == "notes":
+            value = (value or "").strip()
         if field == "stage":
             stage = get_object_or_404(PipelineStage, pk=value, tenant__isnull=True)
             update_lead(request.user, lead, stage=stage)

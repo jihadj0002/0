@@ -357,7 +357,10 @@ table.crm-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 
 /* ============ LEAD POPUP (drawer) ============ */
 .popup-lead { display: flex; flex-direction: column; gap: 14px; }
-.popup-head h2 { margin: 0; font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+.popup-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.popup-head-title { min-width: 0; }
+.popup-head h2 { margin: 0; font-size: 1.15rem; font-weight: 700; color: #0f172a; overflow-wrap: break-word; }
+.popup-head .btn { flex-shrink: 0; }
 .popup-sub { color: var(--muted); font-size: .85rem; margin-top: 2px; }
 .popup-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .popup-contact { background: var(--soft); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -369,6 +372,13 @@ table.crm-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .popup-notes { font-size: .88rem; color: #334155; white-space: pre-wrap; background: var(--soft); border-radius: 10px; padding: 12px; }
 .stage-form-row { display: flex; gap: 8px; align-items: center; }
 .stage-form-row .stage-select { flex: 1; min-width: 0; }
+.stage-form .stage-select, .stage-form .notes-input {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+  font-family: inherit; font-size: .9rem; outline: none; background: #fff;
+  transition: border .15s;
+}
+.stage-form .notes-input { resize: vertical; min-height: 90px; line-height: 1.5; }
+.stage-form .stage-select:focus, .stage-form .notes-input:focus { border-color: var(--accent); }
 .popup-footer { display: flex; gap: 8px; margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }
 .popup-loading { padding: 40px 0; text-align: center; color: var(--muted); }
 .btn-block { width: 100%; text-align: center; }

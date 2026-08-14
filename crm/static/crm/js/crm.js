@@ -264,15 +264,17 @@
     if (!form) return;
     e.preventDefault();
     const leadId = form.dataset.leadId;
-    const btn = form.querySelector('button[type=submit]');
-    btn.disabled = true;
+    const notesEl = form.querySelector('textarea[name="notes"]');
+    const btn = document.querySelector('button[form="' + form.id + '"]') || form.querySelector('button[type=submit]');
+    if (btn) btn.disabled = true;
     try {
       const res = await quickUpdate(leadId, 'stage', form.querySelector('.stage-select').value);
-      Crm.toast('Stage updated to ' + res.stage_name, 'success');
+      if (notesEl) await quickUpdate(leadId, 'notes', notesEl.value);
+      Crm.toast(notesEl ? 'Lead updated: ' + res.stage_name : 'Stage updated to ' + res.stage_name, 'success');
       refreshLeadRow(leadId, res);
       window.Crm._openLeadPopup && window.Crm._openLeadPopup(leadId);
     } catch (err) { Crm.toast(err.message, 'error'); }
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   });
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('#assignMeBtn');
