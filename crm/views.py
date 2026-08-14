@@ -412,12 +412,15 @@ def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
     field = request.POST.get("field")
     value = request.POST.get("value")
+    new_notes = request.POST.get("notes")
     allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to", "notes"}
-    if field in allowed and (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
+    if not (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
+        return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+    if new_notes is not None:
+        update_lead(request.user, lead, notes=new_notes.strip())
+    if field in allowed:
         if field == "score":
             value = max(0, min(100, int(value or 0)))
-        if field == "notes":
-            value = (value or "").strip()
         if field == "stage":
             stage = get_object_or_404(PipelineStage, pk=value, tenant__isnull=True)
             update_lead(request.user, lead, stage=stage)
@@ -439,7 +442,10 @@ def ajax_quick_update(request, pk):
             if assignee:
                 name = assignee.get_full_name() or assignee.username
             return JsonResponse({"ok": True, "assignee": name})
-        update_lead(request.user, lead, **{field: value or None})
+        if field == "notes":
+            update_lead(request.user, lead, notes=(value or "").strip())
+        else:
+            update_lead(request.user, lead, **{field: value or None})
         return JsonResponse({"ok": True})
     return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
 
@@ -455,6 +461,60 @@ def ajax_quick_create_lead(request):
         email=request.POST.get("email", ""), source=request.POST.get("source", "manual"),
     )
     return JsonResponse({"ok": True, "created": created, "url": f"/crm/leads/{lead.pk}/"})
+
+
+@crm_role_required("owner")
+@require_POST
+def ajax_analyze_lead_image(request):
+    """Owner-only: vision LLM reads an uploaded image and returns structured leads."""
+    from .ai_import import extract_leads_from_image
+
+    data_url = request.POST.get("image", "").strip()
+    if not data_url:
+        return JsonResponse({"ok": False, "error": "No image received"}, status=400)
+    if len(data_url) > 5 * 1024 * 1024:
+        return JsonResponse({"ok": False, "error": "Image too large (max 5MB)"}, status=400)
+    if not data_url.startswith("data:image/"):
+        return JsonResponse({"ok": False, "error": "Unsupported image format"}, status=400)
+
+    leads = extract_leads_from_image(data_url)
+    if not leads:
+        return JsonResponse({
+            "ok": False,
+            "error": "Couldn't read any lead details from this image. Try a clearer photo of a business card or lead sheet.",
+        })
+    return JsonResponse({"ok": True, "leads": leads})
+
+
+@crm_role_required("owner")
+@require_POST
+def ajax_create_imported_leads(request):
+    """Owner-only: store reviewed leads extracted from an image as unassigned leads."""
+    from .ai_import import create_lead_from_dict, leads_from_payload
+
+    try:
+        payload = json.loads(request.POST.get("leads", "[]"))
+    except (TypeError, ValueError):
+        return JsonResponse({"ok": False, "error": "Invalid lead data"}, status=400)
+
+    entries = leads_from_payload(payload)
+    if not entries:
+        return JsonResponse({"ok": False, "error": "No valid leads to create"}, status=400)
+
+    created_urls, created_count, duplicate_count = [], 0, 0
+    for entry in entries:
+        lead, created = create_lead_from_dict(request.user, entry)
+        if created:
+            created_count += 1
+            created_urls.append(f"/crm/leads/{lead.pk}/")
+        else:
+            duplicate_count += 1
+    return JsonResponse({
+        "ok": True,
+        "created": created_count,
+        "duplicates": duplicate_count,
+        "urls": created_urls,
+    })
 
 
 @staff_required

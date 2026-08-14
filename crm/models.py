@@ -89,6 +89,7 @@ class Lead(models.Model):
         ("telegram", "Telegram"),
         ("manual", "Manual"),
         ("referral", "Referral"),
+        ("import", "Import"),
     ]
 
     uid = ShortUUIDField(length=10, prefix="ld_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
@@ -329,6 +330,7 @@ class SalesScript(models.Model):
         ("renewal", "Renewal"),
         ("upsell", "Upsell"),
         ("lost_customer", "Winning Back Lost Customer"),
+        ("texts", "Texts"),
     ]
 
     title = models.CharField(max_length=200)

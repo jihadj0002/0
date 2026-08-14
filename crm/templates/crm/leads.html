@@ -7,6 +7,9 @@
     <div class="page-sub">{{ total_count }} total leads</div>
   </div>
   <div class="page-actions">
+    {% if role == 'owner' %}
+    <button class="btn btn-soft" onclick="openImageImport()">🖼️ Import from Image</button>
+    {% endif %}
     <button class="btn btn-soft" onclick="openQuickCreate()">+ Quick Add</button>
     <a class="btn btn-primary" href="{% url 'crm:lead_new' %}">+ New Lead</a>
   </div>
@@ -111,6 +114,10 @@
 </div>
 
 <script>
+function openImageImport() {
+  Crm.imageImport();
+}
+
 function openQuickCreate() {
   Crm.openModal('Quick Add Lead', `
     <form id="quickCreateForm" class="form-grid">

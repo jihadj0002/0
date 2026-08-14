@@ -42,11 +42,11 @@
 
       <div class="nav-section">Activities</div>
       <a href="{% url 'crm:followups' %}" class="nav-item {% if request.resolver_match.url_name == 'followups' %}active{% endif %}">
-        <span class="ni">⏱</span> Follow-ups
+        <span class="ni">⏱</span> Start Here (Follow-ups)
       </a>
       
       <a href="{% url 'crm:calls' %}" class="nav-item {% if request.resolver_match.url_name == 'calls' %}active{% endif %}">
-        <span class="ni">☏</span> Calls
+        <span class="ni">☏</span> Call Logs
       </a>
       <a href="{% url 'crm:demos' %}" class="nav-item {% if request.resolver_match.url_name == 'demos' %}active{% endif %}">
         <span class="ni">▶</span> Meetings &amp; Demos

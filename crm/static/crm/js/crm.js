@@ -268,9 +268,10 @@
     const btn = form.querySelector('button[type=submit]');
     if (btn) btn.disabled = true;
     try {
-      const res = await quickUpdate(leadId, 'stage', form.querySelector('.stage-select').value);
-      if (notesEl) await quickUpdate(leadId, 'notes', notesEl.value);
-      Crm.toast(notesEl ? 'Lead updated: ' + res.stage_name : 'Stage updated to ' + res.stage_name, 'success');
+      const payload = { field: 'stage', value: form.querySelector('.stage-select').value };
+      if (notesEl) payload.notes = notesEl.value;
+      const res = await api('/crm/ajax/leads/' + leadId + '/update', 'POST', payload);
+      Crm.toast(notesEl ? 'Lead updated: ' + (res.stage_name || '✓') : 'Stage updated to ' + res.stage_name, 'success');
       refreshLeadRow(leadId, res);
       window.Crm._openLeadPopup && window.Crm._openLeadPopup(leadId);
     } catch (err) { Crm.toast(err.message, 'error'); }
@@ -308,6 +309,180 @@
     });
   }
 
+  /* ---------- import leads from image (owner) ---------- */
+  function fileToDataUrl(file, maxDim) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read file'));
+      reader.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('Not a valid image'));
+        img.onload = () => {
+          const dim = maxDim || 1280;
+          const scale = Math.min(1, dim / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = reader.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function imageImport() {
+    openModal('Import Leads from Image', `
+      <div class="import-drop" id="importDrop">
+        <div class="import-drop-icon">🖼️</div>
+        <div class="import-drop-text">Click to choose an image,<br>or paste it here (Ctrl+V)</div>
+        <div class="form-help">Business card / lead detail sheet — AI reads the details for you.</div>
+        <input type="file" id="importFile" accept="image/*" hidden>
+      </div>
+      <img id="importPreview" class="import-preview" alt="Preview" hidden>
+      <button id="importAnalyzeBtn" class="btn btn-primary btn-block" disabled hidden>⚡ Analyze Image</button>
+      <div id="importStatus" class="import-status" hidden></div>
+      <div id="importReviews"></div>
+      <button id="importCreateBtn" class="btn btn-primary btn-block" hidden>✅ Create Leads</button>`);
+
+    const drop = document.getElementById('importDrop');
+    const fileInput = document.getElementById('importFile');
+    const preview = document.getElementById('importPreview');
+    const analyzeBtn = document.getElementById('importAnalyzeBtn');
+    const statusEl = document.getElementById('importStatus');
+    const reviewsEl = document.getElementById('importReviews');
+    const createBtn = document.getElementById('importCreateBtn');
+    let pendingDataUrl = null;
+
+    const setStatus = (msg, kind) => {
+      statusEl.hidden = !msg;
+      statusEl.textContent = msg || '';
+      statusEl.className = 'import-status' + (kind ? ' import-status-' + kind : '');
+    };
+
+    const handleFile = async (file) => {
+      if (!file || !file.type || !file.type.startsWith('image/')) {
+        Crm.toast('Please choose an image file', 'error');
+        return;
+      }
+      setStatus('Preparing image…');
+      try {
+        pendingDataUrl = await fileToDataUrl(file);
+        preview.src = pendingDataUrl;
+        preview.hidden = false;
+        analyzeBtn.hidden = false;
+        analyzeBtn.disabled = false;
+        setStatus('');
+      } catch (err) {
+        setStatus('');
+        Crm.toast(err.message, 'error');
+      }
+    };
+
+    drop.addEventListener('click', () => fileInput.click());
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+    drop.addEventListener('drop', (e) => {
+      e.preventDefault();
+      drop.classList.remove('drag');
+      handleFile(e.dataTransfer.files && e.dataTransfer.files[0]);
+    });
+    fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+
+    analyzeBtn.addEventListener('click', async () => {
+      if (!pendingDataUrl) return;
+      analyzeBtn.disabled = true;
+      setStatus('Analyzing image with AI…');
+      try {
+        const res = await api('/crm/ajax/leads/analyze-image', 'POST', { image: pendingDataUrl });
+        reviewsEl.innerHTML = res.leads.map((l, i) => `
+          <div class="import-row" data-i="${i}">
+            <div class="import-row-head">
+              <label class="import-check"><input type="checkbox" class="import-include" checked> Create</label>
+              <button type="button" class="import-remove" title="Remove">✕</button>
+            </div>
+            <div class="form-grid">
+              <div class="form-group full"><label>Name *</label><input class="f-name" value="${escHtml(l.name)}"></div>
+              <div class="form-group"><label>Phone</label><input class="f-phone" value="${escHtml(l.phone)}"></div>
+              <div class="form-group"><label>Email</label><input class="f-email" type="email" value="${escHtml(l.email)}"></div>
+              <div class="form-group full"><label>Address</label><input class="f-address" value="${escHtml(l.address)}"></div>
+              <div class="form-group"><label>Website</label><input class="f-website" value="${escHtml(l.website)}"></div>
+              <div class="form-group"><label>Industry</label><input class="f-industry" value="${escHtml(l.industry)}"></div>
+            </div>
+          </div>`).join('');
+        createBtn.hidden = false;
+        createBtn.disabled = res.leads.length === 0;
+        setStatus('Review the extracted details, correct anything, then create the leads.', 'note');
+      } catch (err) {
+        Crm.toast(err.message, 'error');
+      }
+      analyzeBtn.disabled = false;
+    });
+
+    document.addEventListener('click', (e) => {
+      const rm = e.target.closest('.import-remove');
+      if (!rm || !reviewsEl.contains(rm)) return;
+      rm.closest('.import-row').remove();
+      if (!reviewsEl.querySelector('.import-row')) {
+        createBtn.hidden = true;
+        setStatus('');
+      }
+    });
+
+    document.addEventListener('paste', (e) => {
+      if (modalEl.hidden || !drop.isConnected) return;
+      const items = (e.clipboardData || {}).items || [];
+      for (const item of items) {
+        if (item.kind === 'file' && item.type.startsWith('image/')) {
+          e.preventDefault();
+          handleFile(item.getAsFile());
+          return;
+        }
+      }
+    });
+
+    createBtn.addEventListener('click', async () => {
+      const leads = [];
+      reviewsEl.querySelectorAll('.import-row').forEach((row) => {
+        if (!row.querySelector('.import-include').checked) return;
+        const name = row.querySelector('.f-name').value.trim();
+        if (!name) return;
+        leads.push({
+          name,
+          phone: row.querySelector('.f-phone').value.trim(),
+          email: row.querySelector('.f-email').value.trim(),
+          address: row.querySelector('.f-address').value.trim(),
+          website: row.querySelector('.f-website').value.trim(),
+          industry: row.querySelector('.f-industry').value.trim(),
+        });
+      });
+      if (!leads.length) {
+        Crm.toast('No valid leads to create — check names', 'error');
+        return;
+      }
+      createBtn.disabled = true;
+      setStatus('Creating leads…');
+      try {
+        const res = await api('/crm/ajax/leads/create-from-import', 'POST', { leads: JSON.stringify(leads) });
+        let msg = res.created + ' lead' + (res.created === 1 ? '' : 's') + ' created';
+        if (res.duplicates) msg += ', ' + res.duplicates + ' duplicate' + (res.duplicates === 1 ? '' : 's') + ' skipped';
+        Crm.toast(msg, 'success');
+        closeModal();
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        Crm.toast(err.message, 'error');
+        createBtn.disabled = false;
+      }
+    });
+  }
+
   /* ---------- auto-dismiss toasts ---------- */
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.crm-toast').forEach((t) => {
@@ -316,5 +491,5 @@
     initDatepickers(document);
   });
 
-  window.Crm = { api, toast, openModal, closeModal, openDrawer, closeDrawer, getCookie, convertModal, copyText };
+  window.Crm = { api, toast, openModal, closeModal, openDrawer, closeDrawer, getCookie, convertModal, copyText, imageImport };
 })();

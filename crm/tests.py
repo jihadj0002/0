@@ -2,6 +2,7 @@ from django.test import TestCase
 from django.contrib.auth.models import User
 from django.utils import timezone
 from datetime import timedelta
+import json
 
 # Django 5.1.6 + Python 3.14 incompatibility: Context.__copy__ calls
 # copy(super()) which raises AttributeError when the test client stores
@@ -848,15 +849,17 @@ class ConvertFlowTests(CrmBaseTestCase):
         customer = Customer.objects.get(lead=lead)
         self.assertEqual(customer.package, "pro")
 
-    def test_popup_shows_convert_button_for_editable_lead(self):
+    def test_popup_shows_stage_and_notes_update_form(self):
         from django.test import Client
         c = Client()
         c.force_login(self.staff)
         lead, _ = create_lead(self.owner, name="Conv", phone="+8801922", assigned_to=self.staff)
         resp = c.get(f"/crm/ajax/leads/{lead.pk}/popup")
         body = resp.content.decode()
-        self.assertIn("Convert to Customer", body)
-        self.assertIn(f"Crm.convertModal({lead.pk})", body)
+        self.assertIn("leadStageForm", body)
+        self.assertIn('name="notes"', body)
+        self.assertIn('name="stage"', body)
+        self.assertNotIn("Convert to Customer", body)
 
     def test_popup_hides_convert_button_after_conversion(self):
         from django.test import Client
@@ -975,3 +978,154 @@ class ScriptEditTests(CrmBaseTestCase):
         body = resp.content.decode()
         self.assertNotIn("✏️ Edit", body)
         self.assertNotIn("+ New Script", body)
+
+
+class ImageImportTests(CrmBaseTestCase):
+    """Owner-only: image → vision AI → reviewed leads → unassigned leads."""
+
+    FAKE_IMAGE = "data:image/png;base64,iVBORw0KGgo="
+
+    def _extract(self, data_url):
+        return [
+            {"name": "ABC Trading", "phone": "+8801912345678", "email": "a@b.co",
+             "address": "Dhanmondi, Dhaka", "website": "abctrading.com", "industry": "Trading",
+             "summary": "Wholesale supplier."},
+            {"name": "XYZ Restaurant", "phone": "", "email": "", "address": "Gulshan",
+             "website": "", "industry": "", "summary": ""},
+        ]
+
+    def test_analyze_image_creates_leads_payload(self):
+        from unittest.mock import patch
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        with patch("crm.ai_import.extract_leads_from_image", side_effect=self._extract):
+            resp = c.post("/crm/ajax/leads/analyze-image", {"image": self.FAKE_IMAGE})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(len(data["leads"]), 2)
+        self.assertEqual(data["leads"][0]["name"], "ABC Trading")
+        self.assertEqual(data["leads"][0]["phone"], "+8801912345678")
+
+    def test_analyze_image_empty_result_returns_error(self):
+        from unittest.mock import patch
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        with patch("crm.ai_import.extract_leads_from_image", return_value=[]):
+            resp = c.post("/crm/ajax/leads/analyze-image", {"image": self.FAKE_IMAGE})
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(resp.json()["ok"])
+        self.assertIn("Couldn't read any lead details", resp.json()["error"])
+
+    def test_analyze_image_rejects_missing_image(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.post("/crm/ajax/leads/analyze-image", {})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_analyze_image_owner_only(self):
+        from django.test import Client
+        for user in (self.manager, self.staff):
+            c = Client()
+            c.force_login(user)
+            resp = c.post("/crm/ajax/leads/analyze-image", {"image": self.FAKE_IMAGE})
+            self.assertEqual(resp.status_code, 403)
+
+    def test_create_imported_leads(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        leads = [
+            {"name": "ABC Trading", "phone": "+8801912345678", "email": "a@b.co",
+             "address": "Dhanmondi, Dhaka", "website": "abctrading.com", "industry": "Trading",
+             "summary": "Wholesale supplier."},
+            {"name": "XYZ Restaurant", "phone": "", "email": "", "address": "Gulshan",
+             "website": "", "industry": "", "summary": ""},
+        ]
+        resp = c.post("/crm/ajax/leads/create-from-import", {"leads": json.dumps(leads)})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["created"], 2)
+        self.assertEqual(data["duplicates"], 0)
+
+        lead = Lead.objects.get(name="ABC Trading")
+        self.assertIsNone(lead.assigned_to)
+        self.assertEqual(lead.source, "import")
+        self.assertEqual(lead.phone, "+8801912345678")
+        self.assertEqual(lead.email, "a@b.co")
+        self.assertEqual(lead.industry, "Trading")
+        self.assertEqual(lead.website, "abctrading.com")
+        self.assertIn("Dhanmondi, Dhaka", lead.notes)
+        self.assertIn("Wholesale supplier.", lead.notes)
+
+        xyz = Lead.objects.get(name="XYZ Restaurant")
+        self.assertIsNone(xyz.assigned_to)
+        self.assertIn("Gulshan", xyz.notes)
+
+    def test_create_imported_leads_dedupe_and_skip_blank(self):
+        from django.test import Client
+        create_lead(self.owner, name="ABC Trading", phone="+8801912345678")
+        c = Client()
+        c.force_login(self.owner)
+        leads = [
+            {"name": "ABC Trading", "phone": "+8801912345678", "email": "", "address": "",
+             "website": "", "industry": "", "summary": ""},
+            {"name": "", "phone": "+8801999999999", "email": "", "address": "",
+             "website": "", "industry": "", "summary": ""},
+            {"name": "Fresh Market", "phone": "+8801911111111", "email": "", "address": "",
+             "website": "", "industry": "", "summary": ""},
+        ]
+        resp = c.post("/crm/ajax/leads/create-from-import", {"leads": json.dumps(leads)})
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["created"], 1)
+        self.assertEqual(data["duplicates"], 1)
+        self.assertTrue(Lead.objects.filter(name="Fresh Market", source="import").exists())
+
+    def test_create_imported_leads_invalid_payload(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.post("/crm/ajax/leads/create-from-import", {"leads": "not-json"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_create_imported_leads_owner_only(self):
+        from django.test import Client
+        for user in (self.manager, self.staff):
+            c = Client()
+            c.force_login(user)
+            resp = c.post("/crm/ajax/leads/create-from-import",
+                          {"leads": json.dumps([{"name": "X"}])})
+            self.assertEqual(resp.status_code, 403)
+
+    def test_leads_page_shows_import_button_for_owner_only(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/leads/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Import from Image", resp.content.decode())
+        c = Client()
+        c.force_login(self.manager)
+        resp = c.get("/crm/leads/")
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn("Import from Image", resp.content.decode())
+
+    def test_notes_update_via_quick_update_clears_with_empty(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        lead, _ = create_lead(self.owner, name="Notesy", phone="+8801912345679",
+                              assigned_to=self.staff)
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "notes", "value": "Hello world"})
+        self.assertEqual(resp.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.notes, "Hello world")
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "notes", "value": "   "})
+        self.assertEqual(resp.status_code, 200)
+        lead.refresh_from_db()
+        self.assertEqual(lead.notes, "")

@@ -384,6 +384,34 @@ table.crm-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .popup-loading { padding: 40px 0; text-align: center; color: var(--muted); }
 .btn-block { width: 100%; text-align: center; }
 
+/* ============ IMPORT LEAD FROM IMAGE ============ */
+.import-drop {
+  border: 2px dashed var(--border); border-radius: 14px; padding: 28px 16px;
+  text-align: center; cursor: pointer; transition: border .15s, background .15s;
+  background: var(--soft);
+}
+.import-drop:hover, .import-drop.drag { border-color: var(--accent); background: #eff6ff; }
+.import-drop-icon { font-size: 1.6rem; }
+.import-drop-text { font-size: .9rem; font-weight: 600; color: #334155; margin: 6px 0; }
+.import-drop .form-help { margin-top: 6px; }
+.import-preview {
+  display: block; max-width: 100%; max-height: 240px; margin: 10px auto 0;
+  border-radius: 12px; border: 1px solid var(--border);
+}
+.import-status { font-size: .85rem; color: var(--muted); text-align: center; margin-top: 10px; }
+.import-status-note { background: var(--soft); padding: 10px 12px; border-radius: 10px; }
+.import-row {
+  border: 1px solid var(--border); border-radius: 12px; padding: 12px;
+  margin-top: 12px; background: #fff;
+}
+.import-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.import-check { display: flex; align-items: center; gap: 6px; font-size: .82rem; font-weight: 600; color: #334155; cursor: pointer; }
+.import-remove {
+  border: none; background: transparent; color: var(--red); font-size: 1rem;
+  cursor: pointer; padding: 2px 6px; border-radius: 6px; line-height: 1;
+}
+.import-remove:hover { background: #fef2f2; }
+
 /* ============ CLICKABLE TABLE ROWS ============ */
 .crm-table .row-clickable { cursor: pointer; transition: background .12s; }
 .crm-table .row-clickable:hover { background: #f1f5f9; }
