@@ -10,6 +10,8 @@ Layer 3  Live state: CRM snapshot, focused products, image analysis,
 :func:`fit_prompt` drops whole low-priority sections when the budget is
 exceeded — it never slices an instruction in half.
 """
+import re
+
 from back.models import Message, Product
 
 # Budget in characters (≈ tokens*4 heuristic). The core prompt is written to
@@ -36,7 +38,7 @@ Never invent names, prices, discounts, stock, variations, delivery fees/times, p
 Bengali (বাংলা) by default — including mixed/transliterated English — polite honorifics (আপনি/ভাই/আপা), warm tone, prices as ৳123. English only when the customer writes full English. Replies: 1-3 short sentences, no lists/URLs/JSON; separate multiple short messages with a blank line.
 
 ## TOOLS (call before quoting anything not shown in context)
-- search_products: before any price/stock; try ≤3 queries (Bengali name, English, transliteration).
+- search_products: before any price/stock; NEVER for shop name/location/phone/hours/delivery/payment — those are in ## Store. try ≤3 queries (Bengali name, English, transliteration).
 - send_images: the ONLY way to send photos. Cards/images show name+price — never re-list them in text.
 - get_product_details: only for products NOT already listed in context (listed ones have complete data).
 - create_order: backend computes totals — first call customer_confirmed=false returns the summary to present; second call customer_confirmed=true ONLY after explicit yes.
@@ -125,20 +127,7 @@ def build_system_prompt(user, conversation, image_analysis=None):
 
     # --- Layer 2: store config (priority 95) ---
     if store:
-        sections.append((
-            95,
-            f"## Store\n"
-            f"Name: {store.store_name or 'Our Store'}\n"
-            f"Address: {store.address or 'Not set'}\n"
-            f"WhatsApp: {store.whatsapp_number or 'Not set'}\n"
-            f"Support hours: {store.support_open_time} – {store.support_close_time} ({store.timezone})\n"
-            f"Currency: {store.currency}\n"
-            f"Delivery inside: {store.delivery_charge_inside} {store.currency}  |  "
-            f"Outside: {store.delivery_charge_outside} {store.currency}\n"
-            "- Customer asks shop name / delivery charge / hours / address / payment "
-            "→ answer directly from this block. Do NOT collect an address or push an "
-            "order for these questions."
-        ))
+        sections.append((95, _render_store_block(store)))
 
     # --- Layer 2: business rules (priority 90) ---
     biz = []
@@ -214,6 +203,39 @@ def _crm_snapshot_for(conversation):
     """Render the live CRM snapshot (empty string when nothing to show)."""
     from context.crm.snapshot import build_crm_snapshot
     return build_crm_snapshot(conversation)
+
+
+def _clean_address(address):
+    """Normalize store address text: collapse newlines and strip '***' section
+    markers so the location reads as one clean sentence."""
+    if not address:
+        return "Not set"
+    cleaned = re.sub(r"\s*\r?\n\s*", " ", address)
+    cleaned = cleaned.replace("***", "").strip(" -")
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
+def _render_store_block(store):
+    """Render the ## Store block — the single source for shop facts.
+
+    Labeled lines map 1:1 to common questions (name / location / phone /
+    hours / delivery / payment) so the model answers directly instead of
+    falling back to product data.
+    """
+    lines = [
+        "## Store (OFFICIAL business facts — shop name, location, phone, hours, delivery, payment)",
+        "Answer ONLY from this block for these questions — they are NOT product queries; NEVER call "
+        "search_products and NEVER list products for them.",
+        f"Shop name: {store.store_name or 'Our Store'}",
+        f"Shop location: {_clean_address(store.address)}",
+        f"Phone / WhatsApp: {store.whatsapp_number or 'Not set'}",
+        f"Support hours: {store.support_open_time} – {store.support_close_time} ({store.timezone})",
+        f"Currency: {store.currency}",
+        f"Delivery inside: {store.delivery_charge_inside} {store.currency}  |  "
+        f"Outside: {store.delivery_charge_outside} {store.currency}",
+        "Do NOT collect an address or push an order for any of these questions.",
+    ]
+    return "\n".join(lines)
 
 
 def _render_focus_products(focus_list, currency):
