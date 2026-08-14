@@ -265,7 +265,7 @@
     e.preventDefault();
     const leadId = form.dataset.leadId;
     const notesEl = form.querySelector('textarea[name="notes"]');
-    const btn = document.querySelector('button[form="' + form.id + '"]') || form.querySelector('button[type=submit]');
+    const btn = form.querySelector('button[type=submit]');
     if (btn) btn.disabled = true;
     try {
       const res = await quickUpdate(leadId, 'stage', form.querySelector('.stage-select').value);

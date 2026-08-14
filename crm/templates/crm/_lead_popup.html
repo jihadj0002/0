@@ -5,9 +5,6 @@
       <h2>{{ lead.name }}</h2>
       {% if lead.company %}<div class="popup-sub">{{ lead.company.name }}</div>{% endif %}
     </div>
-    {% if can_edit %}
-    <button class="btn btn-primary btn-sm" type="submit" form="leadStageForm">Update</button>
-    {% endif %}
   </div>
 
   <div class="popup-badges">
@@ -71,6 +68,7 @@
       <div class="popup-label">Notes</div>
       <textarea name="notes" class="notes-input" rows="4" placeholder="Add notes about this lead…">{{ lead.notes }}</textarea>
     </div>
+    <button class="btn btn-primary btn-block" type="submit">Update</button>
   </form>
   {% elif lead.notes %}
   <div class="popup-block">
