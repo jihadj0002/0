@@ -10,9 +10,9 @@ import os
 from .services import create_lead, log_activity
 
 logger = logging.getLogger(__name__)
-
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-VISION_MODEL = "openai/gpt-4o-mini"
+VISION_MODEL = "google/gemini-2.5-flash-lite:batch"
+# VISION_MODEL = "openai/gpt-4o-mini"
 
 LEAD_FIELDS = ("name", "phone", "email", "address", "website", "industry", "summary")
 
