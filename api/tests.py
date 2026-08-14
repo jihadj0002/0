@@ -344,3 +344,83 @@ class SendImagesRepeatGuardTests(PipelineTestCase):
             timestamp=timezone.now() - timedelta(hours=1)
         )
         self.assertFalse(_images_recently_sent(self.conv, [self.product.pid]))
+
+
+def _tool_call(name, arguments, call_id):
+    tc = MagicMock()
+    tc.id = call_id
+    tc.function.name = name
+    tc.function.arguments = json.dumps(arguments)
+    return tc
+
+
+class SearchLoopGuardTests(PipelineTestCase):
+    """The 20K-token replies were search loops: the model re-searched with
+    slightly different keywords, got the SAME products, and re-listed them in
+    the thread every iteration. These guards must collapse that to 2-3 calls."""
+
+    def _scripted_run(self, llm_calls, customer_text="amar jolpai ta koi?"):
+        """Run the pipeline with a scripted sequence of LLM responses."""
+        import api.ai.pipeline as pipe
+        seen_threads = []
+
+        def fake_llm(messages, tools=None, model=None, temperature=0.7, max_tokens=1024):
+            seen_threads.append(messages)
+            content, tool_calls = llm_calls.pop(0)
+            msg = MagicMock()
+            msg.content = content
+            msg.tool_calls = tool_calls
+            return msg, {"model": "fake", "input_tokens": 10, "output_tokens": 5}
+
+        incoming = Message.objects.create(
+            conversation=self.conv, sender="customer", text=customer_text,
+        )
+        with patch("api.ai.pipeline.call_llm", fake_llm):
+            with patch("api.ai.pipeline.send_reply", return_value=None):
+                with patch("billing.deductions.deduct_for_reply", return_value=None):
+                    run(self.conv, incoming)
+        return seen_threads
+
+    def test_semantic_repeat_search_short_circuits(self):
+        # The log pattern: search("amar jolpai ta koi?") then search("Jolpaia
+        # achar") — same product, near-identical query, no new info.
+        self.product.name = "Jolpaia Achar"
+        self.product.save()
+        llm_calls = [
+            ("", [_tool_call("search_products", {"query": "amar jolpai ta koi?"}, "c1")]),
+            ("", [_tool_call("search_products", {"query": "Jolpaia achar"}, "c2")]),
+            ("এটা Jolpaia achar, দাম ৳120।", None),
+        ]
+        threads = self._scripted_run(llm_calls)
+        # Exactly 3 LLM calls — no 6-call loop.
+        self.assertEqual(len(threads), 3)
+        # The second search's tool message was the short note, not a re-listing.
+        last_thread = threads[-1]
+        tool_msgs = [m["content"] for m in last_thread if m.get("role") == "tool"]
+        self.assertTrue(any("only products already shown" in t for t in tool_msgs))
+        bot_msg = Message.objects.filter(conversation=self.conv, sender="bot").latest("timestamp")
+        self.assertEqual(bot_msg.text, "এটা Jolpaia achar, দাম ৳120।")
+
+    def test_search_ceiling_hard_stops_loops(self):
+        for i in range(4):
+            Product.objects.create(
+                user=self.user, name=f"Test Product {i}", price=100 + i,
+                stock_quantity=5, status=True,
+            )
+        llm_calls = [
+            ("", [_tool_call("search_products", {"query": "test"}, "c1")]),
+            ("", [_tool_call("search_products", {"query": "product"}, "c2")]),
+            ("", [_tool_call("search_products", {"query": "one"}, "c3")]),
+            ("", [_tool_call("search_products", {"query": "two"}, "c4")]),
+            ("একটু অপেক্ষা করুন।", None),
+        ]
+        threads = self._scripted_run(llm_calls, customer_text="ki ache?")
+        self.assertEqual(len(threads), 5)
+        last_thread = threads[-1]
+        tool_msgs = [m["content"] for m in last_thread if m.get("role") == "tool"]
+        self.assertTrue(any("Search limit reached" in t for t in tool_msgs))
+        # 3 searches executed against the catalog + 1 capped call logged for audit.
+        executed = ToolCallLog.objects.filter(
+            conversation=self.conv, tool_name="search_products",
+        ).count()
+        self.assertEqual(executed, 4)

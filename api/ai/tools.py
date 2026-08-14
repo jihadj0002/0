@@ -20,7 +20,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Search products by SKU, name, or keyword. Optionally narrow by min_price/max_price (customer budget). Try MULTIPLE queries (English, synonyms, simpler terms) until you find the item. Call before quoting any price.",
+            "description": "Search products by SKU/name/keyword; optional min_price/max_price (budget). Try up to 3 query variants (English, synonyms, transliteration). Call before quoting any price.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -37,7 +37,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_product_details",
-            "description": "Get fresh price/stock for a product by PID. Last resort only — focused products in the system prompt already include full data (price, stock, description, variations); for those just call send_images.",
+            "description": "Fresh price/stock for a PID — only if it is NOT already listed in the context.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -51,7 +51,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "send_images",
-            "description": "Send product images to the customer. Single pid → all images sent one-by-one; multiple pids=[...] → scrollable card carousel. Cards/images already show name and price — do not repeat them in your text.",
+            "description": "Send product images. pid → images one-by-one; pids=[...] → card carousel. Cards already show name+price — do not repeat them in text.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -70,7 +70,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "create_order",
-            "description": "Create a new pending order. Order info must be collected first (name, phone, address, city, delivery zone). The backend computes all totals — first call (customer_confirmed=false) returns the exact order summary to present to the customer; call again with customer_confirmed=true ONLY after the customer explicitly confirms with a clear yes.",
+            "description": "Create a pending order (name, phone, address, city, zone required). Backend computes totals: first call customer_confirmed=false returns the summary to present; second call customer_confirmed=true ONLY after the customer's explicit yes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -111,7 +111,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_order_status",
-            "description": "Look up an existing order by its order ID.",
+            "description": "Look up an order by its oid.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -125,7 +125,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "update_customer",
-            "description": "Save or update customer contact details in the conversation record.",
+            "description": "Save customer name/phone/city/address.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -142,7 +142,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "create_ticket",
-            "description": "Create a support ticket and hand the conversation to a human agent. Use when: customer requests human, complaint escalation, or issue is beyond AI scope.",
+            "description": "Hand the conversation to a human: complaints, angry customer, explicit human request.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -162,7 +162,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_knowledge_base",
-            "description": "Search business knowledge: policies, FAQs, return/exchange info, shipping, payment methods, company info, and training Q&A. Do NOT use for product queries — use search_products.",
+            "description": "Search policies/FAQs/returns/shipping/payment. NOT for product queries.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -177,7 +177,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "think",
-            "description": "Private thinking step. Use to outline your next actions before calling tools. Do NOT include customer-facing text. This does not message the customer.",
+            "description": "Private planning step before tools — never customer-facing text.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -431,7 +431,7 @@ def _build_focus_payload(product, full=True):
         return payload
     desc = (product.get("description") or "").strip()
     if desc:
-        payload["description"] = desc[:300]
+        payload["description"] = desc[:150]
     variations = product.get("variations") or []
     if variations:
         payload["variations"] = [
@@ -441,7 +441,7 @@ def _build_focus_payload(product, full=True):
                 "price": v.get("price"),
                 "in_stock": v.get("in_stock", True),
             }
-            for v in variations[:12]
+            for v in variations[:6]
         ]
     return payload
 
@@ -1332,7 +1332,7 @@ def execute_tool(name, arguments, user, conversation):
             result = tool_search_products(
                 user,
                 args.get("query", ""),
-                int(args.get("limit", 5)),
+                min(int(args.get("limit", 5)), 5),
                 conversation=conversation,
                 min_price=args.get("min_price"),
                 max_price=args.get("max_price"),

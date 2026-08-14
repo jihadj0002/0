@@ -65,6 +65,13 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 7
 MAX_RUN_SECONDS = 90
+# Hard ceiling on catalog searches per reply — the "search forever" loop is the
+# #1 token-burn pattern (logs show 4-6 call replies repeating near-identical
+# queries). Search is multi-query server-side, so 3 calls is ample.
+MAX_SEARCH_CALLS_PER_REPLY = 3
+# Conversations longer than this get a rolling chat_summary so history can drop
+# from 12 to 6 raw messages without losing facts. Zero overhead below this.
+SUMMARY_MIN_MESSAGES = 40
 
 # Short affirmative messages that confirm an order while a draft is awaiting
 # confirmation (backend state machine disambiguates "yes" → order). Full-match
@@ -377,7 +384,10 @@ def run(conversation, incoming_message):
             pass
 
     system_prompt = build_system_prompt(user, conversation, image_analysis=image_analysis)
-    history = get_conversation_history(conversation, limit=12)
+    # Long conversations carry a condensed CHAT SUMMARY in the system prompt, so
+    # the raw-message window can be smaller without losing older facts.
+    has_summary = bool((getattr(conversation, "chat_summary", "") or "").strip())
+    history = get_conversation_history(conversation, limit=6 if has_summary else 12)
 
     # Ensure the triggering message is the last user turn
     if not history or history[-1].get("content") != customer_text or history[-1].get("role") != "user":
@@ -403,6 +413,8 @@ def run(conversation, incoming_message):
     # message instead of blindly re-running the loop.
     _called_tools = {}
     _dup_nudged = set()
+    _search_calls = 0
+    _thread_pids = set()
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|pic|"
@@ -588,6 +600,8 @@ def run(conversation, incoming_message):
                 continue
 
             t0 = time.time()
+            _search_limit_hit = False
+            _search_no_new = False
             # Image-repeat guard: never re-send the same product's images when
             # the customer did not ask for them (e.g. while asking about
             # delivery). The tool result tells the model to answer instead.
@@ -609,11 +623,43 @@ def run(conversation, incoming_message):
                 else:
                     result = execute_tool(fn_name, fn_args, user, conversation)
                     elapsed = int((time.time() - t0) * 1000)
+            elif fn_name == "search_products" and _search_calls >= MAX_SEARCH_CALLS_PER_REPLY:
+                # Search ceiling — hard stop on search loops.
+                _search_limit_hit = True
+                result = {
+                    "products": [],
+                    "total": 0,
+                    "_instruction": (
+                        "Search limit reached for this reply — the catalog was already "
+                        "searched. Answer using the search results already in context; "
+                        "do NOT call search_products again."
+                    ),
+                }
+                elapsed = 0
             else:
+                if fn_name == "search_products":
+                    _search_calls += 1
                 result = execute_tool(fn_name, fn_args, user, conversation)
                 elapsed = int((time.time() - t0) * 1000)
 
-            if fn_name == "search_products":
+            # Same-pids short-circuit: a search that returns only products already
+            # shown this turn re-lists them verbatim in the thread (one of the
+            # "20K token" drivers). Detect it and answer with a note instead.
+            if fn_name == "search_products" and isinstance(result, dict) and not _search_limit_hit:
+                prods = result.get("products") or []
+                if prods:
+                    before = set(_thread_pids)
+                    fresh = [p for p in prods if p.get("pid") and p.get("pid") not in before]
+                    if not fresh:
+                        _search_no_new = True
+                _thread_pids.update(p.get("pid") for p in prods if p.get("pid"))
+            elif isinstance(result, dict):
+                if fn_name == "get_product_details" and result.get("pid"):
+                    _thread_pids.add(result["pid"])
+                elif fn_name == "send_images":
+                    _thread_pids.update(p.get("pid") for p in (result.get("products") or []) if p.get("pid"))
+
+            if fn_name == "search_products" and not _search_no_new and not _search_limit_hit:
                 last_search = result
             if fn_name == "create_order":
                 last_order = result
@@ -661,6 +707,35 @@ def run(conversation, incoming_message):
             # NEVER expose raw URLs back to the LLM — the model only gets
             # a confirmation; visuals are sent separately by send_reply.
             tool_content = result
+            if _search_no_new:
+                # All results were already shown this turn — drop the re-listing.
+                tool_content = {
+                    "total": 0,
+                    "status": (
+                        "This search returned only products already shown this turn — "
+                        "use the data already in context and answer; do not search again."
+                    ),
+                }
+            elif fn_name == "search_products" and isinstance(result, dict):
+                # Thread-only compaction: strip product rows to the essentials so
+                # repeated re-sends of result messages stay small. Full rows still
+                # live in last_search (fallback path) and the focus products block.
+                prods = result.get("products") or []
+                if prods:
+                    compact = []
+                    for p in prods:
+                        row = {k: p.get(k) for k in
+                               ("pid", "name", "price", "discounted_price", "stock", "in_stock", "sku")
+                               if p.get(k) is not None}
+                        desc = (p.get("description") or "").strip()
+                        if desc:
+                            row["description"] = desc[:120]
+                        variations = p.get("variations") or []
+                        if variations:
+                            row["variations"] = variations[:6]
+                        compact.append(row)
+                    tool_content = dict(result)
+                    tool_content["products"] = compact
             if fn_name == "search_knowledge_base" and isinstance(result, dict):
                 if result.get("total", 0) == 0 and not (result.get("results") or []):
                     kb_empty = True
@@ -723,6 +798,17 @@ def run(conversation, incoming_message):
                 "tool_call_id": tc.id,
                 "content": json.dumps(tool_content),
             })
+
+            # After a redundant search (nothing new / limit reached), nudge the
+            # model to stop and answer with the data already in context.
+            if _search_no_new or _search_limit_hit:
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "Answer the customer NOW using the product data already in "
+                        "context — stop calling tools this turn."
+                    ),
+                })
 
         if transferred:
             final_text = "আমি এখন একজন মানুষ এজেন্টের সাথে যুক্ত করে দিচ্ছি। একটু অপেক্ষা করুন।"
@@ -790,6 +876,16 @@ def run(conversation, incoming_message):
         product_cards=product_cards if len(product_cards) > 1 else None,
     )
 
+    # Rolling chat summary: on long conversations, one cheap call keeps the
+    # facts that the history window would drop. Logged under the same reply_id
+    # (billed in the deduction that follows).
+    try:
+        msg_count = Message.objects.filter(conversation=conversation).count()
+        if msg_count >= SUMMARY_MIN_MESSAGES:
+            _refresh_chat_summary(conversation, model, reply_id)
+    except Exception:
+        logger.exception("Chat summary refresh failed reply_id=%s", reply_id)
+
     # Deduct credits after reply is confirmed sent
     try:
         from billing.deductions import deduct_for_reply
@@ -817,3 +913,45 @@ def _log(user, reply_id, usage, call_type):
         )
     except Exception:
         logger.warning("UsageLog write failed reply_id=%s", reply_id)
+
+
+_SUMMARIZER_PROMPT = (
+    "Condense this customer-support chat for the AI's memory. Output ≤90 words, "
+    "short terse lines, in the chat's language. Facts only: customer identity "
+    "(name/phone/address/city known), products asked about / shown / selected, "
+    "order status and totals, buying intent or objections, tone/language, and "
+    "anything NOT to re-ask."
+)
+
+
+def _refresh_chat_summary(conversation, model, reply_id):
+    """Regenerate conversation.chat_summary with one cheap LLM call.
+
+    History input is the same window the pipeline already used; the saved
+    summary lets subsequent turns keep older facts with only 6 raw messages.
+    Never raises — failures simply keep the previous summary.
+    """
+    history = get_conversation_history(conversation, limit=12)
+    if not history:
+        return
+    try:
+        summary_msg, usage = call_llm(
+            messages=[{"role": "system", "content": _SUMMARIZER_PROMPT}] + history[-10:],
+            tools=None,
+            model=model,
+            temperature=0.2,
+            max_tokens=100,
+        )
+    except Exception:
+        logger.exception("Chat summary LLM call failed reply_id=%s", reply_id)
+        return
+    _log(conversation.user, reply_id, usage, call_type="chat_summary")
+    text = (summary_msg.content or "").strip()
+    if not text:
+        return
+    try:
+        from back.models import Conversation as _Conv
+        _Conv.objects.filter(pk=conversation.pk).update(chat_summary=text[:2000])
+        conversation.chat_summary = text[:2000]
+    except Exception:
+        logger.exception("Chat summary persist failed reply_id=%s", reply_id)
