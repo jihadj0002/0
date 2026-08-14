@@ -509,6 +509,18 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
             logger.exception("Failed to create message (no mid) conv=%s", conv.pk)
             return conv.id
 
+    # CRM: track last inbound contact (cheap, best-effort — runs even when AI
+    # is disabled so human-agent conversations stay tracked).
+    try:
+        from context.crm.signals import get_or_create_profile
+        from django.utils import timezone
+        profile, _ = get_or_create_profile(conv)
+        if profile is not None:
+            profile.last_contact_at = timezone.now()
+            profile.save(update_fields=["last_contact_at"])
+    except Exception:
+        logger.exception("CRM last_contact_at update failed conv=%s", conv.pk)
+
     # Store enriched text in batch so _fire_batch_pipeline combines it correctly.
     # Only create batch rows when AI is active — no point batching for disabled-AI convos.
     if ai_enabled:

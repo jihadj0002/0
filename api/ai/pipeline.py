@@ -4,6 +4,8 @@ import re
 import time
 import uuid
 
+from django.utils import timezone
+
 from back.models import Integration, Message, ToolCallLog, UsageLog
 
 # Image URLs (storage links, or any http(s) link ending in an image extension).
@@ -42,6 +44,13 @@ def _promises_images(text):
     return bool(_IMG_NOUN_RE.search(text) and _SEND_CUE_RE.search(text))
 
 
+# Whether the customer's message explicitly asks for images/photos.
+_IMAGE_REQUEST_RE = re.compile(
+    r"(ছবি|photo|image|picture|\bpic\b|pics|dekhan|দেখান|show me|send me)",
+    re.IGNORECASE,
+)
+
+
 from .context import build_system_prompt, get_conversation_history
 from .providers import call_llm
 from .sender import send_reply
@@ -51,6 +60,16 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ITERATIONS = 7
 MAX_RUN_SECONDS = 90
+
+# Short affirmative messages that confirm an order while a draft is awaiting
+# confirmation (backend state machine disambiguates "yes" → order). Full-match
+# only, capped length — "আমি ok আছি" must NOT trigger it.
+_AFFIRMATIVE_WORDS = re.compile(
+    r"^(?:ok|okay|yes|yeah|yep|sure|confirm|done|thik|ache|hobe|ha|ham|"
+    r"হ্যাঁ|হ্যা|হুম|ঠিক|আছে|হবে|করুন|দেন|নিসি|নিশ্চিত|অবশ্যই)[\s।,!?\.]*$",
+    re.IGNORECASE,
+)
+_AFFIRMATIVE_MAX_LEN = 40
 
 
 def _split_text_messages(text):
@@ -154,6 +173,20 @@ def _summarize_tool_result(tool_name, result):
                 f"Order {result['order_id']} created, "
                 f"status={result['status']}, total={result.get('total', '?')}"
             )
+        if result.get("confirmation_required"):
+            summary = result.get("order_summary") or {}
+            return (
+                f"Order summary ready — item_total={summary.get('item_total')}, "
+                f"delivery={summary.get('delivery_charge')}, "
+                f"grand_total={summary.get('grand_total')}, zone={summary.get('delivery_zone')}. "
+                "Present this exact summary and ask for a clear yes; only then call "
+                "create_order again with customer_confirmed=true."
+            )
+        if result.get("missing_fields"):
+            return (
+                f"Missing order info: {', '.join(result['missing_fields'])}. "
+                "Collect only the missing fields — never re-ask for known information."
+            )
         return f"Error: {result.get('error', 'unknown')}"
 
     if tool_name == "get_product_details":
@@ -192,6 +225,76 @@ def _summarize_tool_result(tool_name, result):
 
     keys = list(result.keys())[:5]
     return f"Result keys: {', '.join(keys)}"
+
+
+def _images_recently_sent(conversation, pids, minutes=10):
+    """True if any of `pids` had send_images called in the last `minutes`.
+
+    Lets the loop block repeat image sends that the customer did not ask for
+    (e.g. re-sending the same photos while the customer asks about delivery).
+    """
+    if not pids:
+        return False
+    from datetime import timedelta
+    try:
+        recent = list(
+            ToolCallLog.objects.filter(
+                conversation=conversation,
+                tool_name="send_images",
+                timestamp__gte=timezone.now() - timedelta(minutes=minutes),
+            ).values_list("arguments", flat=True)
+        )
+    except Exception:
+        logger.exception("images_recently_sent lookup failed conv=%s", getattr(conversation, "pk", None))
+        return False
+    for args in recent:
+        if isinstance(args, str):
+            try:
+                args = json.loads(args or "{}")
+            except (json.JSONDecodeError, TypeError):
+                continue
+        if not isinstance(args, dict):
+            continue
+        if args.get("pid") in pids:
+            return True
+        if any(p in pids for p in (args.get("pids") or [])):
+            return True
+    return False
+
+
+def _maybe_auto_confirm_order(conversation, customer_text, create_order_called):
+    """Backend auto-confirmation of a pending draft.
+
+    When the customer says a clear "yes" while the workflow state is
+    ``awaiting_confirmation`` (an OrderDraft exists with
+    confirmation_status=awaiting_confirmation) and the LLM did NOT call
+    create_order this turn, the backend creates the order directly — the LLM
+    never has to guess what "yes" meant. Returns the Bengali reply or None.
+    """
+    try:
+        from context.crm.drafts import confirm_draft_order
+        from context.crm_models import OrderDraft
+        from context.models import SessionContext
+
+        if create_order_called:
+            return None
+        text = (customer_text or "").strip()
+        if not text or len(text) > _AFFIRMATIVE_MAX_LEN or not _AFFIRMATIVE_WORDS.fullmatch(text):
+            return None
+        session = SessionContext.objects.filter(conversation=conversation).first()
+        if not session or session.state != "awaiting_confirmation":
+            return None
+        draft = OrderDraft.objects.filter(conversation=conversation).first()
+        if not draft or draft.confirmation_status != "awaiting_confirmation":
+            return None
+        result = confirm_draft_order(conversation)
+        if not isinstance(result, dict) or not result.get("order_id"):
+            logger.info("Auto-confirm rejected: %s", result)
+            return None
+        return f"অর্ডারটি তৈরি হয়েছে (আইডি: {result['order_id']}). আর কিছু যোগ করবেন?"
+    except Exception:
+        logger.exception("Auto-confirm guard failed conv=%s", getattr(conversation, "pk", None))
+        return None
 
 
 def run(conversation, incoming_message):
@@ -286,6 +389,7 @@ def run(conversation, incoming_message):
     focus_hinted = False
     kb_called = False
     kb_empty = False
+    create_order_called = False
     last_search = None
     last_order = None
     _product_keywords = re.compile(
@@ -367,9 +471,12 @@ def run(conversation, incoming_message):
                     continue
                 # has_focus + already hinted → fall through to final_text
 
-            # GUARD: force knowledge base search for policy/FAQ questions
+            # GUARD: force knowledge base search for policy/FAQ questions.
+            # Runs even when product keywords also match ("ডেলিভারি চার্জ কত?"
+            # contains 'কত') — a delivery/policy question must be answered,
+            # not silently treated as a product search.
             is_policy_query = bool(_policy_keywords.search(customer_text or ""))
-            if is_policy_query and not is_product_query and not kb_called:
+            if is_policy_query and not kb_called:
                 messages.append({"role": "assistant", "content": candidate})
                 messages.append({
                     "role": "system",
@@ -430,13 +537,36 @@ def run(conversation, incoming_message):
                 fn_args = {}
 
             t0 = time.time()
-            result = execute_tool(fn_name, fn_args, user, conversation)
-            elapsed = int((time.time() - t0) * 1000)
+            # Image-repeat guard: never re-send the same product's images when
+            # the customer did not ask for them (e.g. while asking about
+            # delivery). The tool result tells the model to answer instead.
+            if fn_name == "send_images":
+                wanted_pids = [fn_args.get("pid")] + list(fn_args.get("pids") or [])
+                wanted_pids = [p for p in wanted_pids if p]
+                if (wanted_pids
+                        and not _IMAGE_REQUEST_RE.search(customer_text or "")
+                        and _images_recently_sent(conversation, wanted_pids)):
+                    result = {
+                        "error": (
+                            "Images for this product were already sent recently and the "
+                            "customer did not ask for them again. Do NOT send images and do "
+                            "NOT claim to send images. Answer the customer's current question "
+                            "directly using the product data already in context."
+                        ),
+                    }
+                    elapsed = 0
+                else:
+                    result = execute_tool(fn_name, fn_args, user, conversation)
+                    elapsed = int((time.time() - t0) * 1000)
+            else:
+                result = execute_tool(fn_name, fn_args, user, conversation)
+                elapsed = int((time.time() - t0) * 1000)
 
             if fn_name == "search_products":
                 last_search = result
             if fn_name == "create_order":
                 last_order = result
+                create_order_called = True
 
             # Log every tool call to ToolCallLog for audit trail
             try:
@@ -555,6 +685,12 @@ def run(conversation, incoming_message):
         else:
             final_text = _fallback_reply(last_search, pending_images, product_cards)
 
+    # Auto-confirm guard: customer said a clear "yes" to a pending order draft
+    # and the LLM didn't call create_order — the backend creates the order.
+    auto_confirmed = _maybe_auto_confirm_order(conversation, customer_text, create_order_called)
+    if auto_confirmed:
+        final_text = auto_confirmed
+
     # Safety net: the AI must never put image URLs in text — images go only via
     # send_images. Strip any that slipped through before saving/sending.
     final_text = _strip_image_urls(final_text)
@@ -601,6 +737,13 @@ def run(conversation, incoming_message):
         deduct_for_reply(user, reply_id)
     except Exception:
         logger.exception("Credit deduction failed reply_id=%s", reply_id)
+
+    # CRM recompute: derive scores/stage/lifecycle from this turn's signals.
+    try:
+        from context.crm.engine import recompute
+        recompute(conversation, customer_text=customer_text)
+    except Exception:
+        logger.exception("CRM recompute failed reply_id=%s conv=%s", reply_id, conversation.pk)
 
 
 def _log(user, reply_id, usage, call_type):

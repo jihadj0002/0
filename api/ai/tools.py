@@ -3,12 +3,10 @@ import logging
 import re
 
 from django.core.files.storage import default_storage
-from django.db import transaction
-from django.db.models import DecimalField, F, Q, Value
+from django.db.models import DecimalField, Q
 from django.db.models.functions import Coalesce
 
-from back.models import Conversation, OrderItem, Product, ProductImages, Sale
-from context.models import AgentIdentity, StoreConfig, BehaviorRules
+from back.models import Conversation, Product, ProductImages, Sale
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +70,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "create_order",
-            "description": "Create a new pending order. Only call after you have confirmed the items with the customer and collected name, phone, and address.",
+            "description": "Create a new pending order. Order info must be collected first (name, phone, address, city, delivery zone). The backend computes all totals — first call (customer_confirmed=false) returns the exact order summary to present to the customer; call again with customer_confirmed=true ONLY after the customer explicitly confirms with a clear yes.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -84,6 +82,10 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "enum": ["inside_dhaka", "outside_dhaka"],
                         "description": "Used to apply correct delivery charge",
+                    },
+                    "customer_confirmed": {
+                        "type": "boolean",
+                        "description": "MUST be true only after the customer explicitly confirmed the final order summary (items + total) with a clear yes. Otherwise leave false — the tool returns the summary to confirm.",
                     },
                     "items": {
                         "type": "array",
@@ -961,178 +963,190 @@ def tool_send_images(user, pid="", pids=None, conversation=None):
     return {"products": products, "total": len(products)}
 
 
+# Known BDT city/district names — used to derive `city` from a free-text address.
+_BDT_CITIES = {
+    "ঢাকা", "চট্টগ্রাম", "সিলেট", "খুলনা", "রাজশাহী", "বরিশাল", "রংপুর",
+    "ময়মনসিংহ", "কুমিল্লা", "নারায়ণগঞ্জ", "গাজীপুর", "বগুড়া", "দিনাজপুর",
+    "জামালপুর", "টাঙ্গাইল", "ফরিদপুর", "পাবনা", "কুষ্টিয়া", "যশোর",
+    "কক্সবাজার", "ব্রাহ্মণবাড়িয়া", "সিরাজগঞ্জ", "রাঙ্গামাটি", "খাগড়াছড়ি",
+    "বান্দরবান", "ফেনী", "নোয়াখালী", "লক্ষ্মীপুর", "চাঁদপুর", "শেরপুর",
+    "নেত্রকোনা", "কিশোরগঞ্জ", "মানিকগঞ্জ", "মুন্সিগঞ্জ", "গোপালগঞ্জ",
+    "মাদারীপুর", "শরীয়তপুর", "সাতক্ষীরা", "ঝিনাইদহ", "মাগুরা", "নড়াইল",
+    "বাগেরহাট", "পিরোজপুর", "ঝালকাঠি", "পটুয়াখালী", "ভোলা", "সুনামগঞ্জ",
+    "হবিগঞ্জ", "মৌলভীবাজার", "গাইবান্ধা", "কুড়িগ্রাম", "লালমনিরহাট",
+    "নীলফামারী", "পঞ্চগড়", "ঠাকুরগাঁও", "জয়পুরহাট", "নওগাঁ", "চাঁপাইনবাবগঞ্জ",
+    "Dhaka", "Chittagong", "Sylhet", "Khulna", "Rajshahi", "Barishal",
+    "Rangpur", "Mymensingh", "Cumilla", "Narayanganj", "Gazipur", "Bogra",
+    "Cox's Bazar", "Coxs Bazar", "Feni", "Noakhali",
+}
+
+
+def derive_city_from_address(address):
+    """Return a known BDT city name found at the end of an address, else ''."""
+    address = (address or "").strip()
+    if not address:
+        return ""
+    # Check the last comma-separated segment first ("মিরপুর ১০, ঢাকা" → ঢাকা).
+    segments = [s.strip() for s in address.split(",") if s.strip()]
+    for seg in reversed(segments):
+        if seg in _BDT_CITIES:
+            return seg
+    # Fall back to the last token (covers "মিরপুর ঢাকা" style addresses).
+    last_token = segments[-1].split()[-1] if segments else address.split()[-1]
+    if last_token in _BDT_CITIES:
+        return last_token
+    return ""
+
+
 def tool_create_order(user, conversation, customer_name, customer_phone, customer_address, items,
-                      customer_city="", delivery_zone="inside_dhaka"):
-    from decimal import Decimal
+                      customer_city="", delivery_zone="inside_dhaka", customer_confirmed=False):
+    """Backend-enforced order creation.
 
-    from api.products.factory import get_active_source, get_provider, is_external
+    Flow:
+      1. Resolve items + compute totals (authoritative backend math).
+      2. Persist an OrderDraft + sync SessionContext to awaiting_confirmation.
+      3. Without customer confirmation → return the exact summary to show.
+      4. With confirmation → the draft is confirmed through the same code path
+         as the pipeline auto-confirm guard (context.crm.drafts.confirm_draft_order).
+    """
+    from context.crm.drafts import (
+        backfill_conversation_customer,
+        compute_order_totals,
+        confirm_draft_order,
+        draft_missing_fields,
+        order_summary_dict,
+        save_draft,
+        sync_session_state,
+    )
+    from context.crm.signals import record_signal
 
-    # Determine external context once.
-    source = get_active_source(user)
-    external_active = bool(source) and is_external(user)
-    live_mode = bool(source) and source.mode == "live" and external_active
-    provider = None
-    if live_mode:
-        try:
-            provider = get_provider(user)
-        except Exception:
-            logger.exception("Could not load provider for create_order; treating as non-live")
-            provider = None
+    # Merge supplied info with what the conversation already knows.
+    name = (customer_name or "").strip() or (conversation.customer_name or "").strip()
+    phone = (customer_phone or "").strip() or (conversation.customer_phone or "").strip()
+    address = (customer_address or "").strip() or (conversation.customer_address or "").strip()
+    city = (customer_city or "").strip() or (conversation.customer_city or "").strip()
 
-    # Each resolved entry:
-    #   (product_or_None, qty, unit_price, product_name, external_id, variation_id)
-    resolved = []
-    errors = []
-    warnings = []
+    # Derive city from the address when the customer didn't give one separately
+    # (e.g. "ঠিকানা মিরপুর ১০, ঢাকা" → city = ঢাকা). Matches known BDT city /
+    # district names so "মিরপুর" is never mistaken for a city.
+    if not city and address:
+        city = derive_city_from_address(address)
 
-    for item in items:
-        pid = item.get("pid", "")
-        qty = max(int(item.get("quantity", 1)), 1)
-        requested_vid = item.get("variation_id")
+    totals = compute_order_totals(user, items, delivery_zone)
+    if not totals["ok"]:
+        return {"error": "Cannot create order", "details": totals["errors"]}
 
-        # 1) Local product by pid (system of record / internal / sync).
-        product = Product.objects.filter(user=user, pid=pid, status=True).first()
-
-        # 2) Synced external product matched by external_id.
-        if product is None and external_active:
-            product = Product.objects.filter(user=user, external_id=pid).first()
-
-        if product is not None:
-            if product.stock_quantity < qty:
-                errors.append(f"{product.name}: only {product.stock_quantity} left in stock")
-                continue
-            if requested_vid:
-                warnings.append(f"{product.name}: variation_id ignored for local product")
-            unit_price = product.discounted_price or product.price
-            resolved.append((product, qty, unit_price, product.name,
-                              product.external_id or None, None))
-            continue
-
-        # 3) Live external product with no local row — look up via provider.
-        if live_mode and provider is not None:
-            r = None
-            try:
-                r = provider.get_product(pid)
-            except Exception:
-                logger.exception("Live get_product failed for pid=%s during create_order", pid)
-            if not r:
-                try:
-                    results = provider.search(pid, limit=1)
-                    r = results[0] if results else None
-                except Exception:
-                    pass
-            if r:
-                variations = r.get("variations") or []
-                chosen = None
-                if variations:
-                    if requested_vid:
-                        chosen = next(
-                            (v for v in variations
-                             if str(v.get("variation_id")) == str(requested_vid)),
-                            None,
-                        )
-                        if chosen is None:
-                            errors.append(f"{r.get('name') or pid}: variation '{requested_vid}' not found")
-                            continue
-                    elif len(variations) == 1:
-                        chosen = variations[0]
-                    else:
-                        opts = ", ".join(
-                            f"{v.get('name')} (variation_id={v.get('variation_id')})"
-                            for v in variations
-                        )
-                        errors.append(
-                            f"{r.get('name') or pid}: choose a variation before ordering — options: {opts}"
-                        )
-                        continue
-                raw_price = (
-                    (chosen or {}).get("promotion_price")
-                    or (chosen or {}).get("price")
-                    or r.get("discounted_price") or r.get("price") or "0"
-                )
-                try:
-                    unit_price = Decimal(str(raw_price))
-                except Exception:
-                    unit_price = Decimal("0")
-                vid = chosen.get("variation_id") if chosen else (requested_vid or None)
-                resolved.append((None, qty, unit_price, r.get("name") or pid, r["external_id"], vid))
-                continue
-
-        errors.append(f"Product '{pid}' not found")
-
-    if errors:
-        return {"error": "Cannot create order", "details": errors}
-
-    with transaction.atomic():
-        sale = Sale.objects.create(
-            user=user,
-            conversation=conversation,
-            customer_id=conversation.customer_id,
-            customer_name=customer_name,
-            customer_phone=customer_phone,
-            customer_address=customer_address,
-            customer_city=customer_city,
-            delivered_to=delivery_zone,
-            status="pending",
-            amount=0,
-        )
-        total = 0
-        line_items = []
-        for product, qty, unit_price, product_name, external_id, variation_id in resolved:
-            OrderItem.objects.create(
-                order=sale,
-                product=product,
-                product_name=product_name,
-                price=unit_price,
-                quantity=qty,
-                action="base",
-                external_product_id=external_id or None,
-                external_variation_id=str(variation_id) if variation_id else None,
-            )
-            # Only adjust stock for local rows.
-            if product is not None:
-                product.stock_quantity -= qty
-                product.save(update_fields=["stock_quantity"])
-            total += unit_price * qty
-            line_items.append({"name": product_name, "qty": qty, "unit_price": str(unit_price)})
-
-         # Add delivery charge
-        store_config = StoreConfig.objects.filter(user=user).first()
-        if delivery_zone == "inside_dhaka":
-            delivery_charge = store_config.delivery_charge_inside if store_config else 0
-        else:
-            delivery_charge = store_config.delivery_charge_outside if store_config else 0
-
-        sale.amount = total + delivery_charge
-        sale.save(update_fields=["amount"])
-
-    # Backfill conversation customer fields
-    Conversation.objects.filter(pk=conversation.pk).update(
-        customer_name=customer_name or conversation.customer_name,
-        customer_phone=customer_phone or conversation.customer_phone,
-        customer_city=customer_city or conversation.customer_city,
+    # Backfill the conversation so the auto-confirm guard and prompt see it.
+    backfill_conversation_customer(
+        conversation,
+        name=name or None,
+        phone=phone or None,
+        city=city or None,
+        address=address or None,
     )
 
-    # Push to the user's external source (safe to call always; no-op when internal).
-    push_result = {}
-    try:
-        from api.products.orders import push_order_to_source
-        push_result = push_order_to_source(sale) or {}
-    except Exception:
-        logger.exception("push_order_to_source failed for order %s", sale.oid)
-        push_result = {}
+    missing = []
+    if not name:
+        missing.append("customer_name")
+    if not phone:
+        missing.append("customer_phone")
+    if not address:
+        missing.append("customer_address")
+    if not city:
+        missing.append("customer_city")
 
-    result = {
-        "order_id": sale.oid,
-        "status": sale.status,
-        "total": str(sale.amount),
-        "items": line_items,
-        "synced_to_store": bool(push_result.get("ok") and not push_result.get("skipped")),
-        "external_order_id": sale.external_order_id,
-    }
-    if warnings:
-        result["warnings"] = warnings
-    return result
+    summary = order_summary_dict(
+        resolved=totals["resolved"],
+        item_total=totals["item_total"],
+        delivery_charge=totals["delivery_charge"],
+        grand_total=totals["grand_total"],
+        delivery_zone=delivery_zone,
+    )
+
+    if missing:
+        save_draft(
+            user, conversation,
+            resolved=totals["resolved"],
+            item_total=totals["item_total"],
+            delivery_charge=totals["delivery_charge"],
+            grand_total=totals["grand_total"],
+            delivery_zone=delivery_zone,
+            confirmation_status="draft",
+            missing_fields=missing,
+        )
+        sync_session_state(conversation, "awaiting_details", pending_confirmation=summary)
+        return {
+            "error": "Missing required customer information",
+            "missing_fields": missing,
+            "order_summary": summary,
+            "note": "Collect only the missing fields — never re-ask for information already known.",
+        }
+
+    if not customer_confirmed:
+        # Draft the order, sync the state machine, and hand back the summary.
+        save_draft(
+            user, conversation,
+            resolved=totals["resolved"],
+            item_total=totals["item_total"],
+            delivery_charge=totals["delivery_charge"],
+            grand_total=totals["grand_total"],
+            delivery_zone=delivery_zone,
+            confirmation_status="awaiting_confirmation",
+            missing_fields=[],
+        )
+        sync_session_state(conversation, "awaiting_confirmation", pending_confirmation=summary)
+        out = {
+            "confirmation_required": True,
+            "order_summary": summary,
+        }
+        if totals["warnings"]:
+            out["warnings"] = totals["warnings"]
+        out["note"] = (
+            "Present this exact summary (items, item total, delivery charge, grand total, "
+            "delivery zone) to the customer and ask for a clear yes. Do NOT create the order "
+            "until the customer confirms."
+        )
+        return out
+
+    # Customer confirmed → go through the single shared confirm path.
+    if address:
+        record_signal(conversation, "provided_address")
+    result = confirm_draft_order(conversation)
+    if isinstance(result, dict) and result.get("order_id"):
+        if totals["warnings"]:
+            result["warnings"] = totals["warnings"]
+        return result
+    # Draft may have drifted from these args (e.g. items changed between calls).
+    # Re-persist this exact payload and retry once — but never resurrect an
+    # already-confirmed draft (that would double-create the order).
+    from context.crm_models import OrderDraft
+    existing = OrderDraft.objects.filter(conversation=conversation).first()
+    if existing and existing.confirmation_status == "confirmed" and existing.converted_order_id:
+        sale = existing.converted_order
+        out = {
+            "order_id": sale.oid,
+            "status": sale.status,
+            "total": str(sale.amount),
+            "items": [
+                {"name": i.product_name, "qty": i.quantity, "price": str(i.price)}
+                for i in sale.items.all()
+            ],
+        }
+        if totals["warnings"]:
+            out["warnings"] = totals["warnings"]
+        return out
+    save_draft(
+        user, conversation,
+        resolved=totals["resolved"],
+        item_total=totals["item_total"],
+        delivery_charge=totals["delivery_charge"],
+        grand_total=totals["grand_total"],
+        delivery_zone=delivery_zone,
+        confirmation_status="awaiting_confirmation",
+        missing_fields=[],
+    )
+    sync_session_state(conversation, "awaiting_confirmation", pending_confirmation=summary)
+    return confirm_draft_order(conversation)
 
 
 def tool_get_order_status(user, order_id):
@@ -1168,6 +1182,33 @@ def tool_update_customer(conversation, name=None, phone=None, city=None, address
         updates["customer_address"] = address
     if updates:
         Conversation.objects.filter(pk=conversation.pk).update(**updates)
+        for k, v in updates.items():
+            setattr(conversation, k, v)
+
+    # CRM: sync identity + record confirmed facts + signals.
+    try:
+        from context.crm.signals import (
+            get_or_create_profile, record_fact, record_signal,
+        )
+        profile, _ = get_or_create_profile(conversation)
+        if profile is not None:
+            profile.name = (name or "").strip() or profile.name
+            profile.phone = (phone or "").strip() or profile.phone
+            profile.city = (city or "").strip() or profile.city
+            profile.address = (address or "").strip() or profile.address
+            profile.save(update_fields=["name", "phone", "city", "address", "updated_at"])
+        if name:
+            record_fact(conversation, "customer_name", name)
+        if phone:
+            record_fact(conversation, "customer_phone", phone)
+        if city:
+            record_fact(conversation, "customer_city", city)
+        if address:
+            record_signal(conversation, "provided_address")
+            record_fact(conversation, "customer_address", address)
+    except Exception:
+        logger.exception("CRM update in update_customer failed conv=%s", conversation.pk)
+
     return {"updated": list(updates.keys())}
 
 
@@ -1213,12 +1254,82 @@ def tool_think(notes):
 # Dispatcher
 # ---------------------------------------------------------------------------
 
+def _crm_search_hook(conversation, query, result):
+    """CRM bookkeeping after a catalog search: signals + viewed products."""
+    try:
+        if not conversation:
+            return
+        from context.crm.signals import record_product_view, record_signal
+
+        q = (query or "").lower()
+        if re.search(r"(price|dam|দাম|koto|কত|taka|টাকা|বাজেট|budget)", q):
+            record_signal(conversation, "asked_price")
+        if re.search(r"(stock|স্টক|stock ache|আছে\?|কি আছে)", q):
+            record_signal(conversation, "asked_stock")
+        for p in ((result or {}).get("products") or [])[:5]:
+            record_product_view(conversation, name=p.get("name", ""), pid=p.get("pid", ""))
+    except Exception:
+        logger.exception("CRM search hook failed conv=%s", getattr(conversation, "pk", None))
+
+
+def _crm_product_detail_hook(conversation, result):
+    try:
+        if not conversation or not isinstance(result, dict):
+            return
+        from context.crm.signals import record_product_view, set_current_product
+
+        pid = result.get("pid") or ""
+        if pid:
+            record_product_view(conversation, name=result.get("name", ""), pid=pid)
+            set_current_product(conversation, pid)
+    except Exception:
+        logger.exception("CRM product detail hook failed conv=%s", getattr(conversation, "pk", None))
+
+
+def _crm_send_images_hook(conversation, result):
+    try:
+        if not conversation or not isinstance(result, dict):
+            return
+        from context.crm.signals import record_signal, set_current_product
+
+        products = result.get("products") or []
+        if products:
+            record_signal(conversation, "asked_photo")
+            set_current_product(conversation, products[0].get("pid", ""))
+    except Exception:
+        logger.exception("CRM send_images hook failed conv=%s", getattr(conversation, "pk", None))
+
+
+def _crm_ticket_hook(conversation, result):
+    """Escalation bookkeeping: mark the opportunity lost + log the event."""
+    try:
+        if not conversation:
+            return
+        from context.crm_models import CrmEvent, SalesOpportunity
+
+        opp = SalesOpportunity.objects.filter(conversation=conversation).first()
+        if opp and opp.status == "open":
+            opp.stage = "lost"
+            opp.status = "lost"
+            opp.save(update_fields=["stage", "status", "updated_at"])
+        ticket_id = (result or {}).get("ticket_id")
+        CrmEvent.objects.create(
+            user=conversation.user,
+            conversation=conversation,
+            type="ticket_created",
+            description=f"Support ticket created (opportunity lost)",
+            data={"ticket_id": ticket_id},
+        )
+    except Exception:
+        logger.exception("CRM ticket hook failed conv=%s", getattr(conversation, "pk", None))
+
+
 def execute_tool(name, arguments, user, conversation):
     try:
         args = arguments if isinstance(arguments, dict) else {}
 
         if name == "search_products":
-            return tool_search_products(
+            result = tool_search_products(
                 user,
                 args.get("query", ""),
                 int(args.get("limit", 5)),
@@ -1226,12 +1337,18 @@ def execute_tool(name, arguments, user, conversation):
                 min_price=args.get("min_price"),
                 max_price=args.get("max_price"),
             )
+            _crm_search_hook(conversation, args.get("query", ""), result)
+            return result
 
         if name == "get_product_details":
-            return tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
+            result = tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
+            _crm_product_detail_hook(conversation, result)
+            return result
 
         if name == "send_images":
-            return tool_send_images(user, pid=args.get("pid", ""), pids=args.get("pids"), conversation=conversation)
+            result = tool_send_images(user, pid=args.get("pid", ""), pids=args.get("pids"), conversation=conversation)
+            _crm_send_images_hook(conversation, result)
+            return result
 
         if name == "create_order":
             return tool_create_order(
@@ -1243,6 +1360,7 @@ def execute_tool(name, arguments, user, conversation):
                 customer_city=args.get("customer_city", ""),
                 delivery_zone=args.get("delivery_zone", "inside_dhaka"),
                 items=args.get("items", []),
+                customer_confirmed=bool(args.get("customer_confirmed", False)),
             )
 
         if name == "get_order_status":
@@ -1258,12 +1376,14 @@ def execute_tool(name, arguments, user, conversation):
             )
 
         if name == "create_ticket":
-            return tool_create_ticket(
+            result = tool_create_ticket(
                 conversation=conversation,
                 subject=args.get("subject", ""),
                 description=args.get("description", ""),
                 priority=args.get("priority", "medium"),
             )
+            _crm_ticket_hook(conversation, result)
+            return result
 
         if name == "search_knowledge_base":
             return tool_search_knowledge_base(
