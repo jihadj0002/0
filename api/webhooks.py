@@ -319,6 +319,27 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     msg_text = msg_data.get("text") or ""
     att_type = (attachments or {}).get("type", "")
 
+    # Product-card postback (Messenger "View <product>" button) → the customer
+    # chose that product. Resolve it into the conversation focus list so the
+    # pipeline answers from data (no re-search), and phrase the message clearly.
+    if platform in ("messenger", "instagram") and att_type == "postback":
+        payload_str = (attachments or {}).get("payload") or ""
+        if isinstance(payload_str, str) and payload_str.startswith("SELECT_PRODUCT|"):
+            pid = payload_str.split("|", 1)[1]
+            try:
+                from api.ai.tools import tool_get_product_details
+                resolved = tool_get_product_details(conv.user, pid, conversation=conv)
+                if isinstance(resolved, dict) and resolved.get("name"):
+                    pid = resolved.get("pid") or pid
+                    msg_text = (
+                        f"Customer selected the product: {resolved['name']} (PID: {pid})."
+                    )
+                else:
+                    msg_text = f"Customer selected the product: {pid}."
+            except Exception:
+                logger.exception("Postback product resolution failed pid=%s", pid)
+                msg_text = f"Customer selected the product: {pid}."
+
     # Download WhatsApp media while we're already in the background thread.
     # Other platforms serve public URLs directly — no extra step needed.
     if platform == "whatsapp" and attachments and attachments.get("media_id"):

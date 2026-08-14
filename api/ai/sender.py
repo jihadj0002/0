@@ -177,7 +177,9 @@ def _messenger(conversation, integration, texts, image_urls, product_cards=None)
             elif card.get("price"):
                 price_str = f"৳{card['price']}"
             subtitle = price_str[:80] if price_str else " "
-            btn_pid = card.get("sku") or card.get("pid", "")
+            # PID first — the backend resolves local products by pid and external
+            # products by external_id (stored as pid); SKU is only a fallback.
+            btn_pid = card.get("pid") or card.get("sku", "")
             elements.append({
                 "title": (card.get("name") or "Product")[:80],
                 "subtitle": subtitle,

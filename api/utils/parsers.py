@@ -95,7 +95,9 @@ def parse_messenger(payload):
         for event in entry.get("messaging", []):
             sender_id = event.get("sender", {}).get("id")
 
-            # Handle postback events (e.g. product card "Select" button)
+            # Handle postback events (e.g. product card "View product" button).
+            # The tap IS the customer choosing that product — webhooks.py resolves
+            # the pid into the conversation focus so the AI answers from data.
             postback = event.get("postback")
             if postback:
                 payload_str = postback.get("payload", "")
@@ -109,7 +111,7 @@ def parse_messenger(payload):
                         "message_id": mid,
                         "timestamp": str(event.get("timestamp", "")),
                         "type": "text",
-                        "text": f"Show product {pid} details",
+                        "text": f"Customer selected the product: {pid}.",
                         "attachments": {"type": "postback", "payload": payload_str},
                         "raw": event,
                     })

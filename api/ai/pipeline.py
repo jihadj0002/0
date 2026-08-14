@@ -50,6 +50,11 @@ _IMAGE_REQUEST_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Text prefix for Messenger product-card postbacks (webhooks.py). The customer
+# tapped "View <product>" on a card — that IS the product choice, so the
+# pipeline must NOT force another catalog search for it.
+PRODUCT_SELECTION_PREFIX = "Customer selected the product:"
+
 
 from .context import build_system_prompt, get_conversation_history
 from .providers import call_llm
@@ -392,6 +397,12 @@ def run(conversation, incoming_message):
     create_order_called = False
     last_search = None
     last_order = None
+    # (tool_name, canonical_args) → (result, tool_content) — prevents the model
+    # from burning tokens on identical repeated calls (e.g. get_product_details
+    # with the same pid 5 times in a row). First repeat is answered with a nudge
+    # message instead of blindly re-running the loop.
+    _called_tools = {}
+    _dup_nudged = set()
     _product_keywords = re.compile(
         r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|pic|"
@@ -441,8 +452,11 @@ def run(conversation, incoming_message):
             candidate = llm_msg.content or ""
 
             # GUARD: force search_products if the query looks like a product request
+            # (unless the customer already chose a product via a card postback —
+            # the product is resolved into context, so no search is needed).
             is_product_query = bool(_product_keywords.search(customer_text or ""))
-            if is_product_query and not search_called:
+            is_selection = (customer_text or "").strip().startswith(PRODUCT_SELECTION_PREFIX)
+            if is_product_query and not search_called and not is_selection:
                 has_focus = bool(parse_focus_products(conversation.current_product))
                 if has_focus and not focus_hinted:
                     focus_hinted = True
@@ -535,6 +549,43 @@ def run(conversation, incoming_message):
                 fn_args = json.loads(tc.function.arguments or "{}")
             except (json.JSONDecodeError, TypeError):
                 fn_args = {}
+
+            # Dedup guard: identical tool call already made THIS reply. Reuse the
+            # stored result and nudge the model instead of re-executing — the
+            # data is already in context, so another call only burns tokens.
+            _sig = (fn_name, json.dumps(fn_args, sort_keys=True, default=str))
+            if _sig in _called_tools:
+                _dup_result, _dup_content = _called_tools[_sig]
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(_dup_content),
+                })
+                if _sig not in _dup_nudged:
+                    _dup_nudged.add(_sig)
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            f"You already called {fn_name} with identical arguments "
+                            "this turn and the result is in the context above. Do NOT "
+                            "call it again. Answer the customer now with that data, or "
+                            "call a DIFFERENT tool (e.g. send_images) if needed."
+                        ),
+                    })
+                else:
+                    messages.append({
+                        "role": "system",
+                        "content": (
+                            f"Stop repeating {fn_name}. Reply now using the data already "
+                            "in context; do not call this tool again."
+                        ),
+                    })
+                if fn_name == "search_products":
+                    last_search = _dup_result
+                if fn_name == "create_order":
+                    last_order = _dup_result
+                    create_order_called = True
+                continue
 
             t0 = time.time()
             # Image-repeat guard: never re-send the same product's images when
@@ -630,7 +681,12 @@ def run(conversation, incoming_message):
                                 for p in products
                             ],
                             "products_count": len(products),
-                            "status": "products sent as a scrollable carousel — briefly mention names and prices in your reply",
+                            "status": (
+                                "product cards were sent to the customer — each card "
+                                "already shows the product name and price, so do NOT "
+                                "list names or prices again in your text. Just confirm "
+                                "you sent them and ask which one the customer likes."
+                            ),
                         }
                     else:
                         for p in products:
@@ -658,6 +714,9 @@ def run(conversation, incoming_message):
 
             if fn_name == "create_ticket":
                 transferred = True
+
+            # Remember this call so an identical repeat is not re-executed.
+            _called_tools[_sig] = (result, tool_content)
 
             messages.append({
                 "role": "tool",

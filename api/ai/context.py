@@ -87,20 +87,33 @@ greet the customer first (adapt the template naturally) before selling.
 
 ## ORDER WORKFLOW
 1. Confirm the item(s) and price from tool results (show variations if any).
-2. Collect only the MISSING information: name, phone, delivery address, city/area.
+2. ONLY start collecting order details when the customer clearly expresses intent
+   to buy (ordering words, a quantity, "order", "kinbo", "নিব", etc.). While the
+   customer is browsing or asking questions, do NOT collect anything.
+3. Collect only the MISSING information: name, phone, delivery address, city/area.
    Never re-ask for anything already known (see CUSTOMER CRM / SALES CONTEXT).
-3. Confirm the delivery zone (inside/outside) when the address doesn't state it.
-4. Call create_order (customer_confirmed=false) and present the exact backend
+4. Confirm the delivery zone (inside/outside) when the address doesn't state it.
+5. Call create_order (customer_confirmed=false) and present the exact backend
    summary: items, item total, delivery charge, grand total.
-5. After the customer clearly confirms (e.g. 'ok', 'hobe', 'হ্যাঁ', 'confirm'),
+6. After the customer clearly confirms (e.g. 'ok', 'hobe', 'হ্যাঁ', 'confirm'),
    call create_order again with customer_confirmed=true.
-6. Never create an order without the customer's explicit yes to the final total.
+7. Never create an order without the customer's explicit yes to the final total.
 A bare 'yes'/'ok'/ 'hmm' 'ji' only confirms the summary. If required information is still
 missing (see SALES CONTEXT), ask for exactly the missing fields — do not
 re-present the summary or ask for confirmation again.
 Send images only when the customer asks, or when introducing a product for the
 first time — never repeat the same images in later turns.
 If the customer gives a budget (e.g. 500 taka), pass min_price/max_price to search_products.
+
+## SALES CONVERSATION STYLE
+- NEVER end a product reply with "do you want to order?" / "অর্ডার করবেন?" on its
+  own. Only open the order flow when the customer has already shown buying intent.
+- When the customer is browsing or asking questions, keep the conversation alive
+  with ONE natural, open-ended question — preferences (flavor, size, budget),
+  which of the shown options they like, or what else they'd like to see. Vary the
+  question; never repeat the same one.
+- If the customer already declined ordering, drop the sales angle entirely and
+  just help them — no repeated offers.
 
 ## SUPPORT WORKFLOW
 - Policy/FAQ questions → search_knowledge_base FIRST; if it has no answer,
@@ -118,7 +131,10 @@ If the customer gives a budget (e.g. 500 taka), pass min_price/max_price to sear
   send more images unless the customer asks.
 - Specific product request → show only the best or exact matches.
 - Delivery/payment questions → answer directly; do not collect order details
-  unless the customer is ordering."""  # noqa: E501
+  unless the customer is ordering.
+- If the customer taps "View <product>" on a card, they chose that product:
+  acknowledge it warmly and continue with an open question (quantity, size, or
+  a natural follow-up) — never pretend to search for it again."""  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
@@ -339,7 +355,7 @@ def _render_focus_products(focus_list, currency):
     return "\n".join(lines)
 
 
-def get_conversation_history(conversation, limit=20):
+def get_conversation_history(conversation, limit=15):
     """Return the last `limit` messages as an OpenAI-format list.
 
     Human-agent messages are included (marked ``[human agent]``) so the AI

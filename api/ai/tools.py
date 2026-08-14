@@ -20,7 +20,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "search_products",
-            "description": "Search products by SKU, name, or keyword. You can optionally specify min_price and/or max_price to narrow results by budget. Try calling this MULTIPLE times with different keywords (try English, synonyms, simpler terms) until you find what the customer wants. Call this before quoting any price.",
+            "description": "Search products by SKU, name, or keyword. Optionally narrow by min_price/max_price (customer budget). Try MULTIPLE queries (English, synonyms, simpler terms) until you find the item. Call before quoting any price.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -37,7 +37,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "get_product_details",
-            "description": "Get fresh price/stock for a product by PID. Only use as last resort — focused products (in system prompt) already have complete data including price, stock, description, variations. For focused products just call send_images.",
+            "description": "Get fresh price/stock for a product by PID. Last resort only — focused products in the system prompt already include full data (price, stock, description, variations); for those just call send_images.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -51,7 +51,7 @@ TOOL_DEFINITIONS = [
         "type": "function",
         "function": {
             "name": "send_images",
-            "description": "Send product images to the customer. Returns name and price. For a single PID, all product images are sent one-by-one. For multiple PIDs via pids=[...], a scrollable carousel is shown. Mention name and price briefly in your reply after sending.",
+            "description": "Send product images to the customer. Single pid → all images sent one-by-one; multiple pids=[...] → scrollable card carousel. Cards/images already show name and price — do not repeat them in your text.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -822,7 +822,7 @@ def tool_get_product_details(user, pid, conversation=None):
                 fallback_to_db = True
             else:
                 details = {
-                    "pid": r.get("sku") or r["external_id"],
+                    "pid": r["external_id"],
                     "name": r["name"],
                     "price": r["price"],
                     "discounted_price": r.get("discounted_price"),
