@@ -379,7 +379,11 @@ table.crm-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 }
 .stage-form .notes-input { resize: vertical; min-height: 90px; line-height: 1.5; }
 .stage-form .stage-select:focus, .stage-form .notes-input:focus { border-color: var(--accent); }
-.stage-form .btn-block { margin-top: 8px; }
+.stage-form { display: flex; flex-direction: column; gap: 16px; padding-bottom: 2px; }
+.stage-form .popup-block { gap: 8px; }
+.stage-save { margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }
+.stage-save .btn { padding: 12px 16px; font-size: .95rem; }
+.stage-save .btn:disabled { opacity: .7; cursor: not-allowed; }
 .popup-footer { display: flex; gap: 8px; margin-top: 4px; padding-top: 14px; border-top: 1px solid var(--border); }
 .popup-loading { padding: 40px 0; text-align: center; color: var(--muted); }
 .btn-block { width: 100%; text-align: center; }

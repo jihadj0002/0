@@ -29,9 +29,13 @@
   async function api(url, method = 'GET', data = null) {
     const opts = { method, headers: {} };
     if (data !== null) {
-      opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
       opts.headers['X-Requested-With'] = 'XMLHttpRequest';
-      opts.body = new URLSearchParams(Object.entries(data).filter(([, v]) => v !== null && v !== undefined));
+      if (data instanceof FormData) {
+        opts.body = data;
+      } else {
+        opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+        opts.body = new URLSearchParams(Object.entries(data).filter(([, v]) => v !== null && v !== undefined));
+      }
     }
     const csrfToken = getCookie('csrftoken');
     if (csrfToken) opts.headers['X-CSRFToken'] = csrfToken;
@@ -264,14 +268,11 @@
     if (!form) return;
     e.preventDefault();
     const leadId = form.dataset.leadId;
-    const notesEl = form.querySelector('textarea[name="notes"]');
     const btn = form.querySelector('button[type=submit]');
     if (btn) btn.disabled = true;
     try {
-      const payload = { field: 'stage', value: form.querySelector('.stage-select').value };
-      if (notesEl) payload.notes = notesEl.value;
-      const res = await api('/crm/ajax/leads/' + leadId + '/update', 'POST', payload);
-      Crm.toast(notesEl ? 'Lead updated: ' + (res.stage_name || '✓') : 'Stage updated to ' + res.stage_name, 'success');
+      const res = await api('/crm/ajax/leads/' + leadId + '/update', 'POST', new FormData(form));
+      Crm.toast(res.stage_name ? 'Lead updated: ' + res.stage_name : 'Lead updated', 'success');
       refreshLeadRow(leadId, res);
       window.Crm._openLeadPopup && window.Crm._openLeadPopup(leadId);
     } catch (err) { Crm.toast(err.message, 'error'); }

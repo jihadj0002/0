@@ -68,7 +68,9 @@
       <div class="popup-label">Notes</div>
       <textarea name="notes" class="notes-input" rows="4" placeholder="Add notes about this lead…">{{ lead.notes }}</textarea>
     </div>
-    <button class="btn btn-primary btn-block" type="submit">Update</button>
+    <div class="stage-save">
+      <button class="btn btn-primary btn-block" type="submit">Update</button>
+    </div>
   </form>
   {% elif lead.notes %}
   <div class="popup-block">

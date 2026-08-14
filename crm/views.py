@@ -410,14 +410,27 @@ def ajax_kanban_move(request, pk):
 @require_POST
 def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
-    field = request.POST.get("field")
+    field = request.POST.get("field", "")
     value = request.POST.get("value")
-    new_notes = request.POST.get("notes")
     allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to", "notes"}
     if not (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
         return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
+
+    new_notes = request.POST.get("notes")
     if new_notes is not None:
         update_lead(request.user, lead, notes=new_notes.strip())
+
+    new_stage = request.POST.get("stage")
+    if new_stage:
+        stage = get_object_or_404(PipelineStage, pk=new_stage, tenant__isnull=True)
+        update_lead(request.user, lead, stage=stage)
+        return JsonResponse({
+            "ok": True, "stage_name": stage.name,
+            "won": lead.is_won(), "lost": lead.is_lost(),
+        })
+
+    if not field:
+        return JsonResponse({"ok": True})
     if field in allowed:
         if field == "score":
             value = max(0, min(100, int(value or 0)))
