@@ -989,9 +989,11 @@ class ImageImportTests(CrmBaseTestCase):
         return [
             {"name": "ABC Trading", "phone": "+8801912345678", "email": "a@b.co",
              "address": "Dhanmondi, Dhaka", "website": "abctrading.com", "industry": "Trading",
-             "summary": "Wholesale supplier."},
+             "summary": "Wholesale supplier.", "tags": ["tier-1", "NEW", "Wholesale"],
+             "tier": "tier-1", "notes": "VAT: VN-1042; Hours 9am-6pm; Owner: Md Karim"},
             {"name": "XYZ Restaurant", "phone": "", "email": "", "address": "Gulshan",
-             "website": "", "industry": "", "summary": ""},
+             "website": "", "industry": "", "summary": "", "tags": [], "tier": "",
+             "notes": ""},
         ]
 
     def test_analyze_image_creates_leads_payload(self):
@@ -1007,6 +1009,9 @@ class ImageImportTests(CrmBaseTestCase):
         self.assertEqual(len(data["leads"]), 2)
         self.assertEqual(data["leads"][0]["name"], "ABC Trading")
         self.assertEqual(data["leads"][0]["phone"], "+8801912345678")
+        self.assertEqual(data["leads"][0]["tier"], "tier-1")
+        self.assertEqual(data["leads"][0]["tags"], ["tier-1", "NEW", "Wholesale"])
+        self.assertIn("VAT", data["leads"][0]["notes"])
 
     def test_analyze_image_empty_result_returns_error(self):
         from unittest.mock import patch
@@ -1041,9 +1046,11 @@ class ImageImportTests(CrmBaseTestCase):
         leads = [
             {"name": "ABC Trading", "phone": "+8801912345678", "email": "a@b.co",
              "address": "Dhanmondi, Dhaka", "website": "abctrading.com", "industry": "Trading",
-             "summary": "Wholesale supplier."},
+             "summary": "Wholesale supplier.", "tags": ["tier-1", "New", "#tier-1"],
+             "tier": "tier-2", "notes": "VAT: VN-1042; Hours 9am-6pm"},
             {"name": "XYZ Restaurant", "phone": "", "email": "", "address": "Gulshan",
-             "website": "", "industry": "", "summary": ""},
+             "website": "", "industry": "", "summary": "", "tags": [], "tier": "",
+             "notes": ""},
         ]
         resp = c.post("/crm/ajax/leads/create-from-import", {"leads": json.dumps(leads)})
         self.assertEqual(resp.status_code, 200)
@@ -1061,10 +1068,41 @@ class ImageImportTests(CrmBaseTestCase):
         self.assertEqual(lead.website, "abctrading.com")
         self.assertIn("Dhanmondi, Dhaka", lead.notes)
         self.assertIn("Wholesale supplier.", lead.notes)
+        self.assertIn("VAT: VN-1042", lead.notes)
+        self.assertIn("Dhanmondi, Dhaka", lead.notes)
+        # tags normalized: lowercased, # stripped, deduped, tier merged (not duplicated)
+        self.assertEqual(lead.tags, ["tier-1", "new", "tier-2"])
 
         xyz = Lead.objects.get(name="XYZ Restaurant")
         self.assertIsNone(xyz.assigned_to)
         self.assertIn("Gulshan", xyz.notes)
+        self.assertEqual(xyz.tags, [])
+
+    def test_create_imported_leads_comma_string_tags(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        # Frontend review form sends tags as a comma-separated string.
+        leads = [
+            {"name": "Comma Co", "phone": "+8801933333333", "email": "", "address": "",
+             "website": "", "industry": "", "summary": "", "tags": "Tier-2,Hot, HOT, ",
+             "tier": "tier-3", "notes": ""},
+            {"name": "", "phone": "", "email": "", "address": "", "website": "",
+             "industry": "", "summary": "", "tags": "x, y", "tier": "", "notes": ""},
+        ]
+        resp = c.post("/crm/ajax/leads/create-from-import", {"leads": json.dumps(leads)})
+        data = resp.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["created"], 1)
+        lead = Lead.objects.get(name="Comma Co")
+        self.assertEqual(lead.tags, ["tier-2", "hot", "tier-3"])
+
+    def test_tags_dedupe_and_case_normalize(self):
+        from crm.ai_import import normalize_tags
+        self.assertEqual(normalize_tags(["TIER-1", "tier-1", "#hot", " H OT "], "tier-1"),
+                         ["tier-1", "hot", "h ot"])
+        self.assertEqual(normalize_tags("a,b ,  c", "tier-2"), ["a", "b", "c", "tier-2"])
+        self.assertEqual(normalize_tags([], ""), [])
 
     def test_create_imported_leads_dedupe_and_skip_blank(self):
         from django.test import Client

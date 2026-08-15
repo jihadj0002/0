@@ -403,7 +403,9 @@
       setStatus('Analyzing image with AI…');
       try {
         const res = await api('/crm/ajax/leads/analyze-image', 'POST', { image: pendingDataUrl });
-        reviewsEl.innerHTML = res.leads.map((l, i) => `
+        reviewsEl.innerHTML = res.leads.map((l, i) => {
+          const tags = (l.tags || []).concat(l.tier ? [l.tier] : []).join(', ');
+          return `
           <div class="import-row" data-i="${i}">
             <div class="import-row-head">
               <label class="import-check"><input type="checkbox" class="import-include" checked> Create</label>
@@ -416,8 +418,11 @@
               <div class="form-group full"><label>Address</label><input class="f-address" value="${escHtml(l.address)}"></div>
               <div class="form-group"><label>Website</label><input class="f-website" value="${escHtml(l.website)}"></div>
               <div class="form-group"><label>Industry</label><input class="f-industry" value="${escHtml(l.industry)}"></div>
+              <div class="form-group full"><label>Tags (comma separated)</label><input class="f-tags" placeholder="e.g. tier-1, hot, wholesale" value="${escHtml(tags)}"></div>
+              <div class="form-group full"><label>Notes</label><textarea class="f-notes" rows="2" placeholder="Other visible details (VAT, hours, owner…)">${escHtml(l.notes)}</textarea></div>
             </div>
-          </div>`).join('');
+          </div>`;
+        }).join('');
         createBtn.hidden = false;
         createBtn.disabled = res.leads.length === 0;
         setStatus('Review the extracted details, correct anything, then create the leads.', 'note');
@@ -462,6 +467,8 @@
           address: row.querySelector('.f-address').value.trim(),
           website: row.querySelector('.f-website').value.trim(),
           industry: row.querySelector('.f-industry').value.trim(),
+          tags: row.querySelector('.f-tags').value.trim(),
+          notes: row.querySelector('.f-notes').value.trim(),
         });
       });
       if (!leads.length) {
