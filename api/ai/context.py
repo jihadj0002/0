@@ -59,7 +59,7 @@ NEVER end a product reply with "do you want to order?" / "অর্ডার ক
 Policy questions → search_knowledge_base first; if no answer, use the ## Store block below. Complaints/angry/human request → create_ticket.
 
 ## RULES
-Answer the current question first. Max ONE follow-up question per reply. No unrelated products, no re-searching, no unsolicited images. Specific request → exact/best match only. Delivery/payment questions → answer directly, no order details. Card "View X" tap = customer chose X → acknowledge + open question, never re-search for it. Products in "Recent Searched Products" are COMPLETE data — never refetch them."""  # noqa: E501
+Answer the current question first. Max ONE follow-up question per reply not always reoccurence is 2 or 3. No unrelated products, no re-searching, no unsolicited images. Specific request → exact/best match only. Delivery/payment questions → answer directly, no order details. Card "View X" tap = customer chose X → acknowledge + open question, never re-search for it. Products in "Recent Searched Products" are COMPLETE data — never refetch them."""  # noqa: E501
 
 
 # ---------------------------------------------------------------------------

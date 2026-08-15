@@ -76,7 +76,7 @@ def extract_leads_from_image(data_url: str) -> list:
                             "7. \"summary\" — one concise sentence summarising this entry, including any extra visible details (timings, business type, Follower counts, likes)\n"
                             "8. \"tags\" — a JSON array of short lowercase labels clearly visible or derivable, e.g. [\"tier-2\",\"hot\",\"new\",\"wholesale\",\"distributor\",\"budget-conscious\"] — max 6, empty array if none\n"
                             "9. \"tier\" — \"tier-1\", \"tier-2\" or \"tier-3\" when the image marks follower count within 10k for tier 1 within 5k for tier 2 and up to 50k for tier 3, else \"\"\n"
-                            "10. \"notes\" — any OTHER visible details not covered above (BIO/VAT/BIN/trade license numbers, business hours, owner name or designation, payment terms, product lines) — free text, else \"\"\n\n"
+                            "10. \"notes\" — any OTHER visible details not covered above (BIO Follower counts like 25k Follwers, 1.2k posts) — free text, else \"\"\n\n"
                             "Use empty string when a field is not found. Transcribe text EXACTLY as written — do not invent details.\n"
                             "Response shape:\n"
                             "{\"leads\":[{\"name\":\"...\",\"phone\":\"...\",\"email\":\"...\","
