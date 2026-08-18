@@ -7,6 +7,10 @@ urlpatterns = [
     path("", views.dashboard, name="dashboard"),
     path("logout/", views.logout, name="logout"),
 
+    # PWA
+    path("manifest.json", views.pwa_manifest, name="pwa_manifest"),
+    path("sw.js", views.pwa_sw, name="pwa_sw"),
+
     # Leads
     path("leads/", views.leads, name="leads"),
     path("leads/new/", views.lead_new, name="lead_new"),

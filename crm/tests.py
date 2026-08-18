@@ -1167,3 +1167,62 @@ class ImageImportTests(CrmBaseTestCase):
         self.assertEqual(resp.status_code, 200)
         lead.refresh_from_db()
         self.assertEqual(lead.notes, "")
+
+
+class PwaAndDashboardTests(CrmBaseTestCase):
+    def test_manifest_endpoint(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/manifest.json")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("application/manifest+json", resp["Content-Type"])
+        data = resp.json()
+        self.assertEqual(data["name"], "Matrix CRM")
+        self.assertEqual(data["start_url"], "/crm/")
+        self.assertEqual(data["scope"], "/crm/")
+        self.assertEqual(data["display"], "standalone")
+        self.assertGreaterEqual(len(data["icons"]), 2)
+        self.assertTrue(all(i["sizes"] in ("192x192", "512x512", "180x180") for i in data["icons"]))
+
+    def test_service_worker_endpoint(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/sw.js")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("application/javascript", resp["Content-Type"])
+        self.assertIn("addEventListener('fetch'", resp.content.decode())
+
+    def test_manifest_and_sw_staff_only(self):
+        from django.test import Client
+        anon = Client()
+        self.assertEqual(anon.get("/crm/manifest.json").status_code, 302)
+        self.assertEqual(anon.get("/crm/sw.js").status_code, 302)
+        regular = User.objects.create_user(username="regular1", password="x")
+        c = Client()
+        c.force_login(regular)
+        self.assertEqual(c.get("/crm/manifest.json").status_code, 403)
+        self.assertEqual(c.get("/crm/sw.js").status_code, 403)
+
+    def test_dashboard_cards_link_to_filters(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        resp = c.get("/crm/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn('class="card" href="/crm/leads/"', body)
+        self.assertIn('href="/crm/leads/?bucket=hot"', body)
+        self.assertIn('href="/crm/leads/?bucket=won"', body)
+        self.assertIn('href="/crm/followups/"', body)
+
+    def test_dashboard_cards_link_for_staff(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.staff)
+        resp = c.get("/crm/")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.content.decode()
+        self.assertIn('href="/crm/leads/?bucket=hot"', body)
+        self.assertIn('href="/crm/followups/"', body)

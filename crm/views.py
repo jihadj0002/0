@@ -4,7 +4,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from datetime import timedelta
 from django.contrib.auth import logout as auth_logout
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
+from django.templatetags.static import static
 from django.views.decorators.http import require_POST, require_GET
 from django.core.paginator import Paginator
 from django.contrib import messages
@@ -66,6 +67,46 @@ def dashboard(request):
 def logout(request):
     auth_logout(request)
     return redirect("/")
+
+
+# ============================================================
+# PWA (installable CRM app)
+# ============================================================
+_SW_SOURCE = """/* Matrix CRM service worker — network-first, no aggressive caching. */
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
+
+self.addEventListener('fetch', (e) => {
+  e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
+});
+"""
+
+
+@staff_required
+def pwa_manifest(request):
+    icon = lambda name: request.build_absolute_uri(static(f"crm/pwa/{name}"))
+    manifest = {
+        "name": "Matrix CRM",
+        "short_name": "CRM",
+        "description": "MatrixAI sales CRM — leads, pipeline and follow-ups.",
+        "start_url": "/crm/",
+        "scope": "/crm/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#f6f9fd",
+        "theme_color": "#2563eb",
+        "icons": [
+            {"src": icon("icon-192.png"), "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": icon("icon-512.png"), "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+            {"src": icon("apple-touch-icon-180.png"), "sizes": "180x180", "type": "image/png"},
+        ],
+    }
+    return JsonResponse(manifest, content_type="application/manifest+json")
+
+
+@staff_required
+def pwa_sw(request):
+    return HttpResponse(_SW_SOURCE, content_type="application/javascript")
 
 
 # ============================================================

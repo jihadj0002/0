@@ -491,6 +491,53 @@
     });
   }
 
+  /* ---------- add to home screen (PWA) ---------- */
+  let deferredPrompt = null;
+  const installBtn = document.getElementById('installAppBtn');
+
+  function showInstallHelp() {
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    openModal('Add to Home Screen', `
+      <div class="install-help">
+        <div class="import-drop-icon">📲</div>
+        <p>Install Matrix CRM on your device so it opens like a normal app.</p>
+        ${isIOS ? `
+          <div class="install-step"><b>1.</b> Tap the <b>Share</b> button <span class="pill pill-gray">⎋</span> in Safari's toolbar.</div>
+          <div class="install-step"><b>2.</b> Scroll down and tap <b>"Add to Home Screen"</b>.</div>
+          <div class="install-step"><b>3.</b> Tap <b>Add</b> in the top-right corner.</div>`
+        : `
+          <div class="install-step"><b>1.</b> Open the browser menu <span class="pill pill-gray">⋮</span> (top-right).</div>
+          <div class="install-step"><b>2.</b> Tap <b>"Add to Home screen"</b> or <b>"Install app"</b>.</div>
+          <div class="install-step"><b>3.</b> Confirm in the popup that appears.</div>`}
+      </div>`);
+  }
+
+  if (installBtn) {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.hidden = false;
+    });
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+      installBtn.hidden = true;
+    });
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+    if (!isStandalone && !('beforeinstallprompt' in window) && /iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      installBtn.hidden = false;
+    }
+    installBtn.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice.catch(() => ({}));
+        if (choice.outcome !== 'accepted') deferredPrompt = null;
+        return;
+      }
+      showInstallHelp();
+    });
+  }
+
   /* ---------- auto-dismiss toasts ---------- */
   document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.crm-toast').forEach((t) => {

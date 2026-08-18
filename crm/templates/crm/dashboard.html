@@ -9,30 +9,30 @@
 </div>
 
 <div class="cards">
-  <div class="card">
+  <a class="card" href="{% url 'crm:leads' %}">
     <span class="icon-float">◎</span>
     <div class="label">Total Leads</div>
     <div class="value">{{ total_leads }}</div>
     <div class="sub">{{ open_leads }} open · {{ won }} won · {{ lost }} lost</div>
-  </div>
-  <div class="card">
+  </a>
+  <a class="card" href="{% url 'crm:leads' %}?bucket=hot">
     <span class="icon-float">🔥</span>
     <div class="label">Hot Leads</div>
     <div class="value stat-red">{{ hot_leads }}</div>
     <div class="sub">score ≥ 70</div>
-  </div>
-  <div class="card">
+  </a>
+  <a class="card" href="{% url 'crm:leads' %}?bucket=won">
     <span class="icon-float">🏆</span>
     <div class="label">Won Deals</div>
     <div class="value stat-green">{{ won }}</div>
     <div class="sub">{{ lost }} lost</div>
-  </div>
-  <div class="card">
+  </a>
+  <a class="card" href="{% url 'crm:followups' %}">
     <span class="icon-float">⏱</span>
     <div class="label">Due Follow-ups</div>
     <div class="value stat-amber">{{ todays_followups|length }}</div>
     <div class="sub">{{ overdue_followups|length }} overdue</div>
-  </div>
+  </a>
 </div>
 
 <div class="grid-3">
