@@ -111,6 +111,31 @@ def _fallback_reply(last_search, pending_images, product_cards):
     return "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
 
 
+def _store_location_fallback(user):
+    """Direct StoreConfig reply for shop-location questions when the LLM blanked.
+
+    Never lists products and never invents data — when the store has no address
+    it says so plainly and gives the WhatsApp number if one is configured.
+    """
+    try:
+        from context.models import StoreConfig
+        from .context import _clean_address
+        store = StoreConfig.objects.filter(user=user).first()
+    except Exception:
+        store = None
+    store_name = (store.store_name.strip() if store and store.store_name else "আমাদের দোকান")
+    wa = (store.whatsapp_number or "").strip() if store else ""
+    addr_raw = (store.address or "").strip() if store else ""
+    addr = _clean_address(addr_raw) if addr_raw else ""
+    if addr and addr != "Not set":
+        msg = f"{store_name} এর ঠিকানা: {addr}।"
+    else:
+        msg = f"দুঃখিত, {store_name} এর ঠিকানা এখনো শেয়ার করা হয়নি।"
+    if wa:
+        msg += f" যোগাযোগ: {wa}।"
+    return msg
+
+
 def _limit_questions(text):
     if not text:
         return text
@@ -402,6 +427,7 @@ def run(conversation, incoming_message):
     image_promise_corrected = False
     search_called = False
     focus_hinted = False
+    location_hinted = False
     kb_called = False
     kb_empty = False
     create_order_called = False
@@ -416,7 +442,7 @@ def run(conversation, incoming_message):
     _search_calls = 0
     _thread_pids = set()
     _product_keywords = re.compile(
-        r"(price|dam|দাম|dokan|দোকান|product|প্রোডাক্ট|পণ্য|item|"
+        r"(price|dam|দাম|product|প্রোডাক্ট|পণ্য|item|"
         r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|pic|"
         r"ki.?ki.?ache|কি কি আছে|ki ache|কি আছে|show|দেখান|dekhan|want|"
         r"koto|কত|dam koto|দাম কত|stock ache|স্টক আছে)",
@@ -429,6 +455,24 @@ def run(conversation, incoming_message):
         r"delivery time|time lage|koidin|kotodin|koto din|days|দিন লাগে|"
         r"dhakar baire|বাইরে|outside dhaka|bole dewa|দেওয়া|চার্জ|charge)",
         re.IGNORECASE,
+    )
+    # Shop/location questions must NEVER be mistaken for product searches
+    # ("দোকান" alone is ambiguous: "দোকানে কি আছে?" IS a product question).
+    # Both a shop entity word AND a location/contact cue must match.
+    _shop_entity_words = re.compile(
+        r"(দোকান|dokan|shop|store|showroom|শোরুম|office|অফিস|outlet|branch|ব্রাঞ্চ)",
+        re.IGNORECASE,
+    )
+    _shop_fact_cues = re.compile(
+        r"(কোথায়|কোথা|কই|কুথায়|kothay|koi|kotha|where|location|লোকেশন|"
+        r"ঠিকানা|address|এড্রেস|thikana|নাম|name|ফোন|phone|নম্বর|number|"
+        r"সময়|hours|time|খোলা|open)",
+        re.IGNORECASE,
+    )
+    is_location_query = bool(
+        customer_text
+        and _shop_entity_words.search(customer_text)
+        and _shop_fact_cues.search(customer_text)
     )
 
     start_time = time.monotonic()
@@ -463,12 +507,31 @@ def run(conversation, incoming_message):
         if not llm_msg.tool_calls:
             candidate = llm_msg.content or ""
 
+            # GUARD: shop/location/contact questions are answered ONLY from the
+            # ## Store block — never forced into a product search (the historical
+            # "shop kothay → product list" bug) and never answered with invented
+            # facts when the store field says "Not set".
+            if is_location_query and not location_hinted:
+                location_hinted = True
+                messages.append({"role": "assistant", "content": candidate})
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "The customer asked for the shop's location/address/contact info. "
+                        "Answer ONLY from the ## Store block (Shop location, Phone/WhatsApp, "
+                        "Support hours). If a field says 'Not set', say the store has not "
+                        "shared that information yet. NEVER call search_products, NEVER list "
+                        "products, NEVER ask for an order."
+                    ),
+                })
+                continue
+
             # GUARD: force search_products if the query looks like a product request
             # (unless the customer already chose a product via a card postback —
             # the product is resolved into context, so no search is needed).
             is_product_query = bool(_product_keywords.search(customer_text or ""))
             is_selection = (customer_text or "").strip().startswith(PRODUCT_SELECTION_PREFIX)
-            if is_product_query and not search_called and not is_selection:
+            if is_product_query and not is_location_query and not search_called and not is_selection:
                 has_focus = bool(parse_focus_products(conversation.current_product))
                 if has_focus and not focus_hinted:
                     focus_hinted = True
@@ -502,7 +565,7 @@ def run(conversation, incoming_message):
             # contains 'কত') — a delivery/policy question must be answered,
             # not silently treated as a product search.
             is_policy_query = bool(_policy_keywords.search(customer_text or ""))
-            if is_policy_query and not kb_called:
+            if is_policy_query and not kb_called and not is_location_query:
                 messages.append({"role": "assistant", "content": candidate})
                 messages.append({
                     "role": "system",
@@ -816,7 +879,9 @@ def run(conversation, incoming_message):
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
-        if last_order and isinstance(last_order, dict):
+        if is_location_query:
+            final_text = _store_location_fallback(user)
+        elif last_order and isinstance(last_order, dict):
             if last_order.get("order_id"):
                 final_text = f"অর্ডারটি তৈরি হয়েছে (আইডি: {last_order['order_id']}). আর কিছু যোগ করবেন?"
             elif last_order.get("error"):

@@ -424,3 +424,91 @@ class SearchLoopGuardTests(PipelineTestCase):
             conversation=self.conv, tool_name="search_products",
         ).count()
         self.assertEqual(executed, 4)
+
+class ShopLocationGuardTests(PipelineTestCase):
+    """Regression: 'shop/showroom kothay?' must never produce a product list.
+
+    Historical bug: দোকান/dokan sat in the PRODUCT keyword list, so a shop-
+    location question was treated as a product query and the bot answered
+    with the catalog. Also: a blank LLM turn must fall back to the store's
+    real address (or an honest 'not shared'), never to product names.
+    """
+
+    def _run_location_pipeline(self, customer_text):
+        StoreConfig.objects.update_or_create(
+            user=self.user,
+            defaults={
+                "store_name": "Test Store",
+                "address": "Basundhara R/A, Dhaka",
+                "whatsapp_number": "01793504010",
+                "delivery_charge_inside": 60,
+                "delivery_charge_outside": 120,
+                "currency": "BDT",
+            },
+        )
+        incoming = Message.objects.create(
+            conversation=self.conv, sender="customer", text=customer_text,
+        )
+        run(self.conv, incoming)
+
+    def test_location_question_answered_from_store_not_products(self):
+        """LLM stays blank twice: guard injects, then the StoreConfig fallback
+        answers with the real address — the product name must not appear."""
+        fake_llm = lambda messages, tools=None, model=None, temperature=0.7, max_tokens=1024: (  # noqa: E731
+            MagicMock(content="", tool_calls=None),
+            {"model": "fake", "input_tokens": 5, "output_tokens": 2},
+        )
+        with patch("api.ai.pipeline.call_llm", fake_llm):
+            with patch("api.ai.pipeline.send_reply", return_value=None):
+                with patch("billing.deductions.deduct_for_reply", return_value=None):
+                    self._run_location_pipeline("আপনার দোকান কোথায়?")
+        bot_msg = Message.objects.filter(conversation=self.conv, sender="bot").latest("timestamp")
+        self.assertIn("Basundhara", bot_msg.text)
+        self.assertNotIn("Mishti Doi", bot_msg.text)
+        self.assertNotIn("price", bot_msg.text.lower())
+        # The prompt-guard never forced a catalog search for this query.
+        self.assertFalse(
+            ToolCallLog.objects.filter(conversation=self.conv, tool_name="search_products").exists()
+        )
+
+    def test_location_no_product_search_for_english_variant(self):
+        fake_llm = lambda messages, tools=None, model=None, temperature=0.7, max_tokens=1024: (  # noqa: E731
+            MagicMock(content="", tool_calls=None),
+            {"model": "fake", "input_tokens": 5, "output_tokens": 2},
+        )
+        with patch("api.ai.pipeline.call_llm", fake_llm):
+            with patch("api.ai.pipeline.send_reply", return_value=None):
+                with patch("billing.deductions.deduct_for_reply", return_value=None):
+                    self._run_location_pipeline("where is your showroom?")
+        bot_msg = Message.objects.filter(conversation=self.conv, sender="bot").latest("timestamp")
+        self.assertIn("Basundhara", bot_msg.text)
+        self.assertNotIn("Mishti Doi", bot_msg.text)
+
+    def test_location_with_unset_address_is_honest(self):
+        """No address configured → the bot says it is not shared, never invents one."""
+        StoreConfig.objects.update_or_create(
+            user=self.user,
+            defaults={
+                "store_name": "Test Store",
+                "address": "",
+                "whatsapp_number": "01793504010",
+                "delivery_charge_inside": 60,
+                "delivery_charge_outside": 120,
+                "currency": "BDT",
+            },
+        )
+        fake_llm = lambda messages, tools=None, model=None, temperature=0.7, max_tokens=1024: (  # noqa: E731
+            MagicMock(content="", tool_calls=None),
+            {"model": "fake", "input_tokens": 5, "output_tokens": 2},
+        )
+        with patch("api.ai.pipeline.call_llm", fake_llm):
+            with patch("api.ai.pipeline.send_reply", return_value=None):
+                with patch("billing.deductions.deduct_for_reply", return_value=None):
+                    incoming = Message.objects.create(
+                        conversation=self.conv, sender="customer", text="showroom kothay?",
+                    )
+                    run(self.conv, incoming)
+        bot_msg = Message.objects.filter(conversation=self.conv, sender="bot").latest("timestamp")
+        self.assertIn("শেয়ার করা হয়নি", bot_msg.text)
+        self.assertIn("01793504010", bot_msg.text)
+        self.assertNotIn("Mishti Doi", bot_msg.text)
