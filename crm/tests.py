@@ -184,7 +184,7 @@ class ViewSmokeTests(CrmBaseTestCase):
         resp = c.post(f"/crm/leads/{lead.pk}/", {"action": "update", "score": 80})
         self.assertEqual(resp.status_code, 302)
         lead.refresh_from_db()
-        self.assertEqual(lead.score, 80)
+        self.assertNotEqual(lead.score, 80)  # manual score posting is ignored
 
     def test_lead_new_with_empty_company_ok(self):
         from django.test import Client
@@ -1226,3 +1226,169 @@ class PwaAndDashboardTests(CrmBaseTestCase):
         body = resp.content.decode()
         self.assertIn('href="/crm/leads/?bucket=hot"', body)
         self.assertIn('href="/crm/followups/"', body)
+
+
+class ScoringTests(CrmBaseTestCase):
+    """Automatic lead scoring: deterministic recompute from lead state."""
+
+    _counter = 0
+
+    def _lead(self, **kwargs):
+        ScoringTests._counter += 1
+        kw = {"name": f"Score Lead {ScoringTests._counter}", "phone": f"+880187{ScoringTests._counter:02d}"}
+        kw.update(kwargs)
+        lead, _ = create_lead(self.owner, **kw)
+        return lead
+
+    def _qualified_stage(self):
+        return PipelineStage.objects.create(name="Qualified", order=20, score_value=35)
+
+    def test_new_lead_base_score(self):
+        from crm.scoring import recompute_score
+        lead = self._lead(source="manual")
+        self.assertEqual(lead.score, 15)  # source 5 + recency 10
+        self.assertEqual(lead.score_breakdown["recency"], 10)
+        self.assertEqual(lead.score_breakdown["total"], 15)
+
+        ref = self._lead(source="referral")
+        self.assertEqual(ref.score, 20)  # referral 10 + recency 10
+
+        recompute_score(lead)
+        self.assertEqual(lead.score, 15)  # idempotent
+
+    def test_call_logging_points(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        CallLog.objects.create(lead=lead, staff=self.owner, duration=60, outcome="no_answer")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 15 + 4)
+        CallLog.objects.create(lead=lead, staff=self.owner, duration=120, outcome="interested")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 15 + 8 + 6)  # 2 calls + positive baseline bonus
+        for i in range(12):
+            CallLog.objects.create(lead=lead, staff=self.owner, duration=10, outcome="busy")
+        recompute_score(lead)
+        self.assertEqual(lead.score_breakdown["calls"], 20)  # capped
+
+    def test_meeting_points(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        Meeting.objects.create(lead=lead, staff=self.owner, datetime=timezone.now())
+        recompute_score(lead)
+        self.assertEqual(lead.score, 20)  # scheduled +5
+        Meeting.objects.create(lead=lead, staff=self.owner, datetime=timezone.now(),
+                               status="completed", completed=True)
+        recompute_score(lead)
+        self.assertEqual(lead.score, 30)  # +10 completed
+        Meeting.objects.create(lead=lead, staff=self.owner, datetime=timezone.now(),
+                               status="no_show")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 25)  # −5 no_show
+
+    def test_followup_done_points(self):
+        lead = self._lead()
+        f = Followup.objects.create(lead=lead, due=timezone.now(), kind="call")
+        complete_followup(self.staff, f, lead)
+        self.assertEqual(lead.score, 19)  # 15 + 4
+        f2 = Followup.objects.create(lead=lead, due=timezone.now(), kind="email")
+        complete_followup(self.staff, f2, lead)
+        self.assertEqual(lead.score, 23)
+
+    def test_task_done_points(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        t = Task.objects.create(title="Prep", lead=lead, assigned_to=self.staff, status="done")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 17)  # +2
+        t.status = "pending"
+        t.save(update_fields=["status"])
+        recompute_score(lead)
+        self.assertEqual(lead.score, 15)  # deterministic — drops back
+
+    def test_proposal_activity_points(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        Activity.objects.create(lead=lead, type="proposal", description="Sent proposal")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 20)  # +5
+        Activity.objects.create(lead=lead, type="onboarding", description="Onboarded")
+        recompute_score(lead)
+        self.assertEqual(lead.score, 25)
+
+    def test_stage_advancement_points(self):
+        q = self._qualified_stage()
+        lead = self._lead()
+        self.assertEqual(lead.score, 15)
+        update_lead(self.owner, lead, stage=q)
+        self.assertEqual(lead.score, 50)  # 15 + stage 35
+        self.assertEqual(lead.score_breakdown["stage"], 35)
+
+    def test_won_forces_100(self):
+        lead = self._lead()
+        update_lead(self.owner, lead, stage=self.won_stage)
+        lead.refresh_from_db()
+        self.assertEqual(lead.score, 100)
+        self.assertEqual(lead.score_breakdown, {"stage": 100, "total": 100})
+        self.assertTrue(lead.converted)
+        self.assertTrue(lead.activities.filter(type="score").exists())
+
+    def test_lost_caps_score(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        for i in range(3):
+            CallLog.objects.create(lead=lead, staff=self.owner, duration=30, outcome="interested")
+        recompute_score(lead)
+        self.assertGreater(lead.score, 20)
+        update_lead(self.owner, lead, stage=self.lost_stage)
+        lead.refresh_from_db()
+        self.assertLessEqual(lead.score, 20)
+        self.assertEqual(lead.score_breakdown["total"], lead.score)
+
+    def test_recency_decay(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        Lead.objects.filter(pk=lead.pk).update(updated_at=timezone.now() - timedelta(days=30))
+        lead.refresh_from_db()
+        recompute_score(lead)
+        self.assertEqual(lead.score, 5)  # source only, no recency
+
+    def test_tenant_leads_skipped(self):
+        lead, _ = create_lead(self.owner, name="Tenant Lead", phone="+8801888", tenant=self.owner)
+        self.assertEqual(lead.score, 0)
+        self.assertEqual(lead.score_breakdown, {})
+
+    def test_recompute_is_idempotent_no_activity_spam(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        CallLog.objects.create(lead=lead, staff=self.owner, duration=60, outcome="call_later")
+        recompute_score(lead)
+        recompute_score(lead)
+        recompute_score(lead)
+        self.assertEqual(lead.activities.filter(type="score").count(), 2)  # create + call log only
+
+    def test_quick_update_rejects_score_field(self):
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        lead = self._lead()
+        resp = c.post(f"/crm/ajax/leads/{lead.pk}/update", {"field": "score", "value": 90})
+        self.assertEqual(resp.status_code, 403)
+        lead.refresh_from_db()
+        self.assertNotEqual(lead.score, 90)
+
+    def test_popup_and_detail_show_breakdown(self):
+        from crm.scoring import recompute_score
+        lead = self._lead()
+        CallLog.objects.create(lead=lead, staff=self.owner, duration=60, outcome="interested")
+        recompute_score(lead)
+        from django.test import Client
+        c = Client()
+        c.force_login(self.owner)
+        popup = c.get(f"/crm/ajax/leads/{lead.pk}/popup").content.decode()
+        self.assertIn("Why this score", popup)
+        self.assertIn("Calls 10", popup)
+        self.assertIn("Recency 10", popup)
+        detail = c.get(f"/crm/leads/{lead.pk}/").content.decode()
+        self.assertIn("Score (auto, 0–100)", detail)
+        self.assertIn("Calls 10", detail)
+        self.assertNotIn('name="score"', detail)

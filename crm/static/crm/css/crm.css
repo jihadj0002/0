@@ -377,6 +377,15 @@ table.crm-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .popup-actions { display: flex; gap: 8px; margin-top: 8px; }
 .popup-row { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
 .popup-block { display: flex; flex-direction: column; gap: 6px; }
+.score-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.score-value { font-size: 1rem; font-weight: 800; color: var(--accent); }
+.score-parts { display: flex; flex-wrap: wrap; gap: 5px; }
+.score-chip {
+  font-size: .68rem; font-weight: 700; color: #334155;
+  background: var(--soft); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 8px;
+}
+.score-breakdown { border-top: 1px solid var(--border); padding-top: 10px; }
 .popup-notes { font-size: .88rem; color: #334155; white-space: pre-wrap; background: var(--soft); border-radius: 10px; padding: 12px; }
 .stage-form-row { display: flex; gap: 8px; align-items: center; }
 .stage-form-row .stage-select { flex: 1; min-width: 0; }

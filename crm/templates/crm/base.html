@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Matrix CRM">
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'crm/css/crm.css' %}?v=4">
+  <link rel="stylesheet" href="{% static 'crm/css/crm.css' %}?v=5">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   {% block extra_css %}{% endblock %}
 </head>
@@ -164,7 +164,7 @@
 </aside>
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="{% static 'crm/js/crm.js' %}?v=4"></script>
+<script src="{% static 'crm/js/crm.js' %}?v=5"></script>
 <script>
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/crm/sw.js').catch(() => {}));

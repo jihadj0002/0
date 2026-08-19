@@ -30,8 +30,12 @@
           {% for s in stages %}<option value="{{ s.pk }}" {% if lead.stage_id == s.pk %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
         </select>
       </div>
-      <div class="form-group"><label>Score (0–100)</label>
-        <input type="number" name="score" min="0" max="100" value="{{ lead.score }}" {% if not can_edit %}disabled{% endif %}>
+      <div class="form-group"><label>Score (auto, 0–100)</label>
+        <div class="score-row"><span class="score-value">{{ lead.score }}</span>
+          {% if score_parts %}<span class="score-parts">
+            {% for label, pts in score_parts %}<span class="score-chip">{{ label }} {{ pts }}</span>{% endfor %}
+          </span>{% endif %}
+        </div>
       </div>
       <div class="form-group"><label>Assigned To</label>
         <select name="assigned_to" {% if not can_edit %}disabled{% endif %}>

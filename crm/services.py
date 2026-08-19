@@ -6,6 +6,7 @@ from .models import (
     Lead, Activity, Customer, CrmSetting, StaffProfile, PipelineStage,
     Notification,
 )
+from .scoring import recompute_score
 
 
 def normalize_phone(phone):
@@ -129,6 +130,7 @@ def create_lead(user, *, name, phone="", email="", source="manual",
     )
     if log:
         log_activity(lead, "created", f"Lead created (source: {source})", user)
+    recompute_score(lead, user)
     return lead, True
 
 
@@ -166,6 +168,7 @@ def update_lead(user, lead, changed_by=None, **fields):
             convert_lead(user, lead)
         elif lead.stage.is_lost:
             log_activity(lead, "lost", "Deal marked as lost", user)
+    recompute_score(lead, user)
     return lead
 
 
@@ -203,6 +206,7 @@ def convert_lead(user, lead, *, platform_user=None, package="", monthly_value=No
                  customer_id=customer.pk)
     if owner:
         notify(owner, f"Customer onboarded: {lead.name}", f"/crm/customers/{customer.pk}/")
+    recompute_score(lead, user)
     return customer
 
 
@@ -213,3 +217,4 @@ def complete_followup(user, followup, lead):
     lead.save(update_fields=["last_contact", "updated_at"])
     log_activity(lead, "call" if followup.kind == "call" else "note",
                  f"Follow-up completed ({followup.get_kind_display()}): {followup.note or 'Done'}", user)
+    recompute_score(lead, user)

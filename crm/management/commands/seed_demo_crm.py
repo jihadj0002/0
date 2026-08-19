@@ -11,16 +11,16 @@ from crm.services import create_lead
 
 
 DEFAULT_STAGES = [
-    ("New Leads", 0, "#2563eb", False, False),
-    ("Contacted", 10, "#7c3aed", False, False),
-    ("Qualified", 20, "#0891b2", False, False),
-    ("Demo Scheduled", 30, "#d97706", False, False),
-    ("Demo Done", 40, "#ca8a04", False, False),
-    ("Negotiation", 50, "#ea580c", False, False),
-    ("Proposal Sent", 60, "#4f46e5", False, False),
-    ("Waiting", 70, "#64748b", False, False),
-    ("Won", 80, "#16a34a", False, True),
-    ("Lost", 90, "#dc2626", True, False),
+    ("New Leads", 0, "#2563eb", False, False, 10),
+    ("Contacted", 10, "#7c3aed", False, False, 20),
+    ("Qualified", 20, "#0891b2", False, False, 35),
+    ("Demo Scheduled", 30, "#d97706", False, False, 50),
+    ("Demo Done", 40, "#ca8a04", False, False, 55),
+    ("Negotiation", 50, "#ea580c", False, False, 70),
+    ("Proposal Sent", 60, "#4f46e5", False, False, 75),
+    ("Waiting", 70, "#64748b", False, False, 40),
+    ("Won", 80, "#16a34a", False, True, 100),
+    ("Lost", 90, "#dc2626", True, False, 10),
 ]
 
 DEMO_SCRIPTS = [
@@ -41,10 +41,11 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         self.stdout.write("Seeding CRM pipeline stages...")
-        for name, order, color, is_lost, is_won in DEFAULT_STAGES:
+        for name, order, color, is_lost, is_won, score_value in DEFAULT_STAGES:
             PipelineStage.objects.update_or_create(
                 tenant=None, name=name,
-                defaults={"order": order, "color": color, "is_lost": is_lost, "is_won": is_won},
+                defaults={"order": order, "color": color, "is_lost": is_lost,
+                          "is_won": is_won, "score_value": score_value},
             )
         self.stdout.write("Seeding owner staff profile...")
         try:
@@ -83,21 +84,21 @@ class Command(BaseCommand):
 
         samples = [
             {"name": "Rahim Uddin", "phone": "+8801711000001", "email": "rahim@example.com", "source": "website",
-             "stage": "New Leads", "score": 20, "assigned": staff, "expected": 2990},
+             "stage": "New Leads", "assigned": staff, "expected": 2990},
             {"name": "Karim Ahmed", "phone": "+8801711000002", "email": "karim@example.com", "source": "referral",
-             "stage": "Qualified", "score": 60, "assigned": staff, "expected": 5990},
+             "stage": "Qualified", "assigned": staff, "expected": 5990},
             {"name": "Sultana Begum", "phone": "+8801711000003", "source": "facebook", "stage": "Demo Scheduled",
-             "score": 75, "assigned": staff, "expected": 9990},
+             "assigned": staff, "expected": 9990},
             {"name": "Nasir Khan", "phone": "+8801711000004", "email": "nasir@company.com", "source": "manual",
-             "stage": "Negotiation", "score": 80, "company": comp, "assigned": staff, "expected": 19900},
+             "stage": "Negotiation", "company": comp, "assigned": staff, "expected": 19900},
             {"name": "Farida Yasmin", "phone": "+8801711000005", "source": "whatsapp", "stage": "Won",
-             "score": 90, "assigned": staff, "expected": 5990},
+             "assigned": staff, "expected": 5990},
         ]
         for s in samples:
             lead, created = create_lead(
                 None, name=s["name"], phone=s["phone"], email=s.get("email", ""),
                 source=s["source"], stage=stages[s["stage"]], assigned_to=s.get("assigned"),
-                company=s.get("company"), expected_value=s.get("expected"), score=s["score"],
+                company=s.get("company"), expected_value=s.get("expected"),
             )
             if created:
                 Activity.objects.create(
@@ -118,5 +119,9 @@ class Command(BaseCommand):
                                    summary="Wants WhatsApp automation; budget around 10k.")
             Activity.objects.create(lead=lead, type="call", description="Intro call — positive, wants demo",
                                     data={"duration": 180})
+
+        from crm.scoring import recompute_score
+        for lead in Lead.objects.filter(tenant=None).iterator():
+            recompute_score(lead)
 
         self.stdout.write(self.style.SUCCESS("CRM seed complete."))

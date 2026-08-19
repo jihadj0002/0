@@ -39,6 +39,9 @@ class PipelineStage(models.Model):
     color = models.CharField(max_length=20, default="#2563eb")
     is_won = models.BooleanField(default=False)
     is_lost = models.BooleanField(default=False)
+    score_value = models.PositiveSmallIntegerField(
+        default=0, help_text="Score contribution when a lead reaches this stage (auto lead scoring)"
+    )
     tenant = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.CASCADE, related_name="crm_stages"
     )
@@ -102,6 +105,7 @@ class Lead(models.Model):
     source = models.CharField(max_length=20, choices=SOURCE_CHOICES, default="manual")
     stage = models.ForeignKey(PipelineStage, null=True, blank=True, on_delete=models.SET_NULL, related_name="leads")
     score = models.PositiveIntegerField(default=0)
+    score_breakdown = models.JSONField(default=dict, blank=True)
     budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     expected_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     assigned_to = models.ForeignKey(
@@ -173,6 +177,7 @@ class Activity(models.Model):
         ("lost", "Deal Lost"),
         ("created", "Lead Created"),
         ("onboarding", "Onboarding"),
+        ("score", "Score Change"),
     ]
 
     lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="activities")

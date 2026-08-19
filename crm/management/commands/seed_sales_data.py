@@ -291,7 +291,6 @@ class Command(BaseCommand):
                         notes = f"{notes}\nStatus: {status}".strip()
 
                     tier = 1 if name in TIER1 else (2 if name in TIER2 else 3)
-                    score = {1: 65, 2: 50, 3: 35}.get(tier, 35)
                     tags = [f"tier-{tier}"]
 
                     comp = get_company(name, industry, website, address, notes)
@@ -299,7 +298,7 @@ class Command(BaseCommand):
                         owner, name=name, phone=phone, email=email,
                         source="facebook", stage=new_stage, assigned_to=owner,
                         company=comp, website=website, industry=industry,
-                        notes=notes, tags=tags, score=score,
+                        notes=notes, tags=tags,
                     )
                     if created:
                         created_count += 1
@@ -315,7 +314,7 @@ class Command(BaseCommand):
                 owner, name=pl["name"], phone=pl.get("phone", ""),
                 source=pl["source"], stage=stages.get(pl["stage"], new_stage),
                 assigned_to=owner, company=comp, website=pl.get("website", ""),
-                industry=pl.get("industry", ""), score=pl["score"],
+                industry=pl.get("industry", ""),
                 tags=[f"tier-{pl['tier']}", "active"],
                 notes=pl.get("next_action", ""),
             )
@@ -364,3 +363,10 @@ class Command(BaseCommand):
             f"Companies: {Company.objects.filter(tenant=None).count()} | "
             f"Followups: {Followup.objects.filter(lead__tenant=None).count()}"
         ))
+        self.stdout.write("Recomputing lead scores...")
+        from crm.scoring import recompute_score
+        recomputed = 0
+        for lead in Lead.objects.filter(tenant=None).iterator():
+            recompute_score(lead)
+            recomputed += 1
+        self.stdout.write(self.style.SUCCESS(f"  {recomputed} leads scored"))

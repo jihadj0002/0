@@ -19,6 +19,15 @@
     {% for t in lead.tags %}<span class="pill pill-gray">#{{ t }}</span>{% endfor %}
   </div>
 
+  {% if score_parts %}
+  <div class="popup-block score-breakdown">
+    <div class="popup-label">Why this score</div>
+    <div class="score-parts">
+      {% for label, pts in score_parts %}<span class="score-chip">{{ label }} {{ pts }}</span>{% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if lead.phone or lead.email %}
   <div class="popup-contact">
     {% if lead.phone %}

@@ -13,6 +13,7 @@ import json
 import re
 
 from .permissions import staff_required, crm_role_required
+from .scoring import recompute_score, breakdown_items
 from .services import (
     lead_queryset_for, get_role, can_manage, create_lead, update_lead,
     add_note, convert_lead, complete_followup, log_activity, notify,
@@ -236,8 +237,6 @@ def lead_detail(request, pk):
             if can_manage(user) or lead.assigned_to_id in (user.id, None):
                 if "stage" in request.POST and request.POST.get("stage"):
                     fields["stage"] = PipelineStage.objects.filter(pk=request.POST.get("stage")).first()
-                if "score" in request.POST:
-                    fields["score"] = max(0, min(100, int(request.POST.get("score", 0))))
                 if "assigned_to" in request.POST:
                     new_assignee = User_or_None(request.POST.get("assigned_to"))
                     if can_manage(user) or new_assignee in (None, user):
@@ -285,6 +284,7 @@ def lead_detail(request, pk):
         "lead_sources": Lead.SOURCE_CHOICES,
         "role": get_role(user),
         "can_edit": can_manage(user) or lead.assigned_to_id == user.id,
+        "score_parts": breakdown_items(lead.score_breakdown),
     }
     return render(request, "crm/lead_detail.html", context)
 
@@ -453,7 +453,7 @@ def ajax_quick_update(request, pk):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=pk)
     field = request.POST.get("field", "")
     value = request.POST.get("value")
-    allowed = {"score", "budget", "expected_value", "next_followup", "stage", "assigned_to", "notes"}
+    allowed = {"budget", "expected_value", "next_followup", "stage", "assigned_to", "notes"}
     if not (can_manage(request.user) or lead.assigned_to_id == request.user.id or lead.assigned_to_id is None):
         return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
 
@@ -473,8 +473,6 @@ def ajax_quick_update(request, pk):
     if not field:
         return JsonResponse({"ok": True})
     if field in allowed:
-        if field == "score":
-            value = max(0, min(100, int(value or 0)))
         if field == "stage":
             stage = get_object_or_404(PipelineStage, pk=value, tenant__isnull=True)
             update_lead(request.user, lead, stage=stage)
@@ -587,6 +585,7 @@ def ajax_lead_popup(request, pk):
     return render(request, "crm/_lead_popup.html", {
         "lead": lead, "recent_activities": recent_activities,
         "stages": stages, "can_edit": can_edit,
+        "score_parts": breakdown_items(lead.score_breakdown),
     })
 
 
@@ -608,6 +607,7 @@ def ajax_call_log(request):
                  duration=log.duration, outcome=log.outcome)
     if log.next_followup:
         Followup.objects.create(lead=lead, due=log.next_followup, kind="call", note="After call", created_by=request.user)
+    recompute_score(lead, request.user)
     return JsonResponse({"ok": True})
 
 
@@ -619,6 +619,8 @@ def ajax_task_toggle(request, pk):
         return JsonResponse({"ok": False, "error": "Not allowed"}, status=403)
     task.status = "done" if task.status != "done" else "pending"
     task.save(update_fields=["status"])
+    if task.lead_id:
+        recompute_score(task.lead, request.user)
     return JsonResponse({"ok": True, "status": task.status})
 
 
@@ -646,6 +648,8 @@ def ajax_task_update(request, pk):
     if assigned_to is not None and can_manage(request.user):
         task.assigned_to = User_or_None(assigned_to)
     task.save()
+    if task.lead_id:
+        recompute_score(task.lead, request.user)
     return JsonResponse({"ok": True, "status": task.status})
 
 
@@ -662,6 +666,7 @@ def ajax_meeting_status(request, pk):
         meeting.joined = True
     meeting.save()
     log_activity(meeting.lead, "demo", f"Meeting marked {status}", request.user, meeting_id=meeting.pk)
+    recompute_score(meeting.lead, request.user)
     return JsonResponse({"ok": True})
 
 
