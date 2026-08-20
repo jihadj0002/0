@@ -77,6 +77,8 @@ CSRF_TRUSTED_ORIGINS = [
     "http://matrix-production-867a.up.railway.app",
     "https://thematrixai.xyz",
     "http://thematrixai.xyz",
+    "https://www.thematrixai.xyz",
+    "http://www.thematrixai.xyz",
 ]
 
 

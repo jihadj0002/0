@@ -443,15 +443,16 @@ html, body {
             fetch("{% url 'api:meta-oauth-token' %}", {
               method: 'POST',
               credentials: 'same-origin',
-              redirect: 'manual',
               headers: {
                 'X-CSRFToken': csrfToken(),
                 'Content-Type': 'application/x-www-form-urlencoded'
               },
               body: body.toString()
             }).then(function (resp) {
+              // Request follows the server redirect (wizard / options / page
+              // picker) so resp.url lands on the page we should show next.
               if (resp && resp.url) {
-                window.location.href = resp.url;        // follow server redirect (wizard / options / page picker)
+                window.location.href = resp.url;
               } else {
                 window.location.reload();
               }

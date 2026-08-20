@@ -120,22 +120,53 @@ def get_me(user_token):
 
 
 def list_pages(user_token):
-    """List Pages the user manages, with per-page tokens and linked IG account."""
+    """List Pages the user manages, with per-page tokens and linked IG account.
+
+    Follows ``paging.next`` so accounts with more than one page of results
+    (default Graph page size) are not silently truncated.
+    """
+    pages = []
+    url = f"{GRAPH}/me/accounts"
+    params = {
+        "fields": "id,name,access_token,instagram_business_account",
+        "access_token": user_token,
+        "limit": 100,
+    }
+    try:
+        while url:
+            resp = requests.get(url, params=params, timeout=_TIMEOUT)
+            data = resp.json()
+            if isinstance(data, dict) and data.get("error"):
+                return {"error": data["error"]}
+            if isinstance(data, dict):
+                pages.extend(data.get("data", []))
+                url = (data.get("paging") or {}).get("next") or ""
+            else:
+                url = ""
+            params = None  # paging.next URLs carry their own parameters
+        return pages
+    except Exception as exc:
+        logger.warning("list_pages failed: %s", exc)
+        return {"error": str(exc)}
+
+
+def get_permissions(user_token):
+    """List the permissions granted on a user token (connect diagnostics)."""
     try:
         resp = requests.get(
-            f"{GRAPH}/me/accounts",
-            params={
-                "fields": "id,name,access_token,instagram_business_account",
-                "access_token": user_token,
-            },
+            f"{GRAPH}/me/permissions",
+            params={"access_token": user_token},
             timeout=_TIMEOUT,
         )
         data = resp.json()
         if isinstance(data, dict) and data.get("error"):
             return {"error": data["error"]}
-        return data.get("data", []) if isinstance(data, dict) else []
+        granted = {}
+        for perm in data.get("data", []) if isinstance(data, dict) else []:
+            granted[perm.get("permission")] = perm.get("status")
+        return granted
     except Exception as exc:
-        logger.warning("list_pages failed: %s", exc)
+        logger.warning("get_permissions failed: %s", exc)
         return {"error": str(exc)}
 
 
@@ -308,6 +339,7 @@ def _clear_oauth_session(request):
         "meta_oauth_user_id",
         "meta_oauth_expires_in",
         "meta_oauth_token",
+        "meta_oauth_retried_pages",
     ):
         request.session.pop(key, None)
 
@@ -348,8 +380,13 @@ def _finish_token_flow(request, user_token, expires_in):
     the page-picker (→ `meta-oauth-choose`). Shared by the server-side
     redirect flow and the mobile JS SDK flow.
     """
+    # Keep the token around briefly so `meta-oauth-choose` can re-list pages
+    # when the session payload is lost mid-flow (mobile in-app browsers).
+    request.session["meta_oauth_token"] = user_token
+
     me = get_me(user_token)
     meta_user_id = me.get("id", "") if isinstance(me, dict) else ""
+    fb_name = me.get("name", "") if isinstance(me, dict) else me.get("id", "")
 
     pages = list_pages(user_token)
     if isinstance(pages, dict) and pages.get("error"):
@@ -374,7 +411,32 @@ def _finish_token_flow(request, user_token, expires_in):
 
     if not page_list:
         _clear_oauth_session(request)
-        messages.error(request, "No Facebook Pages found on your account.")
+
+        # Diagnose instead of dead-ending: which permissions are missing tells
+        # the user exactly what to re-grant in Facebook's dialog.
+        detail = ""
+        perms = get_permissions(user_token)
+        if isinstance(perms, dict) and not perms.get("error"):
+            requested = {
+                s.strip() for s in _scopes().split(",") if s.strip()
+            }
+            missing = sorted(
+                requested - {p for p, st in perms.items() if st == "granted"}
+            )
+            if missing:
+                shown = ", ".join(f"“{m}”" for m in missing[:6])
+                if len(missing) > 6:
+                    shown += "…"
+                detail = f" Missing permission(s): {shown}."
+
+        messages.error(
+            request,
+            "Connected as "
+            + (fb_name or "unknown Facebook account")
+            + " — no Facebook Pages found on that account. Make sure you allow "
+            "Pages access in Facebook's dialog and select a Page to connect."
+            + detail,
+        )
         return _redirect_after_oauth(request)
 
     if len(page_list) == 1:
@@ -501,6 +563,17 @@ def meta_oauth_choose(request):
     """Render the page-picker. Used by both the redirect and SDK flows."""
     page_list = request.session.get("meta_oauth_pages") or []
     if not page_list:
+        # In-app browsers sometimes drop the session cookie mid-flow — re-list
+        # the pages from the retained token once instead of hard-failing.
+        token = request.session.get("meta_oauth_token") or ""
+        if token and not request.session.get("meta_oauth_retried_pages"):
+            request.session["meta_oauth_retried_pages"] = True
+            return _finish_token_flow(
+                request,
+                token,
+                request.session.get("meta_oauth_expires_in"),
+            )
+        request.session.pop("meta_oauth_retried_pages", None)
         messages.error(request, "Your connection session expired. Please try again.")
         return _redirect_after_oauth(request)
     return render(request, "back/meta_select_pages.html", {"pages": page_list})

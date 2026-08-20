@@ -512,3 +512,86 @@ class ShopLocationGuardTests(PipelineTestCase):
         self.assertIn("শেয়ার করা হয়নি", bot_msg.text)
         self.assertIn("01793504010", bot_msg.text)
         self.assertNotIn("Mishti Doi", bot_msg.text)
+
+
+class MetaOAuthFlowTestCase(TestCase):
+    """Facebook connect flow: page listing paging, diagnostics, session retry."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="oauthuser", password="x")
+
+    def _request(self):
+        from django.contrib.messages.middleware import MessageMiddleware
+        from django.contrib.sessions.middleware import SessionMiddleware
+        from django.test import RequestFactory
+
+        req = RequestFactory().get("/connect/meta/")
+        SessionMiddleware(lambda r: None).process_request(req)
+        MessageMiddleware(lambda r: None).process_request(req)
+        req.session.save()
+        req.user = self.user
+        return req
+
+    @patch("api.meta_oauth.requests.get")
+    def test_list_pages_follows_paging(self, mock_get):
+        from api.meta_oauth import list_pages
+
+        first = MagicMock()
+        first.json.return_value = {
+            "data": [{"id": "p1", "name": "Page One"}],
+            "paging": {"next": "https://graph.facebook.com/v23.0/me/accounts?cursor=2"},
+        }
+        second = MagicMock()
+        second.json.return_value = {"data": [{"id": "p2", "name": "Page Two"}]}
+        mock_get.side_effect = [first, second]
+
+        pages = list_pages("tok")
+        self.assertEqual([p["id"] for p in pages], ["p1", "p2"])
+        self.assertEqual(mock_get.call_count, 2)
+
+    def test_empty_pages_diagnoses_connected_profile_and_missing_scopes(self):
+        from api.meta_oauth import _finish_token_flow
+
+        with patch("api.meta_oauth.get_me", return_value={"id": "123", "name": "Testy"}):
+            with patch("api.meta_oauth.list_pages", return_value=[]):
+                with patch(
+                    "api.meta_oauth.get_permissions",
+                    return_value={
+                        "pages_show_list": "granted",
+                        "pages_messaging": "declined",
+                        "public_profile": "granted",
+                    },
+                ):
+                    req = self._request()
+                    _finish_token_flow(req, "tok", None)
+
+        from django.contrib.messages import get_messages
+
+        msgs = [str(m) for m in get_messages(req)]
+        self.assertTrue(any("Connected as Testy" in m for m in msgs))
+        self.assertTrue(any("Missing permission(s)" in m for m in msgs))
+        self.assertTrue(any("business_management" in m for m in msgs))
+        self.assertIsNone(req.session.get("meta_oauth_pages"))
+
+    def test_choose_recovers_when_session_payload_lost(self):
+        from api.meta_oauth import meta_oauth_choose
+
+        req = self._request()
+        req.session["meta_oauth_token"] = "tok"
+        req.session["meta_oauth_expires_in"] = 5184000
+
+        with patch("api.meta_oauth.get_me", return_value={"id": "123", "name": "Testy"}):
+            with patch(
+                "api.meta_oauth.list_pages",
+                return_value=[
+                    {"id": "p1", "name": "Page One"},
+                    {"id": "p2", "name": "Page Two"},
+                ],
+            ):
+                resp = meta_oauth_choose(req)
+
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(len(req.session["meta_oauth_pages"]), 2)
+        # Flag stays set until the selection is finalized (cleared by
+        # _clear_oauth_session after meta_oauth_select) so the retry is one-shot.
+        self.assertEqual(req.session.get("meta_oauth_retried_pages"), True)
