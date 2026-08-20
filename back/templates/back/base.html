@@ -432,34 +432,59 @@ html, body {
           var href = btn.getAttribute('href') || '';
           var scope = (window._metaSdkScope || '').replace(/[, ]+/g, ' ').trim() ||
                       'pages_show_list,pages_messaging,public_profile,email';
-          FB.login(function (response) {
-            if (!response || !response.authResponse || !response.authResponse.accessToken) {
-              return;   // user cancelled the dialog → stay put
-            }
-            var body = new URLSearchParams({
-              access_token: response.authResponse.accessToken,
-              next: getNextFromHref(href)
-            });
-            fetch("{% url 'api:meta-oauth-token' %}", {
-              method: 'POST',
-              credentials: 'same-origin',
-              headers: {
-                'X-CSRFToken': csrfToken(),
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: body.toString()
-            }).then(function (resp) {
-              // Request follows the server redirect (wizard / options / page
-              // picker) so resp.url lands on the page we should show next.
-              if (resp && resp.url) {
-                window.location.href = resp.url;
+
+          // The SDK path can fail silently (popup blocked, domain mismatch,
+          // broken popup<->opener comm e.g. COOP headers). Never leave the
+          // button dead — fall back to the classic redirect flow instead.
+          var resolved = false;
+
+          function fallbackToClassicFlow() {
+            if (resolved) return;
+            resolved = true;
+            window.location.href = href;
+          }
+
+          // Watchdog: if the SDK never calls back, go classic anyway.
+          setTimeout(fallbackToClassicFlow, 15000);
+
+          try {
+            FB.login(function (response) {
+              if (resolved) return;
+              var auth = response && response.authResponse && response.authResponse.accessToken;
+              if (auth) {
+                resolved = true;
+                var body = new URLSearchParams({
+                  access_token: auth,
+                  next: getNextFromHref(href)
+                });
+                fetch("{% url 'api:meta-oauth-token' %}", {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                  headers: {
+                    'X-CSRFToken': csrfToken(),
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                  },
+                  body: body.toString()
+                }).then(function (resp) {
+                  // Request follows the server redirect (wizard / options / page
+                  // picker) so resp.url lands on the page we should show next.
+                  if (resp && resp.url) {
+                    window.location.href = resp.url;
+                  } else {
+                    window.location.reload();
+                  }
+                }).catch(function () {
+                  fallbackToClassicFlow();              // network error → classic flow
+                });
+              } else if (response && response.status === 'not_authorized') {
+                resolved = true;                        // user explicitly cancelled → stay put
               } else {
-                window.location.reload();
+                fallbackToClassicFlow();                // blocked / domain mismatch → classic flow
               }
-            }).catch(function () {
-              window.location.href = href;              // network error → classic flow
-            });
-          }, { scope: scope });
+            }, { scope: scope });
+          } catch (err) {
+            fallbackToClassicFlow();
+          }
         });
       });
     });
