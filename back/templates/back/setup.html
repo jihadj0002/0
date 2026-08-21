@@ -283,7 +283,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 
 <!-- ── STEP: STORE ── -->
 <div class="tab-pane {% if active_step == 'store' %}active{% endif %}" id="step-store">
-  {% include 'back/settings_sections.html' with active_tab='store' continue_label='Save & Continue →' only %}
+  {% include 'back/settings_sections.html' with active_tab='store' continue_label='Save & Continue →' %}
   <div class="wizard-actions">
     <a class="back-link" href="?step=connect">← Back</a>
   </div>
@@ -291,7 +291,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 
 <!-- ── STEP: AGENT ── -->
 <div class="tab-pane {% if active_step == 'agent' %}active{% endif %}" id="step-agent">
-  {% include 'back/settings_sections.html' with active_tab='agent' continue_label='Save & Continue →' only %}
+  {% include 'back/settings_sections.html' with active_tab='agent' continue_label='Save & Continue →' %}
   <div class="wizard-actions">
     <a class="back-link" href="?step=store">← Back</a>
   </div>
@@ -299,7 +299,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 
 <!-- ── STEP: BEHAVIOR ── -->
 <div class="tab-pane {% if active_step == 'behavior' %}active{% endif %}" id="step-behavior">
-  {% include 'back/settings_sections.html' with active_tab='behavior' continue_label='Save & Continue →' only %}
+  {% include 'back/settings_sections.html' with active_tab='behavior' continue_label='Save & Continue →' %}
   <div class="wizard-actions">
     <a class="back-link" href="?step=agent">← Back</a>
   </div>
@@ -307,7 +307,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 
 <!-- ── STEP: KNOWLEDGE ── -->
 <div class="tab-pane {% if active_step == 'knowledge' %}active{% endif %}" id="step-knowledge">
-  {% include 'back/settings_sections.html' with active_tab='knowledge' continue_label='Save & Continue →' only %}
+  {% include 'back/settings_sections.html' with active_tab='knowledge' continue_label='Save & Continue →' %}
   <div class="wizard-actions">
     <a class="back-link" href="?step=behavior">← Back</a>
   </div>
@@ -315,7 +315,7 @@ input:checked + .slider::before { transform: translateX(20px); }
 
 <!-- ── STEP: AI MODEL ── -->
 <div class="tab-pane {% if active_step == 'ai_model' %}active{% endif %}" id="step-ai_model">
-  {% include 'back/settings_sections.html' with active_tab='ai_model' continue_label='Save & Continue →' only %}
+  {% include 'back/settings_sections.html' with active_tab='ai_model' continue_label='Save & Continue →' %}
   <div class="wizard-actions">
     <a class="back-link" href="?step=knowledge">← Back</a>
   </div>
