@@ -289,6 +289,26 @@
     } catch (err) { Crm.toast(err.message, 'error'); btn.disabled = false; }
   });
 
+  /* ---------- call log form submission (in lead drawer) ---------- */
+  document.addEventListener('submit', async (e) => {
+    const form = e.target.closest('.call-log-form');
+    if (!form) return;
+    e.preventDefault();
+    const leadId = form.dataset.leadId;
+    if (!leadId) { console.error('Call log form missing leadId', form); toast('Form error: missing lead ID', 'error'); return; }
+    const btn = form.querySelector('button[type=submit]');
+    if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData(form);
+      fd.append('lead', leadId);
+      const res = await api('/crm/ajax/calls/log', 'POST', fd);
+      toast('Call logged', 'success');
+      form.reset();
+      window.Crm._openLeadPopup && window.Crm._openLeadPopup(leadId);
+    } catch (err) { toast(err.message, 'error'); }
+    if (btn) btn.disabled = false;
+  });
+
   /* ---------- convert lead -> customer ---------- */
   function convertModal(leadId) {
     openModal('Convert to Customer', `

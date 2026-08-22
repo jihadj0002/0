@@ -51,3 +51,18 @@ def bd_phone(value):
 def wa_digits(value):
     """Digits-only number without '+' for wa.me links."""
     return re.sub(r"\D", "", str(bd_phone(value)))
+
+
+@register.filter
+def duration_display(value):
+    """Human-friendly duration. Model stores SECONDS: 300 -> '5m', 45 -> '45s'."""
+    try:
+        secs = int(value or 0)
+    except (TypeError, ValueError):
+        secs = 0
+    if secs <= 0:
+        return "—"
+    if secs < 60:
+        return f"{secs}s"
+    m, s = divmod(secs, 60)
+    return f"{m}m {s}s" if s else f"{m}m"

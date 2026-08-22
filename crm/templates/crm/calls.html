@@ -1,4 +1,5 @@
 {% extends "crm/base.html" %}
+{% load crm_extras %}
 {% block title %}Calls — Matrix CRM{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -28,7 +29,7 @@
           <td><a href="{% url 'crm:lead_detail' call.lead.pk %}"><b>{{ call.lead.name }}</b></a></td>
           <td>{% if call.staff %}{{ call.staff.get_full_name|default:call.staff.username }}{% else %}—{% endif %}</td>
           <td><span class="pill {% if call.outcome == 'interested' %}pill-won{% elif call.outcome == 'not_interested' %}pill-lost{% else %}pill-blue{% endif %}">{{ call.get_outcome_display }}</span></td>
-          <td>{{ call.duration }}m</td>
+          <td>{{ call.duration|duration_display }}</td>
           <td class="form-help">{{ call.summary|default:"—"|truncatechars:80 }}</td>
           <td>{% if call.next_followup %}{{ call.next_followup|date:"M j, g:i A" }}{% else %}—{% endif %}</td>
           <td>{{ call.created_at|date:"M j, Y" }}</td>

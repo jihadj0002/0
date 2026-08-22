@@ -81,6 +81,35 @@
       <button class="btn btn-primary btn-block" type="submit">Update</button>
     </div>
   </form>
+
+  <div class="popup-block">
+    <div class="popup-label">Log Call</div>
+    <form class="call-log-form" data-lead-id="{{ lead.pk }}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Outcome</label>
+          <select name="outcome" class="call-outcome">
+            {% for value, label in call_outcomes %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Duration (minutes)</label>
+          <input type="number" name="duration_minutes" value="5" min="0" step="1">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Summary</label>
+        <textarea name="summary" rows="2" placeholder="Brief call summary…"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Next Follow-up (optional)</label>
+        <input type="datetime-local" name="next_followup">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block btn-sm">Save Call</button>
+    </form>
+  </div>
   {% elif lead.notes %}
   <div class="popup-block">
     <div class="popup-label">Notes</div>

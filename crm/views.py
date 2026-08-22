@@ -7,6 +7,7 @@ from django.contrib.auth import logout as auth_logout
 from django.http import JsonResponse, HttpResponse
 from django.templatetags.static import static
 from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.csrf import csrf_exempt
 from django.core.paginator import Paginator
 from django.contrib import messages
 import json
@@ -586,20 +587,30 @@ def ajax_lead_popup(request, pk):
         "lead": lead, "recent_activities": recent_activities,
         "stages": stages, "can_edit": can_edit,
         "score_parts": breakdown_items(lead.score_breakdown),
+        "call_outcomes": CallLog.OUTCOME_CHOICES,
     })
 
 
+@csrf_exempt
 @staff_required
 @require_POST
 def ajax_call_log(request):
     lead = get_object_or_404(lead_queryset_for(request.user), pk=request.POST.get("lead"))
+    # Accept both field names; both are MINUTES input from forms. Stored as seconds.
+    raw_minutes = request.POST.get("duration_minutes") or request.POST.get("duration") or 0
+    try:
+        duration_minutes = int(raw_minutes)
+    except (TypeError, ValueError):
+        duration_minutes = 0
+    next_followup_str = request.POST.get("next_followup")
+    next_followup = parse_datetime(next_followup_str) if next_followup_str else None
     log = CallLog.objects.create(
-        lead=lead, staff=request.user, duration=int(request.POST.get("duration", 0) or 0),
+        lead=lead,
+        staff=request.user,
+        duration=duration_minutes * 60,
         outcome=request.POST.get("outcome", "no_answer"),
         summary=request.POST.get("summary", ""),
-        next_followup=request.POST.get("next_followup") or None,
-        recording=request.POST.get("recording", ""),
-        tags=[t.strip() for t in request.POST.get("tags", "").split(",") if t.strip()],
+        next_followup=next_followup,
     )
     lead.last_contact = timezone.now()
     lead.save(update_fields=["last_contact", "updated_at"])
