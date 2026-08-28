@@ -53,7 +53,6 @@ _IMAGE_REQUEST_RE = re.compile(
 # Text prefix for Messenger product-card postbacks (webhooks.py). The customer
 # tapped "View <product>" on a card — that IS the product choice, so the
 # pipeline must NOT force another catalog search for it.
-PRODUCT_SELECTION_PREFIX = "Customer selected the product:"
 
 
 from .context import build_system_prompt, get_conversation_history
@@ -111,12 +110,7 @@ def _fallback_reply(last_search, pending_images, product_cards):
     return "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
 
 
-def _store_location_fallback(user):
-    """Direct StoreConfig reply for shop-location questions when the LLM blanked.
 
-    Never lists products and never invents data — when the store has no address
-    it says so plainly and gives the WhatsApp number if one is configured.
-    """
     try:
         from context.models import StoreConfig
         from .context import _clean_address
@@ -425,10 +419,6 @@ def run(conversation, incoming_message):
     product_cards = []
     transferred = False
     image_promise_corrected = False
-    search_called = False
-    focus_hinted = False
-    location_hinted = False
-    kb_called = False
     kb_empty = False
     create_order_called = False
     last_search = None
@@ -441,39 +431,6 @@ def run(conversation, incoming_message):
     _dup_nudged = set()
     _search_calls = 0
     _thread_pids = set()
-    _product_keywords = re.compile(
-        r"(price|dam|দাম|product|প্রোডাক্ট|পণ্য|item|"
-        r"কিনতে|n?e?ed?|order|অর্ডার|available|stock|photo|image|ছবি|pic|"
-        r"ki.?ki.?ache|কি কি আছে|ki ache|কি আছে|show|দেখান|dekhan|want|"
-        r"koto|কত|dam koto|দাম কত|stock ache|স্টক আছে)",
-        re.IGNORECASE,
-    )
-    _policy_keywords = re.compile(
-        r"(delivery|shipping|return|refund|exchange|warranty|payment|bkash|nagad|"
-        r"cash on delivery|cod|ডেলিভারি|ডেলিভারি চার্জ|রিটার্ন|রিফান্ড|"
-        r"এক্সচেঞ্জ|ওয়ারেন্টি|পেমেন্ট|বিকাশ|নগদ|ক্যাশ অন ডেলিভারি|"
-        r"delivery time|time lage|koidin|kotodin|koto din|days|দিন লাগে|"
-        r"dhakar baire|বাইরে|outside dhaka|bole dewa|দেওয়া|চার্জ|charge)",
-        re.IGNORECASE,
-    )
-    # Shop/location questions must NEVER be mistaken for product searches
-    # ("দোকান" alone is ambiguous: "দোকানে কি আছে?" IS a product question).
-    # Both a shop entity word AND a location/contact cue must match.
-    _shop_entity_words = re.compile(
-        r"(দোকান|dokan|shop|store|showroom|শোরুম|office|অফিস|outlet|branch|ব্রাঞ্চ)",
-        re.IGNORECASE,
-    )
-    _shop_fact_cues = re.compile(
-        r"(কোথায়|কোথা|কই|কুথায়|kothay|koi|kotha|where|location|লোকেশন|"
-        r"ঠিকানা|address|এড্রেস|thikana|নাম|name|ফোন|phone|নম্বর|number|"
-        r"সময়|hours|time|খোলা|open)",
-        re.IGNORECASE,
-    )
-    is_location_query = bool(
-        customer_text
-        and _shop_entity_words.search(customer_text)
-        and _shop_fact_cues.search(customer_text)
-    )
 
     start_time = time.monotonic()
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -494,88 +451,9 @@ def run(conversation, incoming_message):
 
         _log(user, reply_id, usage, call_type=f"call_{iteration + 1}")
 
-        # Track which tools were called
-        if llm_msg.tool_calls:
-            for tc in llm_msg.tool_calls:
-                fn = tc.function.name
-                if fn == "search_products":
-                    search_called = True
-                if fn == "search_knowledge_base":
-                    kb_called = True
-
-        # No tool calls → LLM is done (guard: force think or search first)
+        # No tool calls → LLM is done
         if not llm_msg.tool_calls:
             candidate = llm_msg.content or ""
-
-            # GUARD: shop/location/contact questions are answered ONLY from the
-            # ## Store block — never forced into a product search (the historical
-            # "shop kothay → product list" bug) and never answered with invented
-            # facts when the store field says "Not set".
-            if is_location_query and not location_hinted:
-                location_hinted = True
-                messages.append({"role": "assistant", "content": candidate})
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "The customer asked for the shop's location/address/contact info. "
-                        "Answer ONLY from the ## Store block (Shop location, Phone/WhatsApp, "
-                        "Support hours). If a field says 'Not set', say the store has not "
-                        "shared that information yet. NEVER call search_products, NEVER list "
-                        "products, NEVER ask for an order."
-                    ),
-                })
-                continue
-
-            # GUARD: force search_products if the query looks like a product request
-            # (unless the customer already chose a product via a card postback —
-            # the product is resolved into context, so no search is needed).
-            is_product_query = bool(_product_keywords.search(customer_text or ""))
-            is_selection = (customer_text or "").strip().startswith(PRODUCT_SELECTION_PREFIX)
-            if is_product_query and not is_location_query and not search_called and not is_selection:
-                has_focus = bool(parse_focus_products(conversation.current_product))
-                if has_focus and not focus_hinted:
-                    focus_hinted = True
-                    messages.append({"role": "assistant", "content": candidate})
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            "Relevant products are already listed in "
-                            "'## Recent Searched Products' above. Use that data. "
-                            "Only call search_products if the customer asks for "
-                            "something not already there."
-                        ),
-                    })
-                    continue
-                elif not has_focus:
-                    messages.append({"role": "assistant", "content": candidate})
-                    messages.append({
-                        "role": "system",
-                        "content": (
-                            "The customer is asking about products. You MUST call "
-                            "search_products before replying. Use different keywords "
-                            "(Bengali → English, synonyms). Do NOT rely on focused products "
-                            "alone — search the catalog first."
-                        ),
-                    })
-                    continue
-                # has_focus + already hinted → fall through to final_text
-
-            # GUARD: force knowledge base search for policy/FAQ questions.
-            # Runs even when product keywords also match ("ডেলিভারি চার্জ কত?"
-            # contains 'কত') — a delivery/policy question must be answered,
-            # not silently treated as a product search.
-            is_policy_query = bool(_policy_keywords.search(customer_text or ""))
-            if is_policy_query and not kb_called and not is_location_query:
-                messages.append({"role": "assistant", "content": candidate})
-                messages.append({
-                    "role": "system",
-                    "content": (
-                        "The customer is asking about policy/FAQ. You MUST call "
-                        "search_knowledge_base with a short keyword query (e.g. 'delivery charge', "
-                        "'return policy', 'payment methods') before replying."
-                    ),
-                })
-                continue
 
             # Safety net for the "promised images but never sent them" failure:
             # if the reply claims to send photos but send_images was never called
@@ -879,9 +757,7 @@ def run(conversation, incoming_message):
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
-        if is_location_query:
-            final_text = _store_location_fallback(user)
-        elif last_order and isinstance(last_order, dict):
+        if last_order and isinstance(last_order, dict):
             if last_order.get("order_id"):
                 final_text = f"অর্ডারটি তৈরি হয়েছে (আইডি: {last_order['order_id']}). আর কিছু যোগ করবেন?"
             elif last_order.get("error"):
