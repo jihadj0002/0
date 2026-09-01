@@ -51,6 +51,15 @@ urlpatterns = [
     path("reports/", views.reports, name="reports"),
     path("settings/", views.settings, name="settings"),
 
+    # Cold Mail
+    path("cold-mail/", views.cold_mail_index, name="cold_mail_index"),
+    path("cold-mail/select/", views.cold_mail_select, name="cold_mail_select"),
+    path("cold-mail/send/", views.cold_mail_compose, name="cold_mail_compose"),
+    path("cold-mail/list-templates/", views.cold_mail_list_templates, name="cold_mail_list_templates"),
+    path("cold-mail/batch/<uuid:uid>/", views.cold_mail_batch_detail, name="cold_mail_batch_detail"),
+    path("cold-mail/batch/<uuid:uid>/poll/", views.cold_mail_batch_poll, name="cold_mail_batch_poll"),
+    path("cold-mail/export/", views.cold_mail_export, name="cold_mail_export"),
+
     # AJAX
     path("ajax/search", views.ajax_search, name="ajax_search"),
     path("ajax/notifications", views.ajax_notifications, name="ajax_notifications"),

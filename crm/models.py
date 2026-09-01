@@ -441,6 +441,280 @@ class CrmSetting(models.Model):
 
 
 # -----------------------
+# Cold Email Templates & Batching
+# -----------------------
+class EmailTemplate(models.Model):
+    CATEGORY_CHOICES = [
+        ("cold", "Cold Outreach"),
+        ("followup", "Follow-up"),
+        ("nurture", "Nurture"),
+        ("proposal", "Proposal"),
+        ("announcement", "Announcement"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="etp_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    name = models.CharField(max_length=120)
+    subject = models.CharField(max_length=200, help_text="Supports tokens: {{lead.name}}, {{lead.email}}, etc.")
+    body_html = CKEditor5Field(config_name="blog", help_text="Rich text editor. Tokens will be replaced at send time.")
+    body_text = models.TextField(blank=True, default="", help_text="Plain-text fallback (auto-generated from HTML if empty)")
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default="cold")
+    is_active = models.BooleanField(default=True)
+    is_system = models.BooleanField(default=False, help_text="System templates cannot be deleted")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_email_templates_created")
+    tenant = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.CASCADE, related_name="crm_tenant_email_templates",
+        help_text="Null = internal MatrixAI template (available to all). Set for per-tenant templates."
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category", "name"]
+        indexes = [
+            models.Index(fields=["tenant", "is_active"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_category_display()})"
+
+
+class EmailBatch(models.Model):
+    STATUS_CHOICES = [
+        ("draft", "Draft"),
+        ("queued", "Queued"),
+        ("sending", "Sending"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="emb_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    template = models.ForeignKey(EmailTemplate, on_delete=models.PROTECT, related_name="batches")
+    subject_rendered = models.CharField(max_length=200, blank=True, default="")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    total_recipients = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    scheduled_at = models.DateTimeField(null=True, blank=True, help_text="Null = send immediately")
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_email_batches_created")
+    tenant = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.CASCADE, related_name="crm_tenant_email_batches"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "scheduled_at"]),
+        ]
+
+    def __str__(self):
+        return f"Batch {self.uid} — {self.template.name} ({self.status})"
+
+
+class EmailLog(models.Model):
+    STATUS_CHOICES = [
+        ("queued", "Queued"),
+        ("sent", "Sent"),
+        ("failed", "Failed"),
+        ("bounced", "Bounced"),
+        ("opened", "Opened"),
+        ("clicked", "Clicked"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="eml_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    batch = models.ForeignKey(EmailBatch, null=True, blank=True, on_delete=models.SET_NULL, related_name="logs")
+    template = models.ForeignKey(EmailTemplate, on_delete=models.PROTECT, related_name="logs")
+    lead = models.ForeignKey("Lead", on_delete=models.PROTECT, related_name="email_logs")
+    recipient_email = models.EmailField(help_text="Frozen at send time")
+    subject = models.CharField(max_length=200)
+    body_html = models.TextField(help_text="Rendered body for debugging/audit")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
+    provider_message_id = models.CharField(max_length=100, blank=True, default="")
+    error = models.TextField(blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    opened_at = models.DateTimeField(null=True, blank=True)
+    clicked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["batch", "status"]),
+            models.Index(fields=["lead", "status"]),
+        ]
+
+    def __str__(self):
+        return f"EmailLog {self.uid} — {self.lead.name} ({self.status})"
+
+
+# -----------------------
+# Email Account (SMTP connection)
+# -----------------------
+class EmailAccount(models.Model):
+    PROVIDER_CHOICES = [
+        ("smtp", "SMTP"),
+        ("google", "Google Workspace"),
+        ("microsoft", "Microsoft 365"),
+    ]
+    REPUTATION_CHOICES = [
+        ("good", "Good"),
+        ("warm", "Warm"),
+        ("poor", "Poor"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="ema_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    email = models.EmailField()
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, default="smtp")
+    smtp_host = models.CharField(max_length=200, blank=True, default="")
+    smtp_port = models.PositiveIntegerField(default=587)
+    smtp_user = models.CharField(max_length=200, blank=True, default="")
+    smtp_password = models.CharField(max_length=300, blank=True, default="", help_text="Encrypted in production")
+    use_tls = models.BooleanField(default=True)
+    daily_limit = models.PositiveIntegerField(default=50)
+    sent_today = models.PositiveIntegerField(default=0)
+    last_sent_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    reputation = models.CharField(max_length=10, choices=REPUTATION_CHOICES, default="good")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_email_accounts")
+    tenant = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="crm_tenant_email_accounts")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_active", "email"]
+
+    def __str__(self):
+        return f"{self.email} ({self.get_provider_display()})"
+
+
+# -----------------------
+# Campaign (Outreach)
+# -----------------------
+class Campaign(models.Model):
+    CAMPAIGN_TYPE_CHOICES = [
+        ("one_time", "One-time Campaign"),
+        ("sequence", "Email Sequence"),
+    ]
+    STATUS_CHOICES = [
+        ("draft", "Draft"),
+        ("scheduled", "Scheduled"),
+        ("sending", "Sending"),
+        ("paused", "Paused"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("archived", "Archived"),
+    ]
+    TONE_CHOICES = [
+        ("professional", "Professional"),
+        ("friendly", "Friendly"),
+        ("direct", "Direct"),
+        ("casual", "Casual"),
+    ]
+    AUDIENCE_TYPE_CHOICES = [
+        ("segment", "Existing Segment"),
+        ("filter", "Filter Leads"),
+        ("manual", "Select Manually"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="cmp_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="", help_text="Internal reference")
+    campaign_type = models.CharField(max_length=20, choices=CAMPAIGN_TYPE_CHOICES, default="one_time")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
+    template = models.ForeignKey(EmailTemplate, null=True, blank=True, on_delete=models.SET_NULL, related_name="campaigns")
+    sending_account = models.ForeignKey(EmailAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="campaigns")
+    reply_to = models.EmailField(blank=True, default="")
+    daily_limit = models.PositiveIntegerField(default=50)
+    min_interval = models.PositiveIntegerField(default=2, help_text="Minimum minutes between sends")
+    max_interval = models.PositiveIntegerField(default=5, help_text="Maximum minutes between sends")
+    scheduled_at = models.DateTimeField(null=True, blank=True, help_text="Null = send immediately")
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    total_recipients = models.PositiveIntegerField(default=0)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    bounced_count = models.PositiveIntegerField(default=0)
+    opened_count = models.PositiveIntegerField(default=0)
+    replied_count = models.PositiveIntegerField(default=0)
+    ai_personalization = models.BooleanField(default=False)
+    ai_instruction = models.TextField(blank=True, default="")
+    ai_tone = models.CharField(max_length=20, choices=TONE_CHOICES, default="friendly")
+    personalization_fields = models.JSONField(default=list, blank=True)
+    options = models.JSONField(default=dict, blank=True, help_text="stop_on_reply, skip_bounced, skip_contacted, etc.")
+    audience_type = models.CharField(max_length=20, choices=AUDIENCE_TYPE_CHOICES, default="manual")
+    audience_data = models.JSONField(default=dict, blank=True, help_text="Filter criteria or selected lead IDs")
+    rq_job_id = models.CharField(max_length=200, blank=True, default="")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="crm_campaigns_created")
+    tenant = models.ForeignKey(User, null=True, blank=True, on_delete=models.CASCADE, related_name="crm_tenant_campaigns")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["tenant", "status"]),
+            models.Index(fields=["tenant", "scheduled_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.get_status_display()})"
+
+
+# -----------------------
+# Campaign Lead (per-lead status in campaign)
+# -----------------------
+class CampaignLead(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("queued", "Queued"),
+        ("sent", "Sent"),
+        ("failed", "Failed"),
+        ("bounced", "Bounced"),
+        ("opened", "Opened"),
+        ("replied", "Replied"),
+    ]
+
+    uid = ShortUUIDField(length=12, prefix="cpl_", alphabet="abcdefghijklmnopqrstuvwxyz0123456789")
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name="leads")
+    lead = models.ForeignKey(Lead, on_delete=models.CASCADE, related_name="campaign_leads")
+    email_snapshot = models.EmailField(blank=True, default="", help_text="Frozen at send time")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    subject_rendered = models.CharField(max_length=200, blank=True, default="")
+    error = models.TextField(blank=True, default="")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    opened_at = models.DateTimeField(null=True, blank=True)
+    replied_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["campaign", "status"]),
+            models.Index(fields=["lead", "status"]),
+        ]
+        verbose_name = "Campaign Lead"
+        verbose_name_plural = "Campaign Leads"
+
+    def __str__(self):
+        return f"{self.lead.name} — {self.get_status_display()}"
+class CrmSetting(models.Model):
+    key = models.CharField(max_length=100, unique=True)
+    value = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["key"]
+
+    def __str__(self):
+        return self.key
+
+
+# -----------------------
 # Learn (sales training hub)
 # -----------------------
 class LearningTopic(models.Model):

@@ -17,3 +17,6 @@ boto3
 openai
 cryptography==46.0.5
 django-ckeditor-5
+django-rq>=2.10
+django-redis>=5.4
+redis>=5.0

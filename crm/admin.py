@@ -4,6 +4,7 @@ from .models import (
     StaffProfile, PipelineStage, Company, Lead, Activity, CallLog, Meeting,
     Task, Followup, SalesScript, FAQ, Customer, Notification, CrmSetting,
     LearningTopic, LearningArticle,
+    EmailTemplate, EmailBatch, EmailLog,
 )
 
 
@@ -111,3 +112,29 @@ class LearningArticleAdmin(admin.ModelAdmin):
     prepopulated_fields = {"slug": ["title"]}
     search_fields = ["title", "summary"]
     autocomplete_fields = ["topic"]
+
+
+@admin.register(EmailTemplate)
+class EmailTemplateAdmin(admin.ModelAdmin):
+    list_display = ["name", "category", "is_active", "is_system", "created_by", "created_at"]
+    list_filter = ["category", "is_active", "is_system", "created_at"]
+    search_fields = ["name", "subject"]
+    readonly_fields = ["uid", "created_at", "updated_at"]
+    list_editable = ["is_active"]
+
+
+@admin.register(EmailBatch)
+class EmailBatchAdmin(admin.ModelAdmin):
+    list_display = ["uid", "template", "status", "total_recipients", "sent_count", "failed_count", "created_by", "created_at"]
+    list_filter = ["status", "template", "created_at"]
+    search_fields = ["uid", "subject_rendered"]
+    readonly_fields = ["uid", "created_at", "updated_at", "started_at", "completed_at"]
+
+
+@admin.register(EmailLog)
+class EmailLogAdmin(admin.ModelAdmin):
+    list_display = ["uid", "lead", "template", "recipient_email", "status", "provider_message_id", "sent_at"]
+    list_filter = ["status", "template", "sent_at"]
+    search_fields = ["uid", "lead__name", "recipient_email", "subject", "error"]
+    readonly_fields = ["uid", "created_at", "sent_at", "opened_at", "clicked_at"]
+    date_hierarchy = "sent_at"

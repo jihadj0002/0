@@ -1,0 +1,506 @@
+{% extends "crm/base.html" %}
+{% load crm_extras static %}
+
+{% block title %}Cold Mail - Matrix CRM{% endblock %}
+
+{% block content %}
+<div class="crm-content">
+  <div class="page-header">
+    <div class="page-title">
+      <h2>Cold Mail</h2>
+      <p>Send personalized cold emails to selected leads</p>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-primary" id="newTemplateBtn">New Template</button>
+    </div>
+  </div>
+
+  <div class="row gutters">
+    <div class="col-xl-4 col-md-6">
+      <div class="card">
+        <div class="card-header">
+          <h5 class="card-title">Filter Leads</h5>
+        </div>
+        <div class="card-body p-3">
+          <div class="row gutters">
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Stage</label>
+                <select name="stage" class="form-select form-select-sm" id="stageFilter">
+                  <option value="">All Stages</option>
+                  {% for stage in stages %}
+                  <option value="{{ stage.pk }}" {% if stage.pk == filter_stage %}selected{% endif %}>
+                    {{ stage.name }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Bucket</label>
+                <select name="bucket" class="form-select form-select-sm" id="bucketFilter">
+                  <option value="">All Buckets</option>
+                  <option value="hot" {% if filter_bucket == 'hot' %}selected{% endif %}>Hot</option>
+                  <option value="warm" {% if filter_bucket == 'warm' %}selected{% endif %}>Warm</option>
+                  <option value="cold" {% if filter_bucket == 'cold' %}selected{% endif %}>Cold</option>
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Source</label>
+                <select name="source" class="form-select form-select-sm" id="sourceFilter">
+                  <option value="">All Sources</option>
+                  {% for choice in source_choices %}
+                  <option value="{{ choice.0 }}" {% if filter_source == choice.0 %}selected{% endif %}>
+                    {{ choice.1 }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="form-group">
+                <label>Assigned To</label>
+                <select name="assignee" class="form-select form-select-sm" id="assigneeFilter">
+                  <option value="">All Assignees</option>
+                  <option value="" {% if not filter_assignee %}selected{% endif %}>Unassigned</option>
+                  {% for user in assignees %}
+                  <option value="{{ user.pk }}" {% if filter_assignee == user.pk %}selected{% endif %}>
+                    {{ user.get_full_name|default:user.username }}
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-group">
+                <label>Search</label>
+                <input type="text" id="searchInput" class="form-control form-control-sm"
+                       placeholder="Search by name, email, or company..." value="{{ filter_q }}">
+              </div>
+            </div>
+          </div>
+        </div>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize lead table with current selection
+  window.Crm = window.Crm || {};
+  window.Crm.selected_ids = {% if selected_ids %}JSON.parse('{{ selected_ids|json_script }}'){% else %}[]{% endif %};
+  window.Crm.loadLeads = function() {
+    const stage = document.getElementById('stageFilter').value;
+    const bucket = document.getElementById('bucketFilter').value;
+    const source = document.getElementById('sourceFilter').value;
+    const assignee = document.getElementById('assigneeFilter').value;
+    const search = document.getElementById('searchInput').value.trim();
+    
+    fetch('{% url "crm:cold_mail_select" %}?stage=' + stage + '&bucket=' + bucket + '&source=' + source + '&assigned_to=' + assignee + '&q=' + search + '&page=1', {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(function(data) {
+      document.getElementById('leadsTableBody').innerHTML = data.html;
+      // Update lead count
+      var leadCount = data.total_count || 0;
+      document.getElementById('leadCount').textContent = leadCount;
+      // Re-apply checkbox selection from session
+      {% if selected_ids %}
+      {% for id in selected_ids %}
+      var checkBox = document.querySelector('.lead-check[value="' + id + '"]');
+      if (checkBox) checkBox.checked = true;
+      {% endfor %}
+      {% endif %}
+    })
+    .catch(function(error) {
+      console.error('Error loading leads:', error);
+    });
+  };
+  
+  // Filter change handlers
+  document.getElementById('stageFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('bucketFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('sourceFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('assigneeFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('searchInput').addEventListener('keyup', function(e) {
+    if(e.key === 'Enter') window.Crm.loadLeads();
+    else if(e.key.length >= 2 || e.key.length === 0) window.Crm.loadLeads();
+  });
+  
+  // Initialize on page load
+  window.Crm.loadLeads();
+  
+  // Handle Next button click to show compose modal
+  document.getElementById('nextBtn').addEventListener('click', function() {
+    // Get selected lead IDs
+    var selectedLeadIds = [];
+    var leadChecks = document.querySelectorAll('.lead-check:checked');
+    leadChecks.forEach(function(checkbox) {
+      selectedLeadIds.push(checkbox.value);
+    });
+    
+    // Save selected leads to session
+    fetch('{% url "crm:cold_mail_select" %}?stage=&bucket=&source=&assigned_to=&q=&page=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ selected_lead_ids: selectedLeadIds })
+    })
+    .then(response => response.json())
+    .then(function(data) {
+      // Show compose modal
+      var composeModal = document.getElementById('composeModal');
+      if (composeModal) {
+        composeModal.style.display = 'block';
+      }
+      // Load templates
+      loadTemplates();
+    })
+    .catch(function(error) {
+      console.error('Error saving selection:', error);
+    });
+  });
+</script>
+      </div>
+    </div>
+
+    <div class="col-xl-8 col-md-6">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title">Leads (<span id="leadCount">0</span>)</h5>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-outline-secondary" id="selectAllBtn">Select All</button>
+            <button type="button" class="btn btn-outline-secondary" id="deselectAllBtn">Deselect All</button>
+          </div>
+        </div>
+        <div class="card-body p-3">
+          <div class="table-responsive">
+            <table class="table table-hover mb-0">
+              <thead>
+                <tr>
+                  <th><input type="checkbox" id="selectAllCb"></th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Company</th>
+                  <th>Stage</th>
+                  <th>Score</th>
+                  <th>Source</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+<tbody id="leadsTableBody">
+                {% if leads %}
+                {% for lead in leads %}
+                <tr data-lead-id="{{ lead.pk }}">
+                  <td><input type="checkbox" class="lead-check" value="{{ lead.pk }}" {% if selected_ids and lead.pk in selected_ids %}checked{% endif %}></td>
+                  <td><a href="{% url 'crm:lead_detail' lead.pk %}">{{ lead.name }}</a></td>
+                  <td>{{ lead.email|default:'—' }}</td>
+                  <td>{{ lead.company.name|default:'—' }}</td>
+                  <td><span class="pill pill-blue">{{ lead.stage.name|default:'—' }}</span></td>
+                  <td><span class="pill pill-{{ lead.get_score_class }}">{{ lead.score }}</span></td>
+                  <td>{{ lead.get_source_display|default:'—' }}</td>
+                  <td>
+                    <button class="btn btn-link text-primary btn-sm" data-toggle="modal"
+                            data-target="#composeModal" data-lead-id="{{ lead.pk }}"
+                            data-lead-name="{{ lead.name }}" data-lead-email="{{ lead.email|default:'' }}"
+                            data-lead-company="{{ lead.company.name|default:'' }}">
+                      ✉
+                    </button>
+                  </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr>
+                  <td colspan="8" class="text-center">No leads match your filters</td>
+                </tr>
+                {% endif %}
+              </tbody>
+    </div>
+  </div>
+  <div class="card-footer">
+    <button type="button" class="btn btn-primary w-100" id="nextBtn">Next: Compose Email</button>
+  </div>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compose Modal -->
+  <div class="modal" id="composeModal" style="display: none"> role="dialog" aria-labelledby="composeModalLabel" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="composeModalLabel">Compose Email</h5>
+          <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="composeLeadId">
+          <input type="text" class="d-none" id="composeLeadName">
+          <span class="d-none" id="composeLeadCompany"></span>
+          
+          <div class="mb-3">
+            <label>Template <span class="text-danger">*</span></label>
+            <select name="template" class="form-select" id="templateSelect" onchange="previewEmail()">
+              <option value="">-- Select Template --</option>
+              {% for t in templates %}
+              <option value="{{ t.pk }}" {% if t.is_default %}data-default="{{ t.subject }}|{{ t.body }}"{% endif %}>
+                {{ t.name }} {% if t.is_default %}(default){% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          
+          <div class="mb-3">
+            <label>Subject</label>
+            <input type="text" class="form-control" id="emailSubject" placeholder="Customize subject">
+          </div>
+          
+          <div class="mb-3">
+            <label>Preview</label>
+            <div id="emailPreview" class="border rounded p-3" style="min-height: 120px; background: #f8f9fa;">
+              <small>Select a template to preview</small>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <label>Send From</label>
+            <select name="from_email" class="form-select">
+              <option value="">-- Select sending account --</option>
+              {% for acc in email_accounts %}
+              <option value="{{ acc }}">{{ acc }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="sendEmailsBtn">Send Emails</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Modal -->
+  <div class="modal" id="resultsModal" role="dialog" aria-labelledby="resultsModalLabel" tabindex="-1" hidden>
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="resultsModalLabel">Send Results</h5>
+          <button type="button" class="btn-close" data-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row gutters">
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="card-title">Sent</h6>
+                  <div class="card-body">
+                    <div id="resultsSent">0</div>
+                    <small>of total</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card">
+                <div class="card-header">
+                  <h6 class="card-title">Failed</h6>
+                  <div class="card-body">
+                    <div id="resultsFailed">0</div>
+                    <small>of total</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <hr>
+          <div class="mb-3">
+            <label>Summary</label>
+            <textarea class="form-control" rows="3" id="resultsSummary" readonly></textarea>
+          </div>
+          <div class="mb-3">
+            <label>Exported CSV</label>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="exportCsv">
+              <label class="form-check-label" for="exportCsv">Include CSV export</label>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-success" id="downloadResultsBtn">Download CSV</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script>
+function loadTemplates() {
+  const templateSelect = document.getElementById('templateSelect');
+  if (!templateSelect) return;
+  
+  fetch('{% url "crm:cold_mail_list_templates" %}', {
+    method: 'GET',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  })
+  .then(response => response.json())
+  .then(function(data) {
+    const templateSelect = document.getElementById('templateSelect');
+    if (!templateSelect) return;
+    templateSelect.innerHTML = '<option value="">-- Select Template --</option>';
+    $.each(data.templates, function(i, t) {
+      var option = document.createElement('option');
+      option.value = t.pk;
+      option.text = t.name + (t.is_system ? ' (system)' : '');
+      templateSelect.appendChild(option);
+    });
+  })
+  .catch(function(error) {
+    console.error('Error loading templates:', error);
+  });
+}
+
+function previewEmail() {
+  const templateSelect = document.getElementById('templateSelect');
+  const leadNameInput = document.getElementById('composeLeadName');
+  const leadCompanySpan = document.getElementById('composeLeadCompany');
+  const templateId = templateSelect ? templateSelect.value : '';
+  const leadName = leadNameInput ? leadNameInput.getAttribute('data-name') || '' : '';
+  const leadCompany = leadCompanySpan ? leadCompanySpan.textContent || '' : '';
+  
+  if (!templateId) {
+    document.getElementById('emailPreview').innerHTML = '<small>Select a template to preview</small>';
+    document.getElementById('emailSubject').value = '';
+    return;
+  }
+  
+  fetch('{% url "crm:cold_mail_compose" %}?template_id=' + templateId + '&lead_name=' + encodeURIComponent(leadName) + '&lead_company=' + encodeURIComponent(leadCompany), {
+    method: 'GET',
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    credentials: 'same-origin'
+  })
+  .then(response => response.json())
+  .then(function(data) {
+    document.getElementById('emailPreview').innerHTML = data.html || '';
+    document.getElementById('emailSubject').value = data.subject || '';
+  })
+  .catch(function(error) {
+    console.error('Error previewing email:', error);
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  // Initialize lead data attributes for modal
+  var composeModal = document.getElementById('composeModal');
+  if (composeModal) {
+    composeModal.addEventListener('show.bs.modal', function(e) {
+      var button = e.relatedTarget;
+      var leadId = button.getAttribute('data-lead-id');
+      var leadName = button.getAttribute('data-lead-name');
+      var leadEmail = button.getAttribute('data-lead-email');
+      var leadCompany = button.getAttribute('data-lead-company');
+      
+      document.getElementById('composeLeadId').value = leadId;
+      // Store data using dataset or variables
+      var leadNameElem = document.getElementById('composeLeadName');
+      if (leadNameElem) leadNameElem.setAttribute('data-name', leadName);
+      var leadCompanySpan = document.getElementById('composeLeadCompany');
+      if (leadCompanySpan) leadCompanySpan.textContent = leadCompany || '—';
+      
+      // Set default subject with merge fields
+      document.getElementById('emailSubject').value = 'Hello ,';
+      
+      // Load templates
+      loadTemplates();
+    });
+  }
+  
+  // Initialize lead table with current selection
+  window.Crm = window.Crm || {};
+  window.Crm.selected_ids = {% if selected_ids %}JSON.parse('{{ selected_ids|json_script }}'){% else %}[]{% endif %};
+  window.Crm.loadLeads = function() {
+    var stage = document.getElementById('stageFilter').value;
+    var bucket = document.getElementById('bucketFilter').value;
+    var source = document.getElementById('sourceFilter').value;
+    var assignee = document.getElementById('assigneeFilter').value;
+    var search = document.getElementById('searchInput').value.trim();
+    
+    fetch('{% url "crm:cold_mail_select" %}?stage=' + stage + '&bucket=' + bucket + '&source=' + source + '&assigned_to=' + assignee + '&q=' + search + '&page=1', {
+      method: 'GET',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(function(data) {
+      document.getElementById('leadsTableBody').innerHTML = data.html;
+      // Update lead count
+      var leadCount = data.total_count || 0;
+      document.getElementById('leadCount').textContent = leadCount;
+      // Re-apply checkbox selection from session
+      {% if selected_ids %}
+      {% for id in selected_ids %}
+      var checkBox = document.querySelector('.lead-check[value="' + id + '"]');
+      if (checkBox) checkBox.checked = true;
+      {% endfor %}
+      {% endif %}
+    })
+    .catch(function(error) {
+      console.error('Error loading leads:', error);
+    });
+  };
+  
+  // Filter change handlers
+  document.getElementById('stageFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('bucketFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('sourceFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('assigneeFilter').addEventListener('change', window.Crm.loadLeads);
+  document.getElementById('searchInput').addEventListener('keyup', function(e) {
+    if(e.key === 'Enter') window.Crm.loadLeads();
+    else if(e.key.length >= 2 || e.key.length === 0) window.Crm.loadLeads();
+  });
+  
+  // Initialize on page load
+  window.Crm.loadLeads();
+  
+  // Handle Next button click to show compose modal
+  document.getElementById('nextBtn').addEventListener('click', function() {
+    // Get selected lead IDs
+    var selectedLeadIds = [];
+    var leadChecks = document.querySelectorAll('.lead-check:checked');
+    leadChecks.forEach(function(checkbox) {
+      selectedLeadIds.push(checkbox.value);
+    });
+    
+    // Save selected leads to session
+    fetch('{% url "crm:cold_mail_select" %}?stage=&bucket=&source=&assigned_to=&q=&page=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ selected_lead_ids: selectedLeadIds })
+    })
+    .then(response => response.json())
+    .then(function(data) {
+      // Show compose modal
+      var composeModal = document.getElementById('composeModal');
+      if (composeModal) {
+        composeModal.style.display = 'block';
+      }
+      // Load templates
+      loadTemplates();
+    })
+    .catch(function(error) {
+      console.error('Error saving selection:', error);
+    });
+  });
+</script>
+{% endblock %}

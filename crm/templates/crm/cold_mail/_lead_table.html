@@ -1,0 +1,28 @@
+{% load crm_extras static %}
+<tbody id="leadsTableBody">
+{% if page_obj.object_list %}
+{% for lead in page_obj.object_list %}
+<tr data-lead-id="{{ lead.pk }}">
+  <td><input type="checkbox" class="lead-check" value="{{ lead.pk }}" {% if selected_ids and lead.pk in selected_ids %}checked{% endif %}></td>
+  <td><a href="{% url 'crm:lead_detail' lead.pk %}">{{ lead.name }}</a></td>
+  <td>{{ lead.email|default:'—' }}</td>
+  <td>{{ lead.company.name|default:'—' }}</td>
+  <td><span class="pill pill-blue">{{ lead.stage.name|default:'—' }}</span></td>
+  <td><span class="pill pill-{{ lead.get_score_class }}">{{ lead.score }}</span></td>
+  <td>{{ lead.get_source_display|default:'—' }}</td>
+  <td>
+    <button class="btn btn-link text-primary btn-sm" data-toggle="modal"
+            data-target="#composeModal" data-lead-id="{{ lead.pk }}"
+            data-lead-name="{{ lead.name }}" data-lead-email="{{ lead.email|default:'' }}"
+            data-lead-company="{{ lead.company.name|default:'' }}">
+      ✉
+    </button>
+  </td>
+</tr>
+{% endfor %}
+{% else %}
+<tr>
+  <td colspan="8" class="text-center">No leads match your filters</td>
+</tr>
+{% endif %}
+</tbody>

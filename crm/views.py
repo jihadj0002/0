@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST, require_GET
 from django.views.decorators.csrf import csrf_exempt
 from django.core.paginator import Paginator
 from django.contrib import messages
+from django.template.loader import render_to_string
 import json
 import re
 
@@ -18,11 +19,13 @@ from .scoring import recompute_score, breakdown_items
 from .services import (
     lead_queryset_for, get_role, can_manage, create_lead, update_lead,
     add_note, convert_lead, complete_followup, log_activity, notify,
+    token_replace, build_email_context, render_email, send_bulk_emails,
 )
 from .models import (
     Lead, Activity, Followup, Meeting, Task, CallLog, Company, Customer,
     PipelineStage, SalesScript, FAQ, Notification, StaffProfile,
     LearningTopic, LearningArticle,
+    EmailTemplate, EmailBatch, EmailLog,
 )
 
 
@@ -1347,3 +1350,329 @@ def settings(request):
         "role": get_role(request.user),
     }
     return render(request, "crm/settings.html", context)
+
+
+# ============================================================
+# COLD MAIL
+# ============================================================
+@crm_role_required("owner", "manager")
+def cold_mail_index(request):
+    """Main Cold Mail page with lead filters and selection."""
+    user = request.user
+    stages = PipelineStage.objects.filter(tenant__isnull=True).order_by("order")
+    sources = Lead.SOURCE_CHOICES
+    status_buckets = [
+        ("hot", "Hot (≥70)"),
+        ("warm", "Warm (40-69)"),
+        ("cold", "Cold (<40)"),
+    ]
+    
+    # Get selected lead IDs from session (persisted across filter changes)
+    session_key = f"cold_mail_selected_{user.id}"
+    selected_ids = set(request.session.get(session_key, []))
+    
+    context = {
+        "stages": stages,
+        "sources": sources,
+        "status_buckets": status_buckets,
+        "role": get_role(user),
+        "selected_ids": selected_ids,
+    }
+    return render(request, "crm/cold_mail/index.html", context)
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_select(request):
+    """AJAX endpoint: filtered lead table for selection."""
+    user = request.user
+    qs = lead_queryset_for(user).select_related("stage", "company", "assigned_to")
+    
+    # Filters
+    stage_id = request.GET.get("stage")
+    if stage_id:
+        qs = qs.filter(stage_id=stage_id)
+    
+    bucket = request.GET.get("bucket")
+    if bucket == "hot":
+        qs = qs.filter(score__gte=70).exclude(stage__is_won=True).exclude(stage__is_lost=True)
+    elif bucket == "warm":
+        qs = qs.filter(score__gte=40, score__lt=70).exclude(stage__is_won=True).exclude(stage__is_lost=True)
+    elif bucket == "cold":
+        qs = qs.filter(score__lt=40).exclude(stage__is_won=True).exclude(stage__is_lost=True)
+    
+    source = request.GET.get("source")
+    if source:
+        qs = qs.filter(source=source)
+    
+    assigned_id = request.GET.get("assigned_to")
+    if assigned_id:
+        qs = qs.filter(assigned_to_id=assigned_id)
+    
+    search = request.GET.get("q", "").strip()
+    if search:
+        qs = qs.filter(
+            Q(name__icontains=search) | 
+            Q(phone__icontains=search) | 
+            Q(email__icontains=search) | 
+            Q(company__name__icontains=search)
+        )
+    
+    # Pagination
+    page_size = int(request.GET.get("page_size", 25))
+    paginator = Paginator(qs.order_by("-updated_at"), page_size)
+    page_num = int(request.GET.get("page", 1))
+    page_obj = paginator.get_page(page_num)
+    
+    # Get selected lead IDs from session
+    session_key = f"cold_mail_selected_{user.id}"
+    selected_ids = set(request.session.get(session_key, []))
+    
+    # Render lead table
+    from django.template.loader import render_to_string
+    table_html = render_to_string("crm/cold_mail/_lead_table.html", {
+        "page_obj": page_obj,
+        "selected_ids": selected_ids,
+        "total_count": paginator.count,
+        "selected_count": len(selected_ids),
+    })
+    
+    return JsonResponse({"html": table_html})
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_toggle_selection(request):
+    """Toggle lead selection in session."""
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST required"}, status=400)
+    
+    user = request.user
+    session_key = f"cold_mail_selected_{user.id}"
+    selected = set(request.session.get(session_key, []))
+    
+    lead_id = request.POST.get("lead_id")
+    action = request.POST.get("action", "toggle")  # toggle, add, remove
+    
+    if action == "add":
+        selected.add(lead_id)
+    elif action == "remove":
+        selected.discard(lead_id)
+    else:  # toggle
+        if lead_id in selected:
+            selected.remove(lead_id)
+        else:
+            selected.add(lead_id)
+    
+    request.session[session_key] = list(selected)
+    request.session.modified = True
+    
+    return JsonResponse({
+        "ok": True,
+        "selected_count": len(selected),
+        "is_selected": lead_id in selected,
+    })
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_clear_selection(request):
+    """Clear all selections from session."""
+    if request.method != "POST":
+        return JsonResponse({"ok": False, "error": "POST required"}, status=400)
+    
+    session_key = f"cold_mail_selected_{request.user.id}"
+    request.session[session_key] = []
+    request.session.modified = True
+    
+    return JsonResponse({"ok": True, "selected_count": 0})
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_compose(request):
+    """GET: render compose modal with preview. POST: send emails."""
+    user = request.user
+    
+    # Get selected leads from session
+    session_key = f"cold_mail_selected_{user.id}"
+    selected_ids = request.session.get(session_key, [])
+    
+    if not selected_ids:
+        return JsonResponse({"ok": False, "error": "No leads selected"}, status=400)
+    
+    # Get active templates
+    templates = EmailTemplate.objects.filter(tenant__isnull=True, is_active=True).order_by("category", "name")
+    
+    if request.method == "GET":
+        # Render compose modal with preview
+        template_id = request.GET.get("template_id")
+        template = None
+        preview = None
+        
+        if template_id:
+            try:
+                template = EmailTemplate.objects.get(uid=template_id, tenant__isnull=True, is_active=True)
+                # Build preview with first lead
+                lead = Lead.objects.filter(id__in=selected_ids).first()
+                if lead:
+                    context = build_email_context(lead, {"sender": request.user})
+                    subject, body_html, body_text = render_email(template, context)
+                    preview = {"subject": subject, "body_html": body_html}
+            except EmailTemplate.DoesNotExist:
+                pass
+        
+        context = {
+            "templates": templates,
+            "selected_count": len(selected_ids),
+            "template": template,
+            "preview": preview,
+        }
+        return render(request, "crm/cold_mail/compose_modal.html", context)
+    
+    # POST: Send emails
+    template_uid = request.POST.get("template_uid")
+    if not template_uid:
+        return JsonResponse({"ok": False, "error": "No template selected"}, status=400)
+    
+    try:
+        template = EmailTemplate.objects.get(uid=template_uid, tenant__isnull=True, is_active=True)
+    except EmailTemplate.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Template not found"}, status=400)
+    
+    try:
+        batch = send_bulk_emails(request.user, template, selected_ids)
+        
+        # Clear selection after successful send
+        session_key = f"cold_mail_selected_{user.id}"
+        request.session[session_key] = []
+        request.session.modified = True
+        
+        return JsonResponse({
+            "ok": True,
+            "batch_uid": batch.uid,
+            "sent": batch.sent_count,
+            "failed": batch.failed_count,
+            "detail_url": f"/crm/cold-mail/batch/{batch.uid}/",
+        })
+    except Exception as e:
+        return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_batch_detail(request, uid):
+    """Batch detail page with logs."""
+    user = request.user
+    batch = get_object_or_404(EmailBatch, uid=uid, tenant__isnull=True)
+    
+    logs = batch.logs.select_related("lead", "template").order_by("-created_at")
+    
+    # Status filter
+    status_filter = request.GET.get("status")
+    if status_filter:
+        logs = logs.filter(status=status_filter)
+    
+    paginator = Paginator(logs, 50)
+    page_obj = paginator.get_page(request.GET.get("page", 1))
+    
+    context = {
+        "batch": batch,
+        "page_obj": page_obj,
+        "status_filter": status_filter,
+        "role": get_role(request.user),
+    }
+    return render(request, "crm/cold_mail/batch_detail.html", context)
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_batch_poll(request, uid):
+    """HTMX poll endpoint for live progress updates."""
+    batch = get_object_or_404(EmailBatch, uid=uid, tenant__isnull=True)
+    
+    logs = batch.logs.all()
+    total = batch.total_recipients
+    sent = logs.filter(status="sent").count()
+    failed = logs.filter(status="failed").count()
+    pending = logs.filter(status="queued").count()
+    
+    return JsonResponse({
+        "status": batch.status,
+        "total": total,
+        "sent": sent,
+        "failed": failed,
+        "pending": pending,
+        "completed_at": batch.completed_at.isoformat() if batch.completed_at else None,
+    })
+
+
+@crm_role_required("owner", "manager")
+def cold_mail_export(request):
+    """Export selected leads as CSV/HTML for manual email sending."""
+    user = request.user
+    session_key = f"cold_mail_selected_{user.id}"
+    selected_ids = request.session.get(session_key, [])
+    
+    if not selected_ids:
+        return JsonResponse({"ok": False, "error": "No leads selected"}, status=400)
+    
+    template_uid = request.POST.get("template_uid")
+    if not template_uid:
+        return JsonResponse({"ok": False, "error": "No template selected"}, status=400)
+    
+    try:
+        template = EmailTemplate.objects.get(uid=template_uid, tenant__isnull=True, is_active=True)
+    except EmailTemplate.DoesNotExist:
+        return JsonResponse({"ok": False, "error": "Template not found"}, status=400)
+    
+    leads = Lead.objects.filter(id__in=selected_ids).select_related("stage", "company")
+    
+    format_type = request.POST.get("format", "csv")
+    
+    if format_type == "html":
+        # Generate HTML file
+        rows = []
+        for lead in leads:
+            if not lead.email:
+                continue
+            context = build_email_context(lead, {"sender": request.user})
+            subject, body_html, body_text = render_email(template, context)
+            mailto = f"mailto:{lead.email}?subject={subject}&body={body_text}"
+            rows.append({
+                "uid": lead.uid,
+                "name": lead.name,
+                "email": lead.email,
+                "subject": subject,
+                "html": body_html,
+                "text": body_text,
+                "mailto": mailto,
+            })
+        
+        html_content = render_to_string("crm/cold_mail/export.html", {"rows": rows, "template": template})
+        response = HttpResponse(html_content, content_type="text/html")
+        response["Content-Disposition"] = f'attachment; filename="cold_mail_export_{timezone.now().strftime("%Y%m%d")}.html"'
+        return response
+    
+    # CSV format
+    import csv
+    response = HttpResponse(content_type="text/csv")
+    response["Content-Disposition"] = f'attachment; filename="cold_mail_export_{timezone.now().strftime("%Y%m%d")}.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(["UID", "Name", "Email", "Subject", "HTML Body", "Text Body", "Mailto Link"])
+    
+    for lead in leads:
+        if not lead.email:
+            continue
+        context = build_email_context(lead, {"sender": request.user})
+        subject, body_html, body_text = render_email(template, context)
+        mailto = f"mailto:{lead.email}?subject={subject}&body={body_text}"
+        writer.writerow([lead.uid, lead.name, lead.email, subject, body_html, body_text, mailto])
+    
+    return response
+
+@crm_role_required("owner", "manager")
+def cold_mail_list_templates(request):
+    """AJAX endpoint: list email templates."""
+    from django.template.loader import render_to_string
+    from crm.models import EmailTemplate
+    
+    templates = EmailTemplate.objects.filter(tenant__isnull=True, is_active=True).order_by('category', 'name')
+    html = render_to_string('crm/cold_mail/template_list.html', {'templates': templates})
+    
+    return JsonResponse({'templates': templates.values('pk', 'name', 'category', 'is_system'), 'html': html})

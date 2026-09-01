@@ -20,6 +20,7 @@ Env.read_env()
 
 ENVIROMNENT = env("ENVIROMNENT", default="development")
 POSTGRES_LOCALLY  = env.bool('POSTGRES_LOCALLY ', default=False)
+REDIS_URL = env("REDIS_URL", default="redis://localhost:6379/0")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -97,6 +98,7 @@ INSTALLED_APPS = [
     "crm",
     "hiring",
 
+    "django_rq",
     "django_ckeditor_5",
     "django.contrib.sitemaps",
     "django.contrib.syndication",
@@ -172,6 +174,29 @@ else:
 
 # Keep database connections alive for 60s to avoid per-request TCP handshake
 DATABASES["default"]["CONN_MAX_AGE"] = 60
+
+# --------------------
+# REDIS — Cache, Sessions, Task Queue
+# --------------------
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+    }
+}
+
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
+
+RQ_QUEUES = {
+    "default": {
+        "USE_REDIS_CACHE": "default",
+    },
+    "email": {
+        "USE_REDIS_CACHE": "default",
+    },
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

@@ -90,6 +90,9 @@
       <a href="{% url 'crm:settings' %}" class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
         <span class="ni">⚙</span> Settings
       </a>
+      <a href="{% url 'crm:cold_mail_index' %}" class="nav-item {% if request.resolver_match.url_name == 'cold_mail_index' %}active{% endif %}">
+        <span class="ni">📧</span> Cold Mail
+      </a>
       {% endif %}
     </nav>
     <div class="sidebar-foot">

@@ -1,10 +1,16 @@
+import re
+import time
+import threading
+import random
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import Q
+from django.conf import settings
 
 from .models import (
     Lead, Activity, Customer, CrmSetting, StaffProfile, PipelineStage,
     Notification,
+    EmailTemplate, EmailBatch, EmailLog,
 )
 from .scoring import recompute_score
 
@@ -218,3 +224,349 @@ def complete_followup(user, followup, lead):
     log_activity(lead, "call" if followup.kind == "call" else "note",
                  f"Follow-up completed ({followup.get_kind_display()}): {followup.note or 'Done'}", user)
     recompute_score(lead, user)
+
+
+# -----------------------
+# Cold Email Utilities
+# -----------------------
+
+TOKEN_PATTERN = re.compile(r"\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}")
+
+
+def token_replace(text, context):
+    """Replace {{token}} placeholders in text with values from context dict."""
+    if not text:
+        return text
+    def repl(match):
+        key = match.group(1)
+        # Support nested access: lead.name -> context['lead']['name']
+        parts = key.split(".")
+        value = context
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part, "")
+            else:
+                value = getattr(value, part, "")
+        return str(value) if value is not None else ""
+    return TOKEN_PATTERN.sub(repl, text)
+
+
+def build_email_context(lead, custom=None):
+    """Build the token replacement context for a lead."""
+    from django.conf import settings
+    sender = custom.get("sender") if custom and custom.get("sender") else None
+    
+    ctx = {
+        "lead": {
+            "name": lead.name,
+            "phone": lead.phone,
+            "email": lead.email,
+            "company": {
+                "name": lead.company.name if lead.company else "",
+            },
+            "stage": {
+                "name": lead.stage.name if lead.stage else "",
+            },
+            "score": str(lead.score),
+            "tags": lead.tags or [],
+        },
+        "sender": {
+            "name": sender.get_full_name() if sender else "MatrixAI Sales",
+            "email": sender.email if sender else "sales@thematrixai.xyz",
+        },
+        "company": {
+            "name": "TheMatrixAi",
+        },
+    }
+    if custom:
+        ctx.update(custom)
+    return ctx
+
+
+def render_email(template, context):
+    """Render subject and body (html + text) for a template with context."""
+    subject = token_replace(template.subject, context)
+    body_html = token_replace(template.body_html, context)
+    body_text = token_replace(template.body_text or "", context)
+    # Auto-generate plain text from HTML if body_text is empty
+    if not body_text.strip() and body_html:
+        # Simple HTML to text conversion
+        import re
+        text = re.sub(r"<[^>]+>", "", body_html)
+        text = re.sub(r"\s+", " ", text).strip()
+        body_text = text
+    return subject, body_html, body_text
+
+
+def _send_email_single(lead, template, batch, user, sent_lock, failed_lock):
+    """Send a single email and update batch counters (thread-safe)."""
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from .models import EmailLog
+    
+    if not lead.email:
+        with failed_lock:
+            EmailLog.objects.create(
+                batch=batch,
+                template=template,
+                lead=lead,
+                recipient_email="",
+                subject="",
+                body_html="",
+                status="failed",
+                error="Lead has no email address",
+            )
+        return "failed"
+    
+    context = build_email_context(lead, {"sender": user})
+    subject, body_html, body_text = render_email(template, context)
+    
+    try:
+        send_mail(
+            subject=subject,
+            message=body_text,
+            from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "MatrixAI Sales <sales@thematrixai.xyz>"),
+            recipient_list=[lead.email],
+            html_message=body_html,
+            fail_silently=False,
+        )
+        with sent_lock:
+            EmailLog.objects.create(
+                batch=batch,
+                template=template,
+                lead=lead,
+                recipient_email=lead.email,
+                subject=subject,
+                body_html=body_html,
+                status="sent",
+                sent_at=timezone.now(),
+            )
+        return "sent"
+    except Exception as e:
+        with failed_lock:
+            EmailLog.objects.create(
+                batch=batch,
+                template=template,
+                lead=lead,
+                recipient_email=lead.email,
+                subject=subject,
+                body_html=body_html,
+                status="failed",
+                error=str(e),
+                sent_at=timezone.now(),
+            )
+        return "failed"
+
+
+def _rate_limited_send(user, template, lead_ids, interval_min=2, interval_max=5):
+    """Send emails one by one with random intervals in a background thread."""
+    from django.core.mail import send_mail
+    from django.conf import settings
+    from .models import Lead, EmailBatch, EmailLog
+    
+    # Get leads (internal only)
+    leads_qs = internal_queryset(Lead.objects.select_related("stage", "company")).filter(id__in=lead_ids)
+    leads = list(leads_qs)
+    
+    if not leads:
+        raise ValueError("No valid leads found")
+    
+    # Create batch
+    batch = EmailBatch.objects.create(
+        template=template,
+        subject_rendered="",
+        status="sending",
+        total_recipients=len(lead_ids),
+        scheduled_at=None,
+        started_at=timezone.now(),
+        created_by=user,
+        tenant=None,
+    )
+    
+    # Threading locks for safe counter updates
+    sent_lock = threading.Lock()
+    failed_lock = threading.Lock()
+    
+    sent = 0
+    failed = 0
+    
+    for i, lead in enumerate(leads):
+        if not lead.email:
+            with failed_lock:
+                EmailLog.objects.create(
+                    batch=batch,
+                    template=template,
+                    lead=lead,
+                    recipient_email="",
+                    subject="",
+                    body_html="",
+                    status="failed",
+                    error="Lead has no email address",
+                )
+            failed += 1
+            # Still apply interval even for failed leads
+            if i < len(leads) - 1:
+                interval = random.uniform(interval_min * 60, interval_max * 60)
+                time.sleep(interval)
+            continue
+        
+        result = _send_email_single(lead, template, batch, user, sent_lock, failed_lock)
+        
+        if result == "sent":
+            with sent_lock:
+                sent += 1
+        else:
+            with failed_lock:
+                failed += 1
+        
+        # Apply random interval between emails (not after the last one)
+        if i < len(leads) - 1:
+            interval = random.uniform(interval_min * 60, interval_max * 60)
+            time.sleep(interval)
+    
+    # Update batch status
+    batch.sent_count = sent
+    batch.failed_count = failed
+    batch.status = "completed" if failed == 0 else ("completed" if sent > 0 else "failed")
+    batch.completed_at = timezone.now()
+    batch.save(update_fields=["sent_count", "failed_count", "status", "completed_at"])
+    
+    return batch
+
+
+def _rate_limited_send_loop(user, template, lead_ids, interval_min, interval_max, batch, lock):
+    """Background thread: send emails one by one with random 2-5 min intervals, updating shared batch."""
+    from .models import Lead
+    
+    leads_qs = internal_queryset(Lead.objects.select_related("stage", "company")).filter(id__in=lead_ids)
+    leads = list(leads_qs)
+    
+    sent_count = [0]
+    failed_count = [0]
+    
+    for i, lead in enumerate(leads):
+        # Send single email and update logs
+        if not lead.email:
+            with lock:
+                failed_count[0] += 1
+                EmailLog.objects.create(
+                    batch=batch,
+                    template=template,
+                    lead=lead,
+                    recipient_email="",
+                    subject="",
+                    body_html="",
+                    status="failed",
+                    error="Lead has no email address",
+                    sent_at=timezone.now(),
+                )
+        else:
+            context = build_email_context(lead, {"sender": user})
+            subject, body_html, body_text = render_email(template, context)
+            
+            try:
+                from django.core.mail import send_mail
+                from django.conf import settings
+                
+                send_mail(
+                    subject=subject,
+                    message=body_text,
+                    from_email=getattr(settings, "DEFAULT_FROM_EMAIL", "MatrixAI Sales <sales@thematrixai.xyz>"),
+                    recipient_list=[lead.email],
+                    html_message=body_html,
+                    fail_silently=False,
+                )
+                with lock:
+                    sent_count[0] += 1
+                    EmailLog.objects.create(
+                        batch=batch,
+                        template=template,
+                        lead=lead,
+                        recipient_email=lead.email,
+                        subject=subject,
+                        body_html=body_html,
+                        status="sent",
+                        sent_at=timezone.now(),
+                    )
+            except Exception as e:
+                with lock:
+                    failed_count[0] += 1
+                    EmailLog.objects.create(
+                        batch=batch,
+                        template=template,
+                        lead=lead,
+                        recipient_email=lead.email,
+                        subject=subject,
+                        body_html=body_html,
+                        status="failed",
+                        error=str(e),
+                        sent_at=timezone.now(),
+                    )
+        
+        # Random interval between 2-5 minutes (not after the last lead)
+        if i < len(leads) - 1:
+            interval = random.uniform(interval_min * 60, interval_max * 60)
+            time.sleep(interval)
+    
+    # Update batch final status (thread-safe)
+    with lock:
+        batch.sent_count = sent_count[0]
+        batch.failed_count = failed_count[0]
+        batch.status = "completed" if failed_count[0] == 0 else "failed"
+        batch.completed_at = timezone.now()
+        batch.save(update_fields=["sent_count", "failed_count", "status", "completed_at"])
+
+
+def send_bulk_emails(user, template, lead_ids, scheduled_at=None, interval_min=2, interval_max=5):
+    """
+    Send emails to a list of leads using a template.
+    
+    For immediate send: enqueues an RQ job and returns immediately.
+    For scheduled send: uses RQ scheduler.
+    
+    Returns:
+        EmailBatch instance (status/counters updated by RQ worker)
+    """
+    from .models import EmailBatch, EmailLog, Lead
+    from django_rq import get_queue
+    from .rq import process_email_batch
+    
+    # Get leads (internal only)
+    leads_qs = internal_queryset(Lead.objects.select_related("stage", "company")).filter(id__in=lead_ids)
+    leads = list(leads_qs)
+    
+    if not leads:
+        raise ValueError("No valid leads found")
+    
+    # Create batch
+    batch = EmailBatch.objects.create(
+        template=template,
+        subject_rendered="",
+        status="queued",
+        total_recipients=len(lead_ids),
+        scheduled_at=scheduled_at if scheduled_at and scheduled_at > timezone.now() else None,
+        started_at=timezone.now() if not scheduled_at else None,
+        created_by=user,
+        tenant=None,
+    )
+    
+    # Create queued EmailLog rows (so the UI can track progress)
+    logs = []
+    for lead in leads:
+        ctx = build_email_context(lead, {"sender": user})
+        subject, body_html, body_text = render_email(template, ctx)
+        logs.append(EmailLog(
+            batch=batch, template=template, lead=lead,
+            recipient_email=lead.email, subject=subject,
+            body_html=body_html, status="queued",
+        ))
+    EmailLog.objects.bulk_create(logs)
+    
+    # Enqueue to RQ
+    queue = get_queue("email")
+    if scheduled_at and scheduled_at > timezone.now():
+        queue.enqueue_at(scheduled_at, process_email_batch, batch.id)
+    else:
+        queue.enqueue(process_email_batch, batch.id)
+    
+    return batch
