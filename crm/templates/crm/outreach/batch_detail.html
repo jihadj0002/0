@@ -1,0 +1,174 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Batch {{ batch.uid }} — Email Outreach — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaigns' %}">Campaigns</a>
+    <span>/</span>
+    <span>Batch {{ batch.uid }}</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Email Batch {{ batch.uid }} <span class="status-badge {{ batch.status }}">{{ batch.get_status_display|default:batch.status|title }}</span></h1>
+      <p>Template: {{ batch.template.name }}</p>
+    </div>
+  </div>
+
+  <div class="kpi-grid" id="batchKpiGrid">
+    <div class="kpi-card kpi-bg-blue">
+      <div class="kpi-icon">📨</div>
+      <div class="kpi-value" id="kpiTotal">{{ batch.total_recipients }}</div>
+      <div class="kpi-label">Total</div>
+    </div>
+    <div class="kpi-card kpi-bg-green">
+      <div class="kpi-icon">✓</div>
+      <div class="kpi-value" id="kpiSent">{{ batch.sent_count }}</div>
+      <div class="kpi-label">Sent</div>
+    </div>
+    <div class="kpi-card kpi-bg-orange">
+      <div class="kpi-icon">✗</div>
+      <div class="kpi-value" id="kpiFailed">{{ batch.failed_count }}</div>
+      <div class="kpi-label">Failed</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 20px;">
+    <div class="card-body">
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+        <span style="font-weight: 600;">Progress</span>
+        <span style="color: var(--muted);" id="progressLabel">
+          {% widthratio batch.sent_count|add:batch.failed_count batch.total_recipients|default:"1" 100 as pct %}
+          {{ batch.sent_count|add:batch.failed_count }} / {{ batch.total_recipients }}
+        </span>
+      </div>
+      <div class="progress-bar">
+        {% widthratio batch.sent_count|add:batch.failed_count batch.total_recipients|default:"1" 100 as pct %}
+        <div class="fill blue" id="progressFill" style="width: {% if batch.total_recipients %}{{ pct }}{% else %}0{% endif %}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Logs</h3>
+    </div>
+    <div class="filter-bar">
+      <form method="get" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
+        <select name="status">
+          <option value="" {% if not status_filter %}selected{% endif %}>All Status</option>
+          <option value="queued" {% if status_filter == 'queued' %}selected{% endif %}>Queued</option>
+          <option value="sent" {% if status_filter == 'sent' %}selected{% endif %}>Sent</option>
+          <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+          <option value="bounced" {% if status_filter == 'bounced' %}selected{% endif %}>Bounced</option>
+          <option value="opened" {% if status_filter == 'opened' %}selected{% endif %}>Opened</option>
+          <option value="clicked" {% if status_filter == 'clicked' %}selected{% endif %}>Clicked</option>
+        </select>
+        <button class="btn btn-primary" type="submit">Filter</button>
+        <a class="btn btn-soft" href="{% url 'crm:outreach_batch_detail' uid=batch.uid %}">Reset</a>
+      </form>
+    </div>
+    <div class="table-wrap">
+      <table class="cold-table">
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Error</th>
+            <th>Sent At</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for log in page_obj %}
+          <tr>
+            <td>
+              <a href="{% url 'crm:lead_detail' pk=log.lead.id %}" style="font-weight: 600; color: #1e293b;">
+                {{ log.lead.name }}
+              </a>
+            </td>
+            <td>{{ log.recipient_email }}</td>
+            <td><span class="status-badge {{ log.status }}">{{ log.get_status_display|default:log.status|title }}</span></td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
+              {% if log.error %}<span title="{{ log.error }}">{{ log.error|truncatechars:50 }}</span>{% else %}—{% endif %}
+            </td>
+            <td style="white-space: nowrap;">{{ log.sent_at|date:"M j, Y g:i A"|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <div class="es-title">No logs found</div>
+                <div class="es-sub">Adjust filters or wait for emails to be sent.</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div style="padding: 14px 20px; border-top: 1px solid var(--border);">
+      <div class="pagination">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}">«</a>
+        {% endif %}
+        <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}">»</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  var status = "{{ batch.status }}";
+  if (status !== "sending") return;
+
+  var pollUrl = "{% url 'crm:outreach_batch_poll' uid=batch.uid %}";
+
+  function poll() {
+    fetch(pollUrl)
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        document.getElementById("kpiTotal").textContent = data.total;
+        document.getElementById("kpiSent").textContent = data.sent;
+        document.getElementById("kpiFailed").textContent = data.failed;
+
+        var done = data.sent + data.failed;
+        var pct = data.total > 0 ? Math.round((done / data.total) * 100) : 0;
+        document.getElementById("progressFill").style.width = pct + "%";
+        document.getElementById("progressLabel").textContent = done + " / " + data.total;
+
+        if (data.status === "sending") {
+          setTimeout(poll, 3000);
+        } else {
+          location.reload();
+        }
+      })
+      .catch(function() {
+        setTimeout(poll, 3000);
+      });
+  }
+
+  setTimeout(poll, 3000);
+})();
+</script>
+{% endblock %}

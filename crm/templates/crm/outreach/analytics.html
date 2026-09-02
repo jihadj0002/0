@@ -1,0 +1,99 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Email Analytics — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <span>Analytics</span>
+  </div>
+
+  <div class="page-header">
+    <h1>Email Analytics</h1>
+    <p>Track email performance and campaign effectiveness</p>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card kpi-bg-blue">
+      <div class="kpi-icon">📨</div>
+      <div class="kpi-value" id="kpiSent">—</div>
+      <div class="kpi-label">Total Sent</div>
+    </div>
+    <div class="kpi-card kpi-bg-red">
+      <div class="kpi-icon">❌</div>
+      <div class="kpi-value" id="kpiFailed">—</div>
+      <div class="kpi-label">Total Failed</div>
+    </div>
+    <div class="kpi-card kpi-bg-green">
+      <div class="kpi-icon">👁</div>
+      <div class="kpi-value" id="kpiOpened">—</div>
+      <div class="kpi-label">Total Opened</div>
+    </div>
+    <div class="kpi-card kpi-bg-orange">
+      <div class="kpi-icon">↩</div>
+      <div class="kpi-value" id="kpiBounced">—</div>
+      <div class="kpi-label">Bounced</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Email Performance</h3>
+    </div>
+    <div class="card-body">
+      <canvas id="performanceChart" height="250" style="width: 100%;"></canvas>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+      <h3>Campaign Comparison</h3>
+    </div>
+    <div class="table-wrap">
+      <table class="cold-table" id="campaignTable">
+        <thead>
+          <tr>
+            <th>Campaign</th>
+            <th>Sent</th>
+            <th>Failed</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for campaign in campaigns %}
+          <tr>
+            <td>{{ campaign.name }}</td>
+            <td>{{ campaign.sent_count|default:"0" }}</td>
+            <td>{{ campaign.failed_count|default:"0" }}</td>
+            <td><span class="status-badge {{ campaign.status }}">{{ campaign.get_status_display|default:campaign.status|title }}</span></td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="4">
+              <div class="empty-state">
+                <div class="es-title">No campaign data yet</div>
+                <div class="es-sub">Data will load once you start sending emails.</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

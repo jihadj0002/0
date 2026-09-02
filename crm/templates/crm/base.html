@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Matrix CRM">
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{% static 'crm/css/crm.css' %}?v=5">
+  <link rel="stylesheet" href="{% static 'crm/css/crm.css' %}?v=6">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   {% block extra_css %}{% endblock %}
 </head>
@@ -90,9 +90,21 @@
       <a href="{% url 'crm:settings' %}" class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}">
         <span class="ni">⚙</span> Settings
       </a>
-      <a href="{% url 'crm:cold_mail_index' %}" class="nav-item {% if request.resolver_match.url_name == 'cold_mail_index' %}active{% endif %}">
-        <span class="ni">📧</span> Cold Mail
+
+      <div class="nav-section">Outreach</div>
+      <a href="{% url 'crm:outreach_overview' %}" class="nav-item {% if request.resolver_match.url_name|slice:':9' == 'outreach_' %}active{% endif %}">
+        <span class="ni">✉</span> Email Outreach
       </a>
+      {% if request.resolver_match.url_name|slice:':9' == 'outreach_' %}
+      <div class="nav-sub">
+        <a href="{% url 'crm:outreach_overview' %}" class="nav-sub-item {% if request.resolver_match.url_name == 'outreach_overview' %}active{% endif %}">Overview</a>
+        <a href="{% url 'crm:outreach_campaigns' %}" class="nav-sub-item {% if 'campaign' in request.resolver_match.url_name %}active{% endif %}">Campaigns</a>
+        <a href="{% url 'crm:outreach_templates' %}" class="nav-sub-item {% if request.resolver_match.url_name|slice:':18' == 'outreach_template' %}active{% endif %}">Templates</a>
+        <a href="{% url 'crm:outreach_accounts' %}" class="nav-sub-item {% if 'account' in request.resolver_match.url_name %}active{% endif %}">Email Accounts</a>
+        <a href="{% url 'crm:outreach_analytics' %}" class="nav-sub-item {% if request.resolver_match.url_name == 'outreach_analytics' %}active{% endif %}">Analytics</a>
+        <a href="{% url 'crm:outreach_activity' %}" class="nav-sub-item {% if request.resolver_match.url_name == 'outreach_activity' %}active{% endif %}">Activity</a>
+      </div>
+      {% endif %}
       {% endif %}
     </nav>
     <div class="sidebar-foot">

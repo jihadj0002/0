@@ -68,6 +68,45 @@ a { color: var(--accent); text-decoration: none; }
 .sidebar-foot .nav-btn:hover { background: var(--soft); opacity: 1; }
 .sidebar-overlay { display: none; }
 
+/* Sub-nav for Outreach */
+.nav-sub {
+  margin: 4px 0 4px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.nav-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  color: #475569;
+  font-weight: 500;
+  font-size: 0.82rem;
+  transition: background .15s, color .15s;
+}
+.nav-sub-item::before {
+  content: '›';
+  font-size: 1rem;
+  font-weight: 700;
+  color: #94a3b8;
+  line-height: 1;
+}
+.nav-sub-item:hover { background: var(--soft); color: #1e293b; }
+.nav-sub-item:hover::before { color: #64748b; }
+.nav-sub-item.active {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  margin-left: -10px;
+  padding-left: 8px;
+}
+.nav-sub-item.active::before { color: var(--accent); }
+
 /* ============ MAIN ============ */
 .crm-main { flex: 1; display: flex; flex-direction: column; margin-left: 260px; min-width: 0; }
 

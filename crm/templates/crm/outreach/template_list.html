@@ -1,0 +1,89 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Email Templates — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <span>Templates</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Email Templates</h1>
+      <p>Create and manage email templates for your campaigns</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary btn-lg" href="{% url 'crm:outreach_template_new' %}">+ New Template</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="filter-bar">
+      <div class="filter-pills">
+        <a href="{% url 'crm:outreach_templates' %}" class="pill {% if not category_filter %}active{% endif %}">All</a>
+        <a href="?category=cold" class="pill {% if category_filter == 'cold' %}active{% endif %}">Cold</a>
+        <a href="?category=follow-up" class="pill {% if category_filter == 'follow-up' %}active{% endif %}">Follow-up</a>
+        <a href="?category=nurture" class="pill {% if category_filter == 'nurture' %}active{% endif %}">Nurture</a>
+        <a href="?category=proposal" class="pill {% if category_filter == 'proposal' %}active{% endif %}">Proposal</a>
+        <a href="?category=announcement" class="pill {% if category_filter == 'announcement' %}active{% endif %}">Announcement</a>
+      </div>
+      <form method="get" style="display: flex; gap: 10px;">
+        {% if category_filter %}<input type="hidden" name="category" value="{{ category_filter }}">{% endif %}
+        <input type="text" name="q" placeholder="Search templates..." value="{{ search_query|default:'' }}">
+        <button class="btn btn-primary" type="submit">Search</button>
+        {% if search_query or category_filter %}<a class="btn btn-outline" href="{% url 'crm:outreach_templates' %}">Reset</a>{% endif %}
+      </form>
+    </div>
+
+    <div class="template-grid">
+      {% for template in templates %}
+      <div class="template-card">
+        <div class="template-card-header">
+          <div class="template-name">{{ template.name }}</div>
+          <div class="template-badges">
+            <span class="status-badge {{ template.category }}">{{ template.get_category_display|default:template.category|title }}</span>
+            {% if template.is_system %}<span class="status-badge system" title="System template">🔒</span>{% endif %}
+          </div>
+        </div>
+        <div class="template-preview">
+          <div class="template-subject">{{ template.subject|truncatechars:50 }}</div>
+          <div class="template-snippet">{{ template.body_text|default:template.body_html|striptags|truncatechars:100 }}</div>
+        </div>
+        <div class="template-meta">
+          <span>Used {{ template.used_count|default:"0" }} times</span>
+        </div>
+        <div class="template-actions">
+          <a class="btn btn-soft btn-sm" href="{% url 'crm:outreach_template_edit' uid=template.uid %}">Edit</a>
+          {% if not template.is_system %}
+          <form method="post" action="{% url 'crm:outreach_template_delete' uid=template.uid %}" style="display:inline;" onsubmit="return confirm('Delete this template?');">
+            {% csrf_token %}
+            <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+          </form>
+          {% endif %}
+        </div>
+      </div>
+      {% empty %}
+      <div class="empty-state" style="grid-column: 1 / -1;">
+        <div class="es-title">No templates found</div>
+        <div class="es-sub">Create your first email template to get started.</div>
+        <a class="btn btn-primary" href="{% url 'crm:outreach_template_new' %}" style="margin-top: 12px;">+ New Template</a>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

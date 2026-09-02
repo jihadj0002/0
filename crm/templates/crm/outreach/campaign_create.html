@@ -1,0 +1,547 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Create Campaign — Email Outreach — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaigns' %}">Campaigns</a>
+    <span>/</span>
+    <span>Create Campaign</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Create Campaign</h1>
+      <p>Set up your email outreach campaign in a few steps</p>
+    </div>
+  </div>
+
+  <form id="campaignWizardForm" method="post">
+    {% csrf_token %}
+    <input type="hidden" id="wizardStepIndicator" name="current_step" value="0">
+
+    <div class="wizard-steps">
+      <div class="wizard-step current" data-step="0">
+        <div class="step-num">1</div>
+        <div class="step-label">Details</div>
+      </div>
+      <div class="wizard-connector"></div>
+      <div class="wizard-step" data-step="1">
+        <div class="step-num">2</div>
+        <div class="step-label">Audience</div>
+      </div>
+      <div class="wizard-connector"></div>
+      <div class="wizard-step" data-step="2">
+        <div class="step-num">3</div>
+        <div class="step-label">Template</div>
+      </div>
+      <div class="wizard-connector"></div>
+      <div class="wizard-step" data-step="3">
+        <div class="step-num">4</div>
+        <div class="step-label">Personalize</div>
+      </div>
+      <div class="wizard-connector"></div>
+      <div class="wizard-step" data-step="4">
+        <div class="step-num">5</div>
+        <div class="step-label">Sending</div>
+      </div>
+      <div class="wizard-connector"></div>
+      <div class="wizard-step" data-step="5">
+        <div class="step-num">6</div>
+        <div class="step-label">Review</div>
+      </div>
+    </div>
+
+    <div id="wizardStep1" class="wizard-pane" data-pane="0">
+      <div class="card">
+        <div class="card-header">
+          <h3>Campaign Details</h3>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="id_campaign_name">Campaign Name <span class="hint">required</span></label>
+            <input type="text" id="id_campaign_name" name="campaign_name" value="{{ draft.name|default:'' }}" required>
+          </div>
+          <div class="form-group">
+            <label for="id_description">Internal Description</label>
+            <textarea id="id_description" name="description" rows="4">{{ draft.description|default:'' }}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Campaign Type</label>
+            <div class="radio-group">
+              <label class="radio-option">
+                <input type="radio" name="campaign_type" value="one-time" {% if draft.campaign_type == 'one-time' or not draft %}checked{% endif %}>
+                One-time — Send a single email to all recipients
+              </label>
+              <label class="radio-option">
+                <input type="radio" name="campaign_type" value="sequence" {% if draft.campaign_type == 'sequence' %}checked{% endif %}>
+                Sequence — Automated follow-up emails over time
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="card-footer">
+          <div></div>
+          <button type="button" class="btn btn-primary" onclick="Outreach.nextStep()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wizardStep2" class="wizard-pane" data-pane="1">
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Select Audience</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>Audience Source</label>
+                <div class="radio-group">
+                  <label class="radio-option">
+                    <input type="radio" name="audience_source" value="segment" data-audience-target="filter" {% if draft.audience_source == 'segment' %}checked{% endif %}>
+                    Existing Segment
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" name="audience_source" value="filter" data-audience-target="filter" {% if draft.audience_source == 'filter' %}checked{% endif %}>
+                    Filter Leads
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" name="audience_source" value="manual" data-audience-target="manual" {% if draft.audience_source == 'manual' %}checked{% endif %}>
+                    Select Manually
+                  </label>
+                </div>
+              </div>
+
+              <div id="audienceFilterSection" class="filter-section" style="display:none">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="id_stage">Stage</label>
+                    <select id="id_stage" name="stage">
+                      <option value="">All Stages</option>
+                      {% for stage in stages %}
+                      <option value="{{ stage.id }}">{{ stage.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="id_bucket">Bucket</label>
+                    <select id="id_bucket" name="bucket">
+                      <option value="">All Buckets</option>
+                      <option value="hot">Hot</option>
+                      <option value="warm">Warm</option>
+                      <option value="cold">Cold</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label for="id_source">Source</label>
+                    <select id="id_source" name="source">
+                      <option value="">All Sources</option>
+                      <option value="website">Website</option>
+                      <option value="referral">Referral</option>
+                      <option value="import">Import</option>
+                      <option value="manual">Manual</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="id_search">Search</label>
+                    <input type="text" id="id_search" name="search" placeholder="Search leads...">
+                  </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary" data-filter-btn onclick="Outreach.applyFilters()">Apply Filters</button>
+              </div>
+
+              <div id="audienceManualSection" class="manual-section" style="display:none">
+                <div class="form-group">
+                  <input type="text" id="id_manual_search" placeholder="Search leads by name or email...">
+                </div>
+                <div id="leadSelectContainer" data-selected-leads="{{ draft.selected_leads|default:'[]'|safe }}">
+                  <label class="checkbox-option" style="margin-bottom:8px">
+                    <input type="checkbox" id="leadSelectAll">
+                    Select All
+                  </label>
+                  {% for lead in leads %}
+                  <div class="lead-select-item">
+                    <input type="checkbox" class="lead-check" name="selected_leads" value="{{ lead.id }}">
+                    <div class="lead-info">
+                      <div class="name">{{ lead.name }}</div>
+                      <div class="meta">{{ lead.email }}{% if lead.company %} &middot; {{ lead.company }}{% endif %}</div>
+                    </div>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="summary-panel">
+            <h4>Audience Summary</h4>
+            <div class="summary-item">
+              <span class="label">Selected</span>
+              <span class="value" id="audienceSelectedCount">0</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Valid Emails</span>
+              <span class="value" id="audienceValidCount">0</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Excluded</span>
+              <span class="value" id="audienceExcludedCount">0</span>
+            </div>
+            <div class="summary-total summary-item">
+              <span class="label">Total Recipients</span>
+              <span class="value" id="audienceTotalCount">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="Outreach.backStep()">Back</button>
+        <button type="button" class="btn btn-primary" onclick="Outreach.nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <div id="wizardStep3" class="wizard-pane" data-pane="2">
+      <div class="card">
+        <div class="card-header">
+          <h3>Select Template</h3>
+          <a class="btn btn-sm btn-primary" href="{% url 'crm:outreach_template_new' %}">+ Create New Template</a>
+        </div>
+        <div class="card-body">
+          <div class="template-categories">
+            <div class="filter-bar">
+              <button type="button" class="btn btn-sm btn-primary" data-category="all">All</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-category="introduction">Introduction</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-category="sales">Sales</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-category="follow-up">Follow-up</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-category="partnership">Partnership</button>
+            </div>
+          </div>
+          <div class="template-grid">
+            {% for template in templates %}
+            <div class="template-card" data-uid="{{ template.uid }}" data-category="{{ template.category|default:'general' }}">
+              <div class="template-name">{{ template.name }}</div>
+              <div>
+                <span class="status-badge draft">{{ template.get_category_display|default:template.category }}</span>
+              </div>
+              <div class="template-preview">{{ template.body|striptags|truncatewords:30 }}</div>
+              <div class="template-meta">Used {{ template.used_count|default:0 }} times</div>
+              <div class="template-actions">
+                <button type="button" class="btn btn-sm btn-ghost" onclick="Outreach.previewTemplate('{{ template.uid }}')">Preview</button>
+                <button type="button" class="btn btn-sm btn-primary" onclick="Outreach.selectTemplate('{{ template.uid }}')">Select</button>
+              </div>
+            </div>
+            {% empty %}
+            <div class="empty-state" style="grid-column:1/-1">
+              <div class="es-title">No templates yet</div>
+              <div class="es-sub">Create your first email template to get started.</div>
+            </div>
+            {% endfor %}
+          </div>
+          <input type="hidden" id="templateSelect" name="template_uid" value="{{ draft.template_uid|default:'' }}">
+        </div>
+        <div class="card-footer" style="justify-content:space-between">
+          <button type="button" class="btn btn-secondary" onclick="Outreach.backStep()">Back</button>
+          <button type="button" class="btn btn-primary" onclick="Outreach.nextStep()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="wizardStep4" class="wizard-pane" data-pane="3">
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Personalization</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>Basic Variables</label>
+                <div class="checkbox-group">
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="var_first_name" value="1" {% if draft.var_first_name %}checked{% endif %}>
+                    First Name
+                  </label>
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="var_company" value="1" {% if draft.var_company %}checked{% endif %}>
+                    Company Name
+                  </label>
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="var_industry" value="1" {% if draft.var_industry %}checked{% endif %}>
+                    Industry
+                  </label>
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="var_website" value="1" {% if draft.var_website %}checked{% endif %}>
+                    Website
+                  </label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="checkbox-option">
+                  <input type="checkbox" id="aiPersonalizationToggle" name="ai_personalization" value="1" onchange="Outreach.toggleAiOptions()" {% if draft.ai_personalization %}checked{% endif %}>
+                  AI Personalization
+                </label>
+              </div>
+              <div id="aiPersonalizationOptions" class="ai-options" style="display:{% if draft.ai_personalization %}block{% else %}none{% endif %}">
+                <div class="form-group">
+                  <label for="id_ai_instruction">AI Instructions</label>
+                  <textarea id="id_ai_instruction" name="ai_instruction" rows="3" placeholder="E.g. Mention their recent blog post or mutual connection...">{{ draft.ai_instruction|default:'' }}</textarea>
+                  <span class="hint">Guidance for AI-generated personalization</span>
+                </div>
+                <div class="form-group">
+                  <label>Tone</label>
+                  <div class="radio-group">
+                    <label class="radio-option">
+                      <input type="radio" name="ai_tone" value="professional" {% if draft.ai_tone == 'professional' or not draft %}checked{% endif %}>
+                      Professional
+                    </label>
+                    <label class="radio-option">
+                      <input type="radio" name="ai_tone" value="friendly" {% if draft.ai_tone == 'friendly' %}checked{% endif %}>
+                      Friendly
+                    </label>
+                    <label class="radio-option">
+                      <input type="radio" name="ai_tone" value="direct" {% if draft.ai_tone == 'direct' %}checked{% endif %}>
+                      Direct
+                    </label>
+                    <label class="radio-option">
+                      <input type="radio" name="ai_tone" value="casual" {% if draft.ai_tone == 'casual' %}checked{% endif %}>
+                      Casual
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="preview-pane">
+            <h4 style="margin:0 0 12px;font-size:.9rem;font-weight:700">Preview</h4>
+            <div class="email-subject">Subject: Your personalized email</div>
+            <div class="email-body" id="personalizationPreview">
+              Hi {{ first_name|default:'[First Name]' }},
+              
+              We noticed {{ company_name|default:'[Company]' }} is in the {{ industry|default:'[Industry]' }} space...
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="Outreach.backStep()">Back</button>
+        <button type="button" class="btn btn-primary" onclick="Outreach.nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <div id="wizardStep5" class="wizard-pane" data-pane="4">
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Sending Configuration</h3>
+            </div>
+            <div class="card-body">
+              <div class="form-group">
+                <label for="id_sending_account">Sending Account</label>
+                <select id="id_sending_account" name="sending_account" required>
+                  <option value="">Select an account...</option>
+                  {% for account in accounts %}
+                  <option value="{{ account.uid }}" {% if draft.sending_account_uid == account.uid %}selected{% endif %}>
+                    {{ account.email }} ({{ account.provider }})
+                  </option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="id_reply_to">Reply-To Email</label>
+                <input type="email" id="id_reply_to" name="reply_to" value="{{ draft.reply_to|default:'' }}" placeholder="replies@example.com">
+              </div>
+              <div class="form-group">
+                <label for="id_daily_limit">Daily Limit</label>
+                <input type="number" id="id_daily_limit" name="daily_limit" value="{{ draft.daily_limit|default:'50' }}" min="1">
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="id_min_interval">Min Interval (minutes)</label>
+                  <input type="number" id="id_min_interval" name="min_interval" value="{{ draft.min_interval|default:'3' }}" min="1">
+                </div>
+                <div class="form-group">
+                  <label for="id_max_interval">Max Interval (minutes)</label>
+                  <input type="number" id="id_max_interval" name="max_interval" value="{{ draft.max_interval|default:'10' }}" min="1">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Schedule</label>
+                <div class="radio-group">
+                  <label class="radio-option">
+                    <input type="radio" name="schedule_type" value="now" onchange="Outreach.toggleSchedule()" {% if draft.schedule_type == 'now' or not draft %}checked{% endif %}>
+                    Send Immediately
+                  </label>
+                  <label class="radio-option">
+                    <input type="radio" name="schedule_type" value="schedule" onchange="Outreach.toggleSchedule()" {% if draft.schedule_type == 'schedule' %}checked{% endif %}>
+                    Schedule
+                  </label>
+                </div>
+              </div>
+              <div id="scheduleOptions" class="schedule-row" style="display:{% if draft.schedule_type == 'schedule' %}flex{% else %}none{% endif %}">
+                <div class="form-group">
+                  <label for="id_schedule_date">Date</label>
+                  <input type="date" id="id_schedule_date" name="schedule_date" value="{{ draft.schedule_date|default:'' }}">
+                </div>
+                <div class="form-group">
+                  <label for="id_schedule_time">Time</label>
+                  <input type="time" id="id_schedule_time" name="schedule_time" value="{{ draft.schedule_time|default:'' }}">
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Options</label>
+                <div class="checkbox-group">
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="stop_on_reply" value="1" {% if draft.stop_on_reply %}checked{% endif %}>
+                    Stop on reply
+                  </label>
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="skip_bounced" value="1" {% if draft.skip_bounced %}checked{% endif %}>
+                    Skip bounced addresses
+                  </label>
+                  <label class="checkbox-option">
+                    <input type="checkbox" name="skip_contacted" value="1" {% if draft.skip_contacted %}checked{% endif %}>
+                    Skip previously contacted
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="summary-panel">
+            <h4>Sending Summary</h4>
+            <div class="summary-item">
+              <span class="label">Account</span>
+              <span class="value" id="summaryAccount">—</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Daily Limit</span>
+              <span class="value" id="summaryDailyLimit">{{ draft.daily_limit|default:'50' }}</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Interval</span>
+              <span class="value" id="summaryInterval">{{ draft.min_interval|default:'3' }}—{{ draft.max_interval|default:'10' }} min</span>
+            </div>
+            <div class="summary-item">
+              <span class="label">Schedule</span>
+              <span class="value" id="summarySchedule">Immediate</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="Outreach.backStep()">Back</button>
+        <button type="button" class="btn btn-primary" onclick="Outreach.nextStep()">Continue</button>
+      </div>
+    </div>
+
+    <div id="wizardStep6" class="wizard-pane" data-pane="5">
+      <div class="grid-2">
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Review Campaign</h3>
+            </div>
+            <div class="card-body">
+              <div class="summary-item">
+                <span class="label">Campaign Name</span>
+                <span class="value" id="reviewName">{{ draft.name|default:'—' }}</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Audience</span>
+                <span class="value" id="reviewAudience">0 recipients</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Template</span>
+                <span class="value" id="reviewTemplate">—</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Sending Account</span>
+                <span class="value" id="reviewAccount">—</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Schedule</span>
+                <span class="value" id="reviewSchedule">Immediate</span>
+              </div>
+              <div class="summary-item">
+                <span class="label">Daily Limit</span>
+                <span class="value" id="reviewDailyLimit">{{ draft.daily_limit|default:'50' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="validation-section mt-4">
+            <h4>✓ Pre-flight Checks</h4>
+            <ul class="check-list">
+              <li class="valid" id="checkRecipients">
+                <span class="check-icon valid">✓</span> Valid recipients selected
+              </li>
+              <li class="valid" id="checkTemplate">
+                <span class="check-icon valid">✓</span> Template selected
+              </li>
+              <li class="valid" id="checkAccount">
+                <span class="check-icon valid">✓</span> Account connected
+              </li>
+              <li class="valid" id="checkSchedule">
+                <span class="check-icon valid">✓</span> Schedule configured
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div>
+          <div class="preview-pane">
+            <h4 style="margin:0 0 12px;font-size:.9rem;font-weight:700">Email Preview</h4>
+            <div id="reviewEmailPreview">
+              <div class="email-subject" id="reviewSubject">Subject: —</div>
+              <div class="email-body" id="reviewBody">Select a template to preview...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="button" class="btn btn-secondary" onclick="Outreach.backStep()">Back</button>
+        <div class="actions">
+          <button type="button" class="btn btn-secondary" data-wizard-action="draft" onclick="Outreach.saveDraft()">Save as Draft</button>
+          <button type="button" class="btn btn-success btn-lg" data-wizard-action="submit" onclick="Outreach.submitCampaign()">Send Now</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+<script>
+(function() {
+  Outreach.toggleSchedule = function() {
+    var scheduleOpts = document.getElementById('scheduleOptions');
+    if (!scheduleOpts) return;
+    var checked = document.querySelector('input[name="schedule_type"]:checked');
+    scheduleOpts.style.display = checked && checked.value === 'schedule' ? 'flex' : 'none';
+  };
+  var scheduleRadios = document.querySelectorAll('input[name="schedule_type"]');
+  scheduleRadios.forEach(function(r) {
+    r.addEventListener('change', Outreach.toggleSchedule);
+  });
+  Outreach.toggleSchedule();
+})();
+</script>
+{% endblock %}

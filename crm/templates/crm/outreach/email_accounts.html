@@ -1,0 +1,83 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Email Accounts — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <span>Email Accounts</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Email Accounts</h1>
+      <p>Manage your connected email sending accounts</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary btn-lg" href="{% url 'crm:outreach_account_connect' %}">+ Connect Account</a>
+    </div>
+  </div>
+
+  <div class="account-grid">
+    {% for account in accounts %}
+    <div class="account-card">
+      <div class="account-card-header">
+        <span class="account-card-title">{{ account.email }}</span>
+        <span class="status-badge {{ account.provider }}">{{ account.get_provider_display|default:account.provider|title }}</span>
+      </div>
+      <div class="account-status">
+        {% if account.is_active %}
+        <span class="account-status connected">● Connected</span>
+        {% else %}
+        <span class="account-status error">● Disconnected</span>
+        {% endif %}
+      </div>
+      <div class="account-stats">
+        <div class="account-stat">
+          <span class="label">Daily Limit</span>
+          <span class="value">{{ account.daily_limit|default:"50" }}/day</span>
+        </div>
+        <div class="account-stat">
+          <span class="label">Sent Today</span>
+          <span class="value">{{ account.sent_today|default:"0" }}</span>
+        </div>
+        <div class="account-stat">
+          <span class="label">Reputation</span>
+          <span class="value">
+            <span class="status-badge {{ account.reputation|default:'good' }}">{{ account.get_reputation_display|default:account.reputation|default:"Good" }}</span>
+          </span>
+        </div>
+      </div>
+      <div class="account-actions">
+        <a class="btn btn-soft btn-sm" href="{% url 'crm:outreach_account_edit' uid=account.uid %}">Edit</a>
+        <button class="btn btn-outline btn-sm test-connection" data-uid="{{ account.uid }}">Test Connection</button>
+        <form method="post" action="{% url 'crm:outreach_account_delete' uid=account.uid %}" style="display:inline;" onsubmit="return confirm('Delete this account?');">
+          {% csrf_token %}
+          <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+        </form>
+      </div>
+    </div>
+    {% empty %}
+    <div class="empty-state" style="grid-column: 1 / -1;">
+      <div class="es-icon">📧</div>
+      <div class="es-title">No email accounts connected</div>
+      <div class="es-sub">Connect an email account to start sending campaigns.</div>
+      <a class="btn btn-primary" href="{% url 'crm:outreach_account_connect' %}" style="margin-top: 12px;">+ Connect Account</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

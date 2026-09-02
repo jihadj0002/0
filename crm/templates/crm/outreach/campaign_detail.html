@@ -1,0 +1,155 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}{{ campaign.name }} — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaigns' %}">Campaigns</a>
+    <span>/</span>
+    <span>{{ campaign.name }}</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>{{ campaign.name }} <span class="status-badge {{ campaign.status }}">{{ campaign.get_status_display|default:campaign.status|title }}</span></h1>
+      {% if campaign.description %}
+      <p>{{ campaign.description }}</p>
+      {% endif %}
+    </div>
+    <div class="actions">
+      <a class="btn btn-soft" href="{% url 'crm:outreach_campaign_settings' uid=campaign.uid %}">Settings</a>
+      {% if campaign.status == 'draft' or campaign.status == 'scheduled' or campaign.status == 'paused' or campaign.status == 'completed' or campaign.status == 'failed' %}
+      <button class="btn btn-success" onclick="Outreach.sendCampaign('{{ campaign.uid }}')">Send</button>
+      {% endif %}
+      {% if campaign.status == 'sending' %}
+      <button class="btn btn-warning" onclick="Outreach.pauseCampaign('{{ campaign.uid }}')">Pause</button>
+      {% endif %}
+      {% if campaign.status == 'draft' or campaign.status == 'completed' or campaign.status == 'failed' or campaign.status == 'paused' %}
+      <button class="btn btn-danger" onclick="Outreach.archiveCampaign('{{ campaign.uid }}')">Archive</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="kpi-detail-grid">
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.total_recipients|default:"0" }}</div>
+      <div class="label">Recipients</div>
+    </div>
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.sent_count|default:"0" }}</div>
+      <div class="label">Sent</div>
+    </div>
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.failed_count|default:"0" }}</div>
+      <div class="label">Failed</div>
+    </div>
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.bounced_count|default:"0" }}</div>
+      <div class="label">Bounced</div>
+    </div>
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.opened_count|default:"0" }}</div>
+      <div class="label">Opened</div>
+    </div>
+    <div class="kpi-detail-item">
+      <div class="value">{{ campaign.replied_count|default:"0" }}</div>
+      <div class="label">Replied</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom: 20px;">
+    <div class="card-body">
+      <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+        <span style="font-weight: 600;">Delivery Progress</span>
+        <span style="color: var(--muted);">
+          {% if campaign.total_recipients %}
+            {{ campaign.sent_count|default:"0" }} / {{ campaign.total_recipients }}
+          {% else %}
+            0 / 0
+          {% endif %}
+        </span>
+      </div>
+      <div class="progress-bar">
+        {% widthratio campaign.sent_count|default:"0" campaign.total_recipients|default:"1" 100 as progress_pct %}
+        <div class="fill blue" style="width: {% if campaign.total_recipients %}{{ progress_pct }}{% else %}0{% endif %}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="tab active" href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}">Overview</a>
+    <a class="tab" href="{% url 'crm:outreach_campaign_recipients' uid=campaign.uid %}">Recipients</a>
+    <a class="tab" href="{% url 'crm:outreach_campaign_settings' uid=campaign.uid %}">Settings</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Recent Activity</h3>
+    </div>
+    <div class="card-body">
+      <div class="timeline">
+        {% for log in recent_logs %}
+        <div class="timeline-item">
+          <div class="dot {% if log.status == 'sent' or log.status == 'delivered' %}green{% elif log.status == 'opened' %}blue{% elif log.status == 'replied' %}purple{% else %}orange{% endif %}"></div>
+          <div class="time">{{ log.sent_at|date:"M j, Y g:i A"|default:log.created_at|date:"M j, Y g:i A" }}</div>
+          <div class="event">
+            <strong>{{ log.lead_name|default:log.lead.email }}</strong>
+            {% if log.status == 'sent' %}email sent{% elif log.status == 'delivered' %}email delivered{% elif log.status == 'opened' %}opened email{% elif log.status == 'replied' %}replied to email{% elif log.status == 'bounced' %}email bounced{% elif log.status == 'failed' %}send failed{% else %}{{ log.status }}{% endif %}
+            {% if log.subject %}— <span style="color: var(--muted);">{{ log.subject }}</span>{% endif %}
+          </div>
+          {% if log.error %}
+          <div class="quote">{{ log.error }}</div>
+          {% endif %}
+        </div>
+        {% empty %}
+        <div class="empty-state">
+          <div class="es-title">No activity yet</div>
+          <div class="es-sub">Emails sent from this campaign will appear here.</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% if campaign.status == 'sending' %}
+<script>
+(function() {
+  var uid = '{{ campaign.uid }}';
+  var poll = setInterval(function() {
+    fetch('/crm/outreach/campaigns/' + uid + '/poll/')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.status !== 'sending') {
+          clearInterval(poll);
+          window.location.reload();
+          return;
+        }
+        document.querySelectorAll('.kpi-detail-item')[0].querySelector('.value').textContent = data.total_recipients;
+        document.querySelectorAll('.kpi-detail-item')[1].querySelector('.value').textContent = data.sent_count;
+        document.querySelectorAll('.kpi-detail-item')[2].querySelector('.value').textContent = data.failed_count;
+        var pct = data.total_recipients > 0 ? Math.round(data.sent_count / data.total_recipients * 100) : 0;
+        var bar = document.querySelector('.progress-bar .fill');
+        if (bar) { bar.style.width = pct + '%'; }
+        var label = document.querySelector('.card-body span:last-child');
+        if (label) { label.textContent = data.sent_count + ' / ' + data.total_recipients; }
+      })
+      .catch(function() {});
+  }, 5000);
+})();
+</script>
+{% endif %}
+{% endblock %}

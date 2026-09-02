@@ -1,0 +1,108 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Email Outreach — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <span>Email Outreach</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Email Outreach</h1>
+      <p>Create and manage personalized email campaigns</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-primary btn-lg" href="{% url 'crm:outreach_campaign_create' %}">+ Create Campaign</a>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card kpi-bg-blue">
+      <div class="kpi-icon">📨</div>
+      <div class="kpi-value">{{ total_sent|default:"0" }}</div>
+      <div class="kpi-label">Emails Sent</div>
+      <div class="kpi-change up">↑ 0%</div>
+    </div>
+    <div class="kpi-card kpi-bg-green">
+      <div class="kpi-icon">👁</div>
+      <div class="kpi-value">{{ open_rate|default:"0" }}%</div>
+      <div class="kpi-label">Open Rate</div>
+      <div class="kpi-change up">↑ 0%</div>
+    </div>
+    <div class="kpi-card kpi-bg-orange">
+      <div class="kpi-icon">💬</div>
+      <div class="kpi-value">{{ reply_rate|default:"0" }}%</div>
+      <div class="kpi-label">Reply Rate</div>
+      <div class="kpi-change up">↑ 0%</div>
+    </div>
+    <div class="kpi-card kpi-bg-purple">
+      <div class="kpi-icon">📊</div>
+      <div class="kpi-value">{{ campaign_count|default:"0" }}</div>
+      <div class="kpi-label">Campaigns</div>
+      <div class="kpi-change up">↑ 0%</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-header">
+        <h3>Email Performance</h3>
+      </div>
+      <div class="card-body">
+        <div class="chart-placeholder">
+          <div style="padding: 80px 20px; text-align: center; font-size: 1.2rem; color: #94a3b8;">📊 Email Performance</div>
+        </div>
+        <div class="chart-labels">
+          <span>Mon</span>
+          <span>Tue</span>
+          <span>Wed</span>
+          <span>Thu</span>
+          <span>Fri</span>
+          <span>Sat</span>
+          <span>Sun</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Active Campaigns</h3>
+      </div>
+      <div class="card-body">
+        {% for campaign in active_campaigns %}
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+            <span style="font-weight: 600;">{{ campaign.name }}</span>
+            <span style="color: var(--muted);">{{ campaign.progress|default:"0" }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="fill blue" style="width: {{ campaign.progress|default:"0" }}%;"></div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="empty-state">
+          <div class="es-title">No active campaigns</div>
+          <div class="es-sub">Create your first campaign to get started.</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="card-footer">
+        <a class="btn btn-soft" href="{% url 'crm:outreach_campaigns' %}">View All Campaigns</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

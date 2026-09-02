@@ -1,0 +1,102 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}{% if account %}Edit Account{% else %}Connect Account{% endif %} — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_accounts' %}">Accounts</a>
+    <span>/</span>
+    <span>{% if account %}Edit Account{% else %}Connect Account{% endif %}</span>
+  </div>
+
+  <div class="page-header">
+    <h1>{% if account %}Edit Account{% else %}Connect Account{% endif %}</h1>
+  </div>
+
+  <div class="provider-grid">
+    <div class="provider-card" data-provider="google">
+      <div class="provider-icon">G</div>
+      <div class="provider-name">Google Workspace</div>
+      <div class="provider-desc">Gmail, Google Workspace</div>
+    </div>
+    <div class="provider-card" data-provider="microsoft">
+      <div class="provider-icon">M</div>
+      <div class="provider-name">Microsoft 365</div>
+      <div class="provider-desc">Outlook, Office 365</div>
+    </div>
+    <div class="provider-card active" data-provider="smtp">
+      <div class="provider-icon">✉</div>
+      <div class="provider-name">SMTP / Other</div>
+      <div class="provider-desc">Custom SMTP server</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 24px;">
+    <form method="post" id="connectForm">
+      {% csrf_token %}
+      <input type="hidden" name="provider" id="id_provider" value="{% if account %}{{ account.provider }}{% else %}smtp{% endif %}">
+
+      <div id="smtpFields">
+        <div class="form-group">
+          <label for="id_email">Email Address</label>
+          <input type="email" id="id_email" name="email" value="{{ account.email|default:'' }}" placeholder="you@company.com" required>
+        </div>
+
+        <div class="form-group">
+          <label for="id_smtp_host">SMTP Host</label>
+          <input type="text" id="id_smtp_host" name="smtp_host" value="{{ account.smtp_host|default:'' }}" placeholder="smtp.company.com">
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="id_smtp_port">SMTP Port</label>
+            <input type="number" id="id_smtp_port" name="smtp_port" value="{{ account.smtp_port|default:'587' }}" placeholder="587">
+          </div>
+          <div class="form-group">
+            <label for="id_username">Username</label>
+            <input type="text" id="id_username" name="username" value="{{ account.smtp_username|default:'' }}" placeholder="you@company.com">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="id_password">Password</label>
+          <input type="password" id="id_password" name="password" placeholder="{% if account %}Leave blank to keep current{% else %}SMTP password{% endif %}">
+        </div>
+
+        <div class="form-group">
+          <label class="toggle-label">
+            <input type="checkbox" name="use_tls" {% if account.use_tls or not account %}checked{% endif %}>
+            <span>Use TLS</span>
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="id_daily_limit">Daily Sending Limit</label>
+          <input type="number" id="id_daily_limit" name="daily_limit" value="{{ account.daily_limit|default:'50' }}" min="1" max="500">
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-primary btn-lg" type="submit" id="saveBtn">{% if account %}Save Changes{% else %}Connect Account{% endif %}</button>
+        <button class="btn btn-outline btn-lg" type="button" id="testConnectionBtn">Test Connection</button>
+        <a class="btn btn-outline" href="{% url 'crm:outreach_accounts' %}">Cancel</a>
+      </div>
+    </form>
+    <div id="connectionResult" style="margin-top: 12px; display: none;"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

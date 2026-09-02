@@ -1,14 +1,19 @@
+"""
+RQ job functions for Email Outreach email sending.
+"""
 import random
 import time
-from django_rq import job
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
 
 
-@job("email", timeout="12h")
 def process_email_batch(batch_id):
-    """RQ job: send all pending emails for an EmailBatch with rate limiting."""
+    """Send all pending emails for an EmailBatch with rate limiting.
+
+    This is called via RQ enqueue, but does NOT use the @job decorator
+    at module level so it can import without a running Redis server.
+    """
     from .models import EmailBatch, EmailLog
     from .services import build_email_context, render_email
 
@@ -29,7 +34,6 @@ def process_email_batch(batch_id):
 
     for i, log in enumerate(logs):
         lead = log.lead
-
         if not lead.email:
             log.status = "failed"
             log.error = "No email address"
@@ -66,7 +70,6 @@ def process_email_batch(batch_id):
 
         _sleep(i, total)
 
-    # Update batch
     batch.sent_count = sent
     batch.failed_count = failed
     batch.status = "completed"
@@ -76,9 +79,11 @@ def process_email_batch(batch_id):
     return {"sent": sent, "failed": failed, "total": total, "batch_uid": batch.uid}
 
 
-@job("email", timeout="12h")
 def send_single_email_now(lead_id, template_uid, user_id, account_email=None):
-    """RQ job: send a single immediate email (from compose modal)."""
+    """Send a single immediate email (from compose modal).
+
+    Called via RQ enqueue. Does NOT use @job decorator at module level.
+    """
     from django.contrib.auth import get_user_model
     from .models import Lead, EmailTemplate, EmailLog
     from .services import build_email_context, render_email
@@ -98,12 +103,9 @@ def send_single_email_now(lead_id, template_uid, user_id, account_email=None):
 
     try:
         send_mail(
-            subject=subject,
-            message=body_text,
-            from_email=from_email,
-            recipient_list=[lead.email],
-            html_message=body_html,
-            fail_silently=False,
+            subject=subject, message=body_text,
+            from_email=from_email, recipient_list=[lead.email],
+            html_message=body_html, fail_silently=False,
         )
         EmailLog.objects.create(
             template=template, lead=lead,
@@ -121,12 +123,11 @@ def send_single_email_now(lead_id, template_uid, user_id, account_email=None):
         return {"status": "failed", "error": str(e)}
 
 
-@job("email", timeout="12h")
 def send_campaign_emails(campaign_id):
-    """RQ job: send all pending CampaignLead emails with rate limiting.
+    """Send all pending CampaignLead emails with rate limiting.
 
-    This is the Phase 6 campaign-based sender — will work once the Campaign
-    model exists in Phase 2.
+    Called via RQ enqueue or background thread. Updates campaign stats
+    incrementally so the detail page shows live progress.
     """
     from .models import Campaign, CampaignLead, EmailBatch, EmailLog
     from .services import build_email_context, render_email
@@ -134,6 +135,10 @@ def send_campaign_emails(campaign_id):
     campaign = Campaign.objects.get(id=campaign_id)
     if campaign.status not in ("scheduled", "sending"):
         return {"error": f"Campaign status is {campaign.status}, cannot send"}
+
+    # Respect scheduled time
+    if campaign.scheduled_at and campaign.scheduled_at > timezone.now():
+        return {"scheduled": True, "send_at": campaign.scheduled_at.isoformat()}
 
     campaign.status = "sending"
     campaign.started_at = timezone.now()
@@ -162,6 +167,11 @@ def send_campaign_emails(campaign_id):
     sent = failed = 0
 
     for i, campaign_lead in enumerate(campaign_leads):
+        # Check if campaign was paused
+        campaign.refresh_from_db(fields=["status"])
+        if campaign.status != "sending":
+            break
+
         lead = campaign_lead.lead
         if not lead.email:
             campaign_lead.status = "failed"
@@ -173,7 +183,10 @@ def send_campaign_emails(campaign_id):
                 status="failed", error="Lead has no email address",
             )
             failed += 1
-            _sleep(i, total)
+            campaign.sent_count = sent
+            campaign.failed_count = failed
+            campaign.save(update_fields=["sent_count", "failed_count", "updated_at"])
+            _sleep(i, total, campaign.min_interval, campaign.max_interval)
             continue
 
         ctx = build_email_context(lead, {"sender": campaign.created_by})
@@ -210,7 +223,12 @@ def send_campaign_emails(campaign_id):
             )
             failed += 1
 
-        _sleep(i, total)
+        # Update campaign stats live so UI shows progress
+        campaign.sent_count = sent
+        campaign.failed_count = failed
+        campaign.save(update_fields=["sent_count", "failed_count", "updated_at"])
+
+        _sleep(i, total, campaign.min_interval, campaign.max_interval)
 
     batch.sent_count = sent
     batch.failed_count = failed
@@ -218,15 +236,18 @@ def send_campaign_emails(campaign_id):
     batch.completed_at = timezone.now()
     batch.save(update_fields=["sent_count", "failed_count", "status", "completed_at"])
 
-    campaign.sent_count = sent
-    campaign.failed_count = failed
-    campaign.status = "completed" if failed == 0 else ("completed" if sent > 0 else "failed")
-    campaign.completed_at = timezone.now()
-    campaign.save(update_fields=["sent_count", "failed_count", "status", "completed_at", "updated_at"])
+    campaign.refresh_from_db(fields=["status"])
+    if campaign.status == "sending":
+        campaign.sent_count = sent
+        campaign.failed_count = failed
+        campaign.status = "completed" if failed == 0 else ("completed" if sent > 0 else "failed")
+        campaign.completed_at = timezone.now()
+        campaign.save(update_fields=["sent_count", "failed_count", "status", "completed_at", "updated_at"])
 
     return {"sent": sent, "failed": failed, "total": total}
 
 
 def _sleep(i, total, min_minutes=2, max_minutes=5):
+    """Sleep for a random interval between sends (skip for last item)."""
     if i < total - 1:
         time.sleep(random.uniform(min_minutes * 60, max_minutes * 60))

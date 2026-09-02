@@ -5,6 +5,7 @@ from .models import (
     Task, Followup, SalesScript, FAQ, Customer, Notification, CrmSetting,
     LearningTopic, LearningArticle,
     EmailTemplate, EmailBatch, EmailLog,
+    EmailAccount, Campaign, CampaignLead,
 )
 
 
@@ -138,3 +139,25 @@ class EmailLogAdmin(admin.ModelAdmin):
     search_fields = ["uid", "lead__name", "recipient_email", "subject", "error"]
     readonly_fields = ["uid", "created_at", "sent_at", "opened_at", "clicked_at"]
     date_hierarchy = "sent_at"
+
+
+@admin.register(EmailAccount)
+class EmailAccountAdmin(admin.ModelAdmin):
+    list_display = ["email", "provider", "daily_limit", "sent_today", "is_active", "reputation"]
+    list_filter = ["provider", "is_active", "reputation"]
+    search_fields = ["email"]
+
+
+@admin.register(Campaign)
+class CampaignAdmin(admin.ModelAdmin):
+    list_display = ["name", "status", "campaign_type", "template", "total_recipients", "sent_count", "failed_count", "created_by", "created_at"]
+    list_filter = ["status", "campaign_type", "created_at"]
+    search_fields = ["name", "description"]
+    readonly_fields = ["uid", "created_at", "updated_at", "started_at", "completed_at"]
+
+
+@admin.register(CampaignLead)
+class CampaignLeadAdmin(admin.ModelAdmin):
+    list_display = ["lead", "campaign", "status", "sent_at", "opened_at"]
+    list_filter = ["status", "campaign"]
+    search_fields = ["lead__name"]

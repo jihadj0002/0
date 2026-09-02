@@ -700,20 +700,12 @@ class CampaignLead(models.Model):
         verbose_name = "Campaign Lead"
         verbose_name_plural = "Campaign Leads"
 
-    def __str__(self):
+def __str__(self):
         return f"{self.lead.name} — {self.get_status_display()}"
-class CrmSetting(models.Model):
-    key = models.CharField(max_length=100, unique=True)
-    value = models.JSONField(default=dict, blank=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["key"]
-
-    def __str__(self):
-        return self.key
 
 
+# -----------------------
+# CRM Settings (key/value flags)
 # -----------------------
 # Learn (sales training hub)
 # -----------------------

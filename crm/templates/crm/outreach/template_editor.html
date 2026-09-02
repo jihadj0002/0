@@ -1,0 +1,100 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}{% if template %}Edit Template{% else %}New Template{% endif %} — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_templates' %}">Templates</a>
+    <span>/</span>
+    <span>{% if template %}Edit Template{% else %}New Template{% endif %}</span>
+  </div>
+
+  <div class="page-header">
+    <h1>{% if template %}Edit Template{% else %}New Template{% endif %}</h1>
+  </div>
+
+  <div class="editor-layout">
+    <div class="editor-panel">
+      <form method="post" action="{% if template %}{% url 'crm:outreach_template_edit' uid=template.uid %}{% else %}{% url 'crm:outreach_template_new' %}{% endif %}">
+        {% csrf_token %}
+
+        <div class="form-group">
+          <label for="id_name">Template Name</label>
+          <input type="text" id="id_name" name="name" value="{{ template.name|default:'' }}" placeholder="e.g. Cold Outreach - Tech" required>
+        </div>
+
+        <div class="form-group">
+          <label for="id_subject">Subject Line</label>
+          <input type="text" id="id_subject" name="subject" value="{{ template.subject|default:'' }}" placeholder="e.g. Hi {{lead.name}}, quick question" required>
+          <div class="help-text">Available tokens: <code>{<!---->{lead.name}}</code>, <code>{<!---->{company.name}}</code>, <code>{<!---->{company.industry}}</code>, <code>{<!---->{sender.name}}</code></div>
+        </div>
+
+        <div class="form-group">
+          <label for="id_category">Category</label>
+          <select id="id_category" name="category">
+            <option value="cold" {% if template.category == 'cold' %}selected{% endif %}>Cold</option>
+            <option value="follow-up" {% if template.category == 'follow-up' %}selected{% endif %}>Follow-up</option>
+            <option value="nurture" {% if template.category == 'nurture' %}selected{% endif %}>Nurture</option>
+            <option value="proposal" {% if template.category == 'proposal' %}selected{% endif %}>Proposal</option>
+            <option value="announcement" {% if template.category == 'announcement' %}selected{% endif %}>Announcement</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="id_body_html">Body HTML</label>
+          <textarea id="id_body_html" name="body_html" rows="14" placeholder="<p>Hi {{lead.name}},</p>...">{{ template.body_html|default:'' }}</textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="id_body_text">Plain Text (fallback)</label>
+          <textarea id="id_body_text" name="body_text" rows="6" placeholder="Hi {{lead.name}},...">{{ template.body_text|default:'' }}</textarea>
+        </div>
+
+        <div class="token-chips">
+          <span class="chip-label">Insert token:</span>
+          <button type="button" class="chip" data-token="{% templatetag openvariable %}lead.name{% templatetag closevariable %}">first_name</button>
+          <button type="button" class="chip" data-token="{% templatetag openvariable %}company.name{% templatetag closevariable %}">company_name</button>
+          <button type="button" class="chip" data-token="{% templatetag openvariable %}company.industry{% templatetag closevariable %}">industry</button>
+          <button type="button" class="chip" data-token="{% templatetag openvariable %}company.website{% templatetag closevariable %}">website</button>
+          <button type="button" class="chip" data-token="{% templatetag openvariable %}sender.name{% templatetag closevariable %}">sender_name</button>
+        </div>
+
+        <div class="form-actions">
+          <button class="btn btn-primary btn-lg" type="submit">{% if template %}Update Template{% else %}Create Template{% endif %}</button>
+          <a class="btn btn-outline" href="{% url 'crm:outreach_templates' %}">Cancel</a>
+        </div>
+      </form>
+    </div>
+
+    <div class="preview-panel">
+      <div class="preview-header">
+        <h3>Preview</h3>
+      </div>
+      <div class="preview-subject" id="previewSubject">
+        {{ template.subject|default:"Your subject will appear here" }}
+      </div>
+      <div class="preview-body" id="previewBody">
+        {% if template.body_html %}
+          {{ template.body_html|safe }}
+        {% else %}
+          <div class="preview-placeholder">Your email body will appear here</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

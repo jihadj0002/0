@@ -1,0 +1,112 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Recipients — {{ campaign.name }} — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaigns' %}">Campaigns</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}">{{ campaign.name }}</a>
+    <span>/</span>
+    <span>Recipients</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Recipients</h1>
+      <p>{{ campaign.total_recipients }} total recipient{{ campaign.total_recipients|pluralize:"s" }}</p>
+    </div>
+    <div class="actions">
+      <a class="btn btn-soft" href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}">← Back to Campaign</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="tab" href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}">Overview</a>
+    <a class="tab active" href="{% url 'crm:outreach_campaign_recipients' uid=campaign.uid %}">Recipients</a>
+    <a class="tab" href="{% url 'crm:outreach_campaign_settings' uid=campaign.uid %}">Settings</a>
+  </div>
+
+  <div class="card">
+    <div class="filter-bar">
+      <form method="get" style="display: flex; gap: 10px; flex-wrap: wrap; width: 100%;">
+        <select name="status">
+          <option value="" {% if not status_filter %}selected{% endif %}>All Status</option>
+          <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+          <option value="queued" {% if status_filter == 'queued' %}selected{% endif %}>Queued</option>
+          <option value="sent" {% if status_filter == 'sent' %}selected{% endif %}>Sent</option>
+          <option value="failed" {% if status_filter == 'failed' %}selected{% endif %}>Failed</option>
+          <option value="bounced" {% if status_filter == 'bounced' %}selected{% endif %}>Bounced</option>
+          <option value="opened" {% if status_filter == 'opened' %}selected{% endif %}>Opened</option>
+          <option value="replied" {% if status_filter == 'replied' %}selected{% endif %}>Replied</option>
+        </select>
+        <input type="text" name="q" placeholder="Search by name or email..." value="{{ search_query|default:'' }}" style="min-width: 200px;">
+        <button class="btn btn-primary" type="submit">Filter</button>
+        <a class="btn btn-outline" href="{% url 'crm:outreach_campaign_recipients' uid=campaign.uid %}">Reset</a>
+      </form>
+    </div>
+
+    <div class="table-wrap">
+      <table class="cold-table">
+        <thead>
+          <tr>
+            <th>Lead</th>
+            <th>Email</th>
+            <th>Status</th>
+            <th>Sent At</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for recipient in page_obj %}
+          <tr>
+            <td style="font-weight: 600;">{{ recipient.lead.name|default:"—" }}</td>
+            <td>{{ recipient.lead.email|default:"—" }}</td>
+            <td><span class="status-badge {{ recipient.status }}">{{ recipient.get_status_display|default:recipient.status|title }}</span></td>
+            <td style="white-space: nowrap;">{% if recipient.sent_at %}{{ recipient.sent_at|date:"M j, Y g:i A" }}{% else %}—{% endif %}</td>
+            <td style="color: var(--red); font-size: 0.82rem;">{{ recipient.error|default:"—" }}</td>
+          </tr>
+          {% empty %}
+          <tr>
+            <td colspan="5">
+              <div class="empty-state">
+                <div class="es-title">No recipients found</div>
+                <div class="es-sub">Adjust filters or add leads to this campaign.</div>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div style="padding: 14px 20px; border-top: 1px solid var(--border);">
+      <div class="pagination">
+        {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">«</a>
+        {% endif %}
+        <span class="current">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if status_filter %}&status={{ status_filter }}{% endif %}{% if search_query %}&q={{ search_query }}{% endif %}">»</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

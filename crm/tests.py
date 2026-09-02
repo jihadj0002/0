@@ -1392,3 +1392,175 @@ class ScoringTests(CrmBaseTestCase):
         self.assertIn("Score (auto, 0–100)", detail)
         self.assertIn("Calls 10", detail)
         self.assertNotIn('name="score"', detail)
+
+
+# ============================================================
+# Outreach / Email Campaign Tests
+# ============================================================
+
+from crm.models import EmailTemplate, EmailBatch, EmailLog, EmailAccount, Campaign, CampaignLead
+from crm.services import token_replace, build_email_context, render_email, send_bulk_emails
+from unittest.mock import patch
+
+
+class EmailTemplateTests(CrmBaseTestCase):
+    def test_create_template(self):
+        template = EmailTemplate.objects.create(
+            name="Test Template",
+            subject="Hello {{lead.name}}",
+            body_html="<p>Hi {{lead.name}},</p>",
+            body_text="Hi {{lead.name}},",
+            created_by=self.owner,
+        )
+        self.assertTrue(template.uid.startswith("etp_"))
+        self.assertEqual(template.name, "Test Template")
+        self.assertEqual(template.subject, "Hello {{lead.name}}")
+        self.assertEqual(template.category, "cold")
+        self.assertTrue(template.is_active)
+
+    def test_token_replace(self):
+        context = {"lead": {"name": "Rahim", "email": "rahim@example.com"}}
+        result = token_replace("Hello {{lead.name}}, your email is {{lead.email}}", context)
+        self.assertEqual(result, "Hello Rahim, your email is rahim@example.com")
+
+    def test_build_email_context(self):
+        lead, _ = create_lead(self.owner, name="Karim", email="karim@x.com")
+        ctx = build_email_context(lead)
+        self.assertEqual(ctx["lead"]["name"], "Karim")
+        self.assertIn("sender", ctx)
+        self.assertIn("name", ctx["sender"])
+        self.assertIn("company", ctx)
+        self.assertEqual(ctx["company"]["name"], "TheMatrixAi")
+
+    def test_render_email(self):
+        context = {"lead": {"name": "Fatima"}}
+        template = EmailTemplate.objects.create(
+            name="Render Test", subject="Hello {{lead.name}}",
+            body_html="<p>{{lead.name}}</p>", body_text="",
+        )
+        subject, body_html, body_text = render_email(template, context)
+        self.assertEqual(subject, "Hello Fatima")
+        self.assertIn("Fatima", body_html)
+        self.assertTrue(body_text)
+
+
+class EmailAccountTests(CrmBaseTestCase):
+    def test_create_account(self):
+        account = EmailAccount.objects.create(
+            email="sales@example.com",
+            smtp_host="smtp.example.com",
+            smtp_user="sales@example.com",
+            smtp_password="secret",
+            created_by=self.owner,
+        )
+        self.assertTrue(account.uid.startswith("ema_"))
+        self.assertEqual(account.email, "sales@example.com")
+        self.assertEqual(account.provider, "smtp")
+
+    def test_default_daily_limit(self):
+        account = EmailAccount.objects.create(
+            email="test@example.com", created_by=self.owner,
+        )
+        self.assertEqual(account.daily_limit, 50)
+
+
+class CampaignTests(CrmBaseTestCase):
+    def test_create_campaign(self):
+        campaign = Campaign.objects.create(
+            name="Q1 Outreach",
+            description="First campaign of the year",
+            created_by=self.owner,
+        )
+        self.assertTrue(campaign.uid.startswith("cmp_"))
+        self.assertEqual(campaign.name, "Q1 Outreach")
+        self.assertEqual(campaign.status, "draft")
+
+    def test_campaign_str(self):
+        campaign = Campaign.objects.create(name="Test Campaign", created_by=self.owner)
+        self.assertEqual(str(campaign), "Test Campaign (Draft)")
+
+
+class CampaignLeadTests(CrmBaseTestCase):
+    def test_create_campaign_lead(self):
+        campaign = Campaign.objects.create(name="Test", created_by=self.owner)
+        lead, _ = create_lead(self.owner, name="Camp Lead", phone="+8801955")
+        cl = CampaignLead.objects.create(campaign=campaign, lead=lead)
+        self.assertEqual(cl.status, "pending")
+        self.assertEqual(cl.campaign, campaign)
+        self.assertEqual(cl.lead, lead)
+
+
+class OutreachViewPermissionTests(TestCase):
+    def test_overview_requires_login(self):
+        from django.test import Client
+        c = Client()
+        resp = c.get("/crm/outreach/")
+        self.assertIn(resp.status_code, (301, 302))
+        self.assertIn("/login", resp.url)
+
+    def test_overview_requires_manager(self):
+        from django.test import Client
+        staff_user = User.objects.create_user(username="staffout", password="x")
+        StaffProfile.objects.create(user=staff_user, role="staff")
+        c = Client()
+        c.force_login(staff_user)
+        resp = c.get("/crm/outreach/")
+        self.assertEqual(resp.status_code, 403)
+
+    def test_campaign_list_requires_owner(self):
+        from django.test import Client
+        owner_user = User.objects.create_user(username="ownerout", password="x")
+        StaffProfile.objects.create(user=owner_user, role="owner")
+        c = Client()
+        c.force_login(owner_user)
+        resp = c.get("/crm/outreach/campaigns/")
+        self.assertEqual(resp.status_code, 200)
+
+    def test_templates_page_accessible(self):
+        from django.test import Client
+        manager_user = User.objects.create_user(username="mgrout", password="x")
+        StaffProfile.objects.create(user=manager_user, role="manager")
+        c = Client()
+        c.force_login(manager_user)
+        resp = c.get("/crm/outreach/templates/")
+        self.assertEqual(resp.status_code, 200)
+
+
+class SendEmailServiceTests(TestCase):
+    @patch("django.core.mail.send_mail")
+    @patch("django_rq.get_queue")
+    def test_send_bulk_emails_creates_batch(self, mock_get_queue, mock_send_mail):
+        from django.test import Client
+        user = User.objects.create_user(username="senduser", password="x")
+        StaffProfile.objects.create(user=user, role="owner")
+        template = EmailTemplate.objects.create(name="Bulk Test", subject="Hi", body_html="<p>Hi</p>")
+        lead, _ = create_lead(user, name="Bulk Lead", email="bulk@example.com", phone="+8801966")
+
+        batch = send_bulk_emails(user, template, [lead.pk])
+
+        self.assertIsNotNone(batch)
+        self.assertEqual(EmailBatch.objects.count(), 1)
+        self.assertEqual(batch.template, template)
+        self.assertEqual(batch.status, "queued")
+
+    @patch("django.core.mail.send_mail")
+    @patch("django_rq.get_queue")
+    def test_send_bulk_emails_no_leads(self, mock_get_queue, mock_send_mail):
+        user = User.objects.create_user(username="failuser", password="x")
+        StaffProfile.objects.create(user=user, role="owner")
+        template = EmailTemplate.objects.create(name="Fail Test", subject="Hi", body_html="<p>Hi</p>")
+        with self.assertRaises(ValueError):
+            send_bulk_emails(user, template, [])
+
+    @patch("django.core.mail.send_mail")
+    @patch("django_rq.get_queue")
+    def test_send_bulk_emails_enqueues_rq(self, mock_get_queue, mock_send_mail):
+        user = User.objects.create_user(username="rquser", password="x")
+        StaffProfile.objects.create(user=user, role="owner")
+        template = EmailTemplate.objects.create(name="RQ Test", subject="Hi", body_html="<p>Hi</p>")
+        lead, _ = create_lead(user, name="RQ Lead", email="rq@example.com", phone="+8801977")
+
+        send_bulk_emails(user, template, [lead.pk])
+
+        mock_get_queue.assert_called_once_with("email")
+        mock_get_queue.return_value.enqueue.assert_called_once()

@@ -26,6 +26,7 @@ from .models import (
     PipelineStage, SalesScript, FAQ, Notification, StaffProfile,
     LearningTopic, LearningArticle,
     EmailTemplate, EmailBatch, EmailLog,
+    EmailAccount, Campaign, CampaignLead,
 )
 
 

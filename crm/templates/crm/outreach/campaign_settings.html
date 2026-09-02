@@ -1,0 +1,87 @@
+{% extends "crm/base.html" %}
+{% load static %}
+
+{% block title %}Campaign Settings — {{ campaign.name }} — Email Outreach — Matrix CRM{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'crm/css/outreach.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="outreach-page">
+  <div class="crumb">
+    <a href="{% url 'crm:dashboard' %}">CRM</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_overview' %}">Email Outreach</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaigns' %}">Campaigns</a>
+    <span>/</span>
+    <a href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}">{{ campaign.name }}</a>
+    <span>/</span>
+    <span>Settings</span>
+  </div>
+
+  <div class="page-header">
+    <div>
+      <h1>Campaign Settings</h1>
+      <p>{{ campaign.name }}</p>
+    </div>
+  </div>
+
+  <form method="post" action="{% url 'crm:outreach_campaign_settings' uid=campaign.uid %}">
+    {% csrf_token %}
+
+    <div class="card">
+      <div class="card-header">
+        <h3>General</h3>
+      </div>
+      <div class="card-body">
+        <div class="settings-section">
+          <div class="form-group">
+            <label for="id_name">Campaign Name</label>
+            <input type="text" id="id_name" name="name" value="{{ campaign.name }}" required>
+          </div>
+          <div class="form-group">
+            <label for="id_description">Description</label>
+            <textarea id="id_description" name="description" rows="4">{{ campaign.description }}</textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-4">
+      <div class="card-header">
+        <h3>Sending</h3>
+      </div>
+      <div class="card-body">
+        <div class="settings-section">
+          <div class="form-group">
+            <label for="id_daily_limit">Daily Limit</label>
+            <input type="number" id="id_daily_limit" name="daily_limit" value="{{ campaign.daily_limit }}" min="1">
+            <span class="hint">Maximum emails sent per day</span>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="id_min_interval">Min Interval (minutes)</label>
+              <input type="number" id="id_min_interval" name="min_interval" value="{{ campaign.min_interval }}" min="1">
+            </div>
+            <div class="form-group">
+              <label for="id_max_interval">Max Interval (minutes)</label>
+              <input type="number" id="id_max_interval" name="max_interval" value="{{ campaign.max_interval }}" min="1">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary btn-lg">Save Changes</button>
+      <a href="{% url 'crm:outreach_campaign_detail' uid=campaign.uid %}" class="btn btn-secondary">Back to Campaign</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'crm/js/outreach.js' %}"></script>
+{% endblock %}

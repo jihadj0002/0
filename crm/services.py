@@ -11,6 +11,7 @@ from .models import (
     Lead, Activity, Customer, CrmSetting, StaffProfile, PipelineStage,
     Notification,
     EmailTemplate, EmailBatch, EmailLog,
+    EmailAccount, Campaign, CampaignLead,
 )
 from .scoring import recompute_score
 
@@ -562,11 +563,15 @@ def send_bulk_emails(user, template, lead_ids, scheduled_at=None, interval_min=2
         ))
     EmailLog.objects.bulk_create(logs)
     
-    # Enqueue to RQ
-    queue = get_queue("email")
-    if scheduled_at and scheduled_at > timezone.now():
-        queue.enqueue_at(scheduled_at, process_email_batch, batch.id)
-    else:
-        queue.enqueue(process_email_batch, batch.id)
+    # Enqueue to RQ (fallback to synchronous when Redis unavailable)
+    try:
+        queue = get_queue("email")
+        if scheduled_at and scheduled_at > timezone.now():
+            queue.enqueue_at(scheduled_at, process_email_batch, batch.id)
+        else:
+            queue.enqueue(process_email_batch, batch.id)
+    except Exception:
+        # Redis/RQ unavailable — process synchronously
+        process_email_batch(batch.id)
     
     return batch
