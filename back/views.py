@@ -447,6 +447,7 @@ def ajax_load_messages(request):
         messages_data.append({
             "id": msg.id,
             "sender": msg.sender,
+            "status": msg.status,
             "text": msg.text,
             "timestamp": local_msg_time.strftime("%d %b, %Y %H:%M") if local_msg_time else "",
             "attachment": attachment,
@@ -514,6 +515,8 @@ def ajax_load_conversations(request):
             # send Unformatted Global time
             # raw time for sorting
             "updated_at_raw": timezone.localtime(c.sort_time).isoformat(),
+            # True / False draft
+            "pending_drafts": c.pending_drafts,  # New field to indicate if there are draft messages
         })
 
 
@@ -1531,13 +1534,14 @@ def _needs_setup(user):
 def settings_view(request):
     from context.models import AgentIdentity, StoreConfig, BehaviorRules
     from billing.models import ModelPricing
-
+    from back.models import UserProfile
     user = request.user
     identity, _ = AgentIdentity.objects.get_or_create(user=user)
     store, _ = StoreConfig.objects.get_or_create(user=user)
     rules, _ = BehaviorRules.objects.get_or_create(user=user)
     integrations = list(Integration.objects.filter(user=user))
     available_models = list(ModelPricing.objects.filter(is_active=True).values_list('model_id', flat=True))
+    is_training = UserProfile.objects.filter(user=user, is_training=True).exists()
 
     if request.method == 'POST':
         from .settings_helpers import apply_setting_section
@@ -1560,6 +1564,7 @@ def settings_view(request):
         'available_models': available_models,
         'active_tab': request.GET.get('tab', 'store'),
         'timezones': timezones,
+        'is_training': is_training,
     })
 
 
@@ -2161,3 +2166,170 @@ def ai_debug_run_tool(request):
         "summary": summary,
         "is_error": is_error,
     })
+
+
+# ---------------------------------------------------------------------------
+# Draft message actions
+# ---------------------------------------------------------------------------
+
+@login_required
+@require_POST
+def draft_send(request, message_id):
+    try:
+        msg = Message.objects.select_related("conversation").get(
+            pk=message_id,
+            conversation__user=request.user,
+            status="draft",
+        )
+    except Message.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Draft not found"}, status=404)
+
+    if not msg.text and not msg.attachments:
+        msg.status = "canceled"
+        msg.save(update_fields=["status"])
+        return JsonResponse({"status": "ok", "message": "Empty draft canceled"})
+
+    from api.ai.sender import send_reply
+
+    result = send_reply(msg.conversation, msg.text, image_urls=msg.attachments)
+
+    if result.get("ok"):
+        msg.status = "sent"
+        msg.save(update_fields=["status"])
+        return JsonResponse({"status": "ok", "delivery": result})
+    else:
+        msg.status = "failed"
+        msg.save(update_fields=["status"])
+        return JsonResponse(
+            {"status": "error", "message": "Send failed", "errors": result.get("errors", [])},
+            status=502,
+        )
+
+
+@login_required
+@require_POST
+def draft_edit(request, message_id):
+    try:
+        msg = Message.objects.select_related("conversation").get(
+            pk=message_id,
+            conversation__user=request.user,
+            status="draft",
+        )
+    except Message.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Draft not found"}, status=404)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON"}, status=400)
+
+    text = data.get("text", "").strip() if data.get("text") else ""
+    attachments = data.get("attachments")
+
+    msg.text = text or None
+    if attachments is not None:
+        msg.attachments = attachments
+    msg.save(update_fields=["text", "attachments"])
+
+    return JsonResponse({
+        "status": "ok",
+        "message": {
+            "id": msg.pk,
+            "text": msg.text,
+            "attachments": msg.attachments,
+        },
+    })
+
+
+@login_required
+@require_POST
+def draft_send_teach(request, message_id):
+    try:
+        msg = Message.objects.select_related("conversation__user").get(
+            pk=message_id,
+            conversation__user=request.user,
+            status="draft",
+        )
+    except Message.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Draft not found"}, status=404)
+
+    try:
+        data = json.loads(request.body.decode("utf-8"))
+    except Exception:
+        data = {}
+
+    text = (data.get("text") or msg.text or "").strip()
+    attachments = data.get("attachments") if "attachments" in data else msg.attachments
+
+    msg.text = text or None
+    if "attachments" in data:
+        msg.attachments = attachments
+    msg.save(update_fields=["text", "attachments"])
+
+    from api.ai.sender import send_reply
+
+    send_result = send_reply(msg.conversation, msg.text, image_urls=msg.attachments)
+
+    if send_result.get("ok"):
+        msg.status = "sent"
+    else:
+        msg.status = "failed"
+    msg.save(update_fields=["status"])
+
+    teach_ok = False
+    incoming = (msg.incoming_message or "").strip()
+    if incoming and text and msg.status == "sent":
+        try:
+            from context.chunking import chunk_sample_qa
+            from context.embeddings import generate_embeddings_batch
+            from context.models import RAGChunk
+
+            qa_text = f"Q: {incoming}\nA: {text}"
+            chunks = chunk_sample_qa(qa_text)
+            if chunks:
+                embedded = generate_embeddings_batch(chunks)
+                rag_rows = []
+                for chunk_text, emb in embedded:
+                    if chunk_text and emb:
+                        rag_rows.append(RAGChunk(
+                            user=msg.conversation.user,
+                            content=chunk_text,
+                            embedding=emb,
+                            source="sample_qa",
+                            chunk_index=len(rag_rows),
+                            is_active=True,
+                        ))
+                if rag_rows:
+                    RAGChunk.objects.bulk_create(rag_rows)
+                    teach_ok = True
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Send & Teach embedding failed msg=%s", msg.pk)
+
+    response = {
+        "status": "ok" if msg.status == "sent" else "error",
+        "delivery": send_result,
+        "taught": teach_ok,
+    }
+    if msg.status == "failed":
+        response["errors"] = send_result.get("errors", [])
+        return JsonResponse(response, status=502)
+    return JsonResponse(response)
+
+
+@login_required
+@require_POST
+def draft_cancel(request, message_id):
+    try:
+        msg = Message.objects.get(
+            pk=message_id,
+            conversation__user=request.user,
+            status="draft",
+        )
+    except Message.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Draft not found"}, status=404)
+
+    msg.status = "canceled"
+    msg.save(update_fields=["status"])
+
+    return JsonResponse({"status": "ok", "message": "Draft canceled"})

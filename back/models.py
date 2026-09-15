@@ -78,6 +78,7 @@ class UserProfile(models.Model):
     setup_completed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_training = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.user.username} ({self.plan})"
@@ -427,6 +428,11 @@ class Conversation(models.Model):
                 self.ai_disabled_at = None
                 self.save()
         return self.is_ai_enabled   
+
+    @property
+    def pending_drafts(self):
+        """Check if there are any draft messages in this conversation."""
+        return self.messages.filter(status="draft").exists()
     
 
     
@@ -464,6 +470,8 @@ class Message(models.Model):
     # Replied To Message
     replied_to = models.ForeignKey("self", null=True, blank=True, to_field="mid", on_delete=models.SET_NULL, related_name="replies")
 
+    # incoming message this is for connecttting draft message with the incoming message
+    incoming_message = models.TextField(blank=True, null=True)
 
     SENDER_CHOICES = [
         ("customer", "Customer"),
@@ -471,7 +479,16 @@ class Message(models.Model):
         ("agent", "Agent"),
     ]
 
+    STATUS_CHOICES = [
+        ("draft", "Draft"),
+        ("sent", "Sent"),
+        ("failed", "Failed"),
+        ("canceled", "Canceled"),
+    ]
+
     sender = models.CharField(max_length=20, choices=SENDER_CHOICES)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="sent", db_index=True)
+
     text = models.TextField(null=True, blank=True)
     timestamp = models.DateTimeField(auto_now_add=True)
 

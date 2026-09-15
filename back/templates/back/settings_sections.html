@@ -210,6 +210,37 @@ Each Q&A pair on separate lines with Q: and A: prefixes."
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="section" value="ai_model">
+
+    <!-- AI Training -->
+    <div class="settings-card">
+      <h2>AI Training</h2>
+      <p class="desc">
+        Allow the AI to learn from your store's conversations and improve its responses over time.
+      </p>
+
+      <div class="toggle-section">
+        <div class="toggle-row">
+          <div class="toggle-label">
+            <h4>Enable AI Training</h4>
+            <p>
+              Turn this on to allow your AI to use conversations for training and improvement.
+            </p>
+          </div>
+
+          <label class="switch">
+            <input
+              type="checkbox"
+              name="is_training"
+              value="1"
+              {% if is_training %}checked{% endif %}
+              {% if request.user.profile.is_training %}checked{% endif %}
+            >
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <div class="settings-card">
       <h2>AI Model per Integration</h2>
       <p class="desc">Select which OpenRouter model to use for each connected platform. Leave blank to use the system default (openai/gpt-4o-mini).</p>

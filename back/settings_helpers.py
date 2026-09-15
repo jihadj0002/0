@@ -63,6 +63,13 @@ def apply_setting_section(user, request, section):
         return True
 
     if section == 'ai_model':
+        from back.models import UserProfile
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+
+        profile.is_training = 'is_training' in request.POST
+        profile.save(update_fields=['is_training', 'updated_at'])
+
+
         for intg in integrations:
             intg.ai_model = request.POST.get(f'ai_model_{intg.pk}') or None
             intg.save(update_fields=['ai_model'])

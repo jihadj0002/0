@@ -53,6 +53,12 @@ urlpatterns = [
     path('send_message', views.send_message_ajax, name='send_message'),
     path('send_image', views.send_image_ajax, name='send_image'),
     path('send_message_with_image', views.send_message_with_image_ajax, name='send_message_with_image'),
+
+    # Draft message actions
+    path('chats/draft/<int:message_id>/send', views.draft_send, name='draft_send'),
+    path('chats/draft/<int:message_id>/edit', views.draft_edit, name='draft_edit'),
+    path('chats/draft/<int:message_id>/send-teach', views.draft_send_teach, name='draft_send_teach'),
+    path('chats/draft/<int:message_id>/cancel', views.draft_cancel, name='draft_cancel'),
     
 
 

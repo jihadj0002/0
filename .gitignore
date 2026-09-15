@@ -32,6 +32,7 @@ docs/*
 
 # Virtual environment
 venv/
+my_env/
 .env
 
 # .md files (markdown documentation)

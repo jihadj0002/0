@@ -6,7 +6,7 @@ import uuid
 
 from django.utils import timezone
 
-from back.models import Integration, Message, ToolCallLog, UsageLog
+from back.models import Integration, Message, ToolCallLog, UsageLog, UserProfile
 from api.ai.tools import tool_search_knowledge_base as _search_knowledge_base
 
 # Image URLs (storage links, or any http(s) link ending in an image extension).
@@ -827,21 +827,46 @@ def run(conversation, incoming_message):
         attachment["cards"] = product_cards
         attachment["type"] = "product_cards" if len(product_cards) > 1 else "product_card"
 
-    Message.objects.create(
-        conversation=conversation,
-        sender="bot",
-        text=final_text,
-        attachments=attachment or None,
-    )
+# Training Mode:
 
-    # Send via platform — pass product_cards only for multi-product carousel;
-    # single-product images are sent individually (avoids duplicate image messages).
-    send_reply(
-        conversation,
-        _split_text_messages(final_text),
-        image_urls=unique_images or None,
-        product_cards=product_cards if len(product_cards) > 1 else None,
-    )
+    try:
+        profile = UserProfile.objects.filter(user=user)
+    except UserProfile.DoesNotExist:
+        profile = None
+
+    is_training = bool(profile and profile.is_training)
+
+    if is_training:
+        # In training mode, save the bot's reply as a draft for review instead of sending it.
+        Message.objects.create(
+            conversation=conversation,
+            sender="bot",
+            text=final_text,
+            attachments=attachment or None,
+            status="draft",
+            incoming_message=incoming_message
+        )
+        logger.info("Bot reply saved as draft for training mode reply_id=%s conv=%s", reply_id, conversation.pk)
+        return
+    
+    else:
+
+        Message.objects.create(
+            conversation=conversation,
+            sender="bot",
+            text=final_text,
+            attachments=attachment or None,
+            incoming_message=incoming_message
+        )
+
+        # Send via platform — pass product_cards only for multi-product carousel;
+        # single-product images are sent individually (avoids duplicate image messages).
+        send_reply(
+            conversation,
+            _split_text_messages(final_text),
+            image_urls=unique_images or None,
+            product_cards=product_cards if len(product_cards) > 1 else None,
+        )
 
     # Rolling chat summary: on long conversations, one cheap call keeps the
     # facts that the history window would drop. Logged under the same reply_id
