@@ -830,7 +830,7 @@ def run(conversation, incoming_message):
 # Training Mode:
 
     try:
-        profile = UserProfile.objects.filter(user=user)
+        profile = UserProfile.objects.get(user=user)
     except UserProfile.DoesNotExist:
         profile = None
 
