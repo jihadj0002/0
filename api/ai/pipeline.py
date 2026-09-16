@@ -384,7 +384,7 @@ def run(conversation, incoming_message):
 
     customer_text = incoming_message.text or ""
 
-    rag_result = _search_knowledge_base(conversation, customer_text, user)
+    rag_result = _search_knowledge_base(user, customer_text)
 
     rag_context = ""
 
