@@ -59,6 +59,7 @@ urlpatterns = [
     path('chats/draft/<int:message_id>/edit', views.draft_edit, name='draft_edit'),
     path('chats/draft/<int:message_id>/send-teach', views.draft_send_teach, name='draft_send_teach'),
     path('chats/draft/<int:message_id>/cancel', views.draft_cancel, name='draft_cancel'),
+    path('chats/draft/<int:message_id>/upload', views.draft_upload, name='draft_upload'),
     
 
 

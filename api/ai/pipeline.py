@@ -844,7 +844,7 @@ def run(conversation, incoming_message):
             text=final_text,
             attachments=attachment or None,
             status="draft",
-            incoming_message=incoming_message
+            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message)
         )
         logger.info("Bot reply saved as draft for training mode reply_id=%s conv=%s", reply_id, conversation.pk)
         return
@@ -856,7 +856,7 @@ def run(conversation, incoming_message):
             sender="bot",
             text=final_text,
             attachments=attachment or None,
-            incoming_message=incoming_message
+            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message)
         )
 
         # Send via platform — pass product_cards only for multi-product carousel;

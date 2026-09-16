@@ -2195,11 +2195,11 @@ def draft_send(request, message_id):
 
     if result.get("ok"):
         msg.status = "sent"
-        msg.save(update_fields=["status"])
+        msg.save(update_fields=["status","timestamp"])
         return JsonResponse({"status": "ok", "delivery": result})
     else:
         msg.status = "failed"
-        msg.save(update_fields=["status"])
+        msg.save(update_fields=["status","timestamp"])
         return JsonResponse(
             {"status": "error", "message": "Send failed", "errors": result.get("errors", [])},
             status=502,
@@ -2333,3 +2333,27 @@ def draft_cancel(request, message_id):
     msg.save(update_fields=["status"])
 
     return JsonResponse({"status": "ok", "message": "Draft canceled"})
+
+
+@login_required
+@require_POST
+def draft_upload(request, message_id):
+    try:
+        msg = Message.objects.get(
+            pk=message_id,
+            conversation__user=request.user,
+            status="draft",
+        )
+    except Message.DoesNotExist:
+        return JsonResponse({"status": "error", "message": "Draft not found"}, status=404)
+
+    image = request.FILES.get("image")
+    if not image:
+        return JsonResponse({"status": "error", "message": "No image file provided"}, status=400)
+
+    file_name = f"draft_{message_id}_{timezone.now().strftime('%Y%m%d%H%M%S')}_{image.name}"
+    from django.core.files.base import ContentFile
+    file_path = default_storage.save(f"media/{file_name}", ContentFile(image.read()))
+    image_url = default_storage.url(file_path)
+
+    return JsonResponse({"status": "ok", "url": image_url})

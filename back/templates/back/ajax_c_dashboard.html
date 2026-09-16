@@ -120,7 +120,7 @@
 .msg-row.draft {
     align-self: flex-end;
     max-width: 80%;
-    width: auto;
+    width: 100%;
 }
 
 .msg-row.draft .draft-content {
@@ -319,6 +319,11 @@
 .msg-row.draft .draft-actions-editing .draft-send-teach-btn {
     background: #8b5cf6;
     color: #fff;
+}
+
+.msg-row.draft .draft-cancel-edit-btn {
+    background: #e5e7eb;
+    color: #374151;
 }
 
 .msg-row.draft.is-editing .draft-message,
@@ -850,6 +855,7 @@ const DRAFT = {
   edit:   "{% url 'back:draft_edit' 0 %}",
   teach:  "{% url 'back:draft_send_teach' 0 %}",
   cancel: "{% url 'back:draft_cancel' 0 %}",
+  upload: "{% url 'back:draft_upload' 0 %}",
 };
 function draftUrl(action, id) {
   return DRAFT[action].replace("/0/", "/" + id + "/");
@@ -1122,7 +1128,7 @@ function appendMessages(msgs) {
           }
 
           <div class="draft-editor">
-            <textarea class="draft-textarea" data-message-id="${m.id}">${escHtml(m.text || "")}</textarea>
+            <textarea class="draft-textarea" data-message-id="${m.id}">${m.text || ""}</textarea>
           </div>
 
           <div class="draft-editor-attachment" data-message-id="${m.id}">
@@ -1182,6 +1188,13 @@ function appendMessages(msgs) {
                 class="draft-send-teach-btn"
                 data-message-id="${m.id}">
                 Send &amp; Teach
+              </button>
+
+              <button
+                type="button"
+                class="draft-cancel-edit-btn"
+                data-message-id="${m.id}">
+                Cancel
               </button>
 
             </div>
@@ -1564,33 +1577,60 @@ document.addEventListener("click", e => {
 
   const row = btn.closest(".msg-row.draft");
 
-  /* Save any edits first */
+  btn.textContent = "Sending…";
+  btn.disabled = true;
+
+  const doSend = () => {
+    fetch(draftUrl("send", mid), {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF },
+    }).then(r => r.json()).then(d => {
+      if (d.status === "ok") {
+        reloadAllMessages();
+      } else {
+        alert("Send failed: " + (d.errors ? d.errors.join(", ") : d.message));
+        reloadAllMessages();
+      }
+    }).catch(() => {
+      btn.textContent = "Send";
+      btn.disabled = false;
+    });
+  };
+
+  /* Save any edits first — await before send */
   if (row && row.classList.contains("is-editing")) {
     const textarea = row.querySelector(".draft-textarea");
     const text = textarea ? textarea.value.trim() : "";
-    fetch(draftUrl("edit", mid), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
-      body: JSON.stringify({ text }),
-    });
-  }
-
-  btn.textContent = "Sending…";
-  btn.disabled = true;
-  fetch(draftUrl("send", mid), {
-    method: "POST",
-    headers: { "X-CSRFToken": CSRF },
-  }).then(r => r.json()).then(d => {
-    if (d.status === "ok") {
-      reloadAllMessages();
+    /* Also upload file if selected */
+    const fileInput = row.querySelector(".draft-file-input");
+    const file = fileInput && fileInput.files && fileInput.files[0];
+    if (file) {
+      const fd = new FormData();
+      fd.append("image", file);
+      fd.append("conversation_id", currentConvId);
+      fetch(draftUrl("upload", mid), {
+        method: "POST",
+        headers: { "X-CSRFToken": CSRF },
+        body: fd,
+      }).then(r => r.json()).then(uploadResult => {
+        const body = { text };
+        if (uploadResult.url) body.attachments = [uploadResult.url];
+        fetch(draftUrl("edit", mid), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+          body: JSON.stringify(body),
+        }).then(doSend);
+      });
     } else {
-      alert("Send failed: " + (d.errors ? d.errors.join(", ") : d.message));
-      reloadAllMessages();
+      fetch(draftUrl("edit", mid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify({ text }),
+      }).then(doSend);
     }
-  }).catch(() => {
-    btn.textContent = "Send";
-    btn.disabled = false;
-  });
+  } else {
+    doSend();
+  }
 });
 
 /* Draft: Edit — toggle to editing mode */
@@ -1630,6 +1670,27 @@ document.addEventListener("click", e => {
   });
 });
 
+/* Draft: Cancel editing — exit editing mode without saving */
+document.addEventListener("click", e => {
+  const btn = e.target.closest(".draft-cancel-edit-btn");
+  if (!btn) return;
+  e.preventDefault();
+  const row = btn.closest(".msg-row.draft");
+  if (!row) return;
+  row.classList.remove("is-editing");
+  /* Reset textarea to original message text */
+  const ta = row.querySelector(".draft-textarea");
+  const draftMsg = row.querySelector(".draft-message");
+  if (ta && draftMsg) {
+    ta.value = draftMsg.textContent || "";
+  }
+  /* Clear file input */
+  const fileInput = row.querySelector(".draft-file-input");
+  if (fileInput) fileInput.value = "";
+  const preview = row.querySelector(".draft-attach-preview");
+  if (preview) preview.style.display = "none";
+});
+
 /* Draft: Send & Teach */
 document.addEventListener("click", e => {
   const btn = e.target.closest(".draft-send-teach-btn");
@@ -1645,26 +1706,46 @@ document.addEventListener("click", e => {
   btn.textContent = "Sending…";
   btn.disabled = true;
 
-  const body = { text: editedText };
+  const fileInput = row ? row.querySelector(".draft-file-input") : null;
+  const file = fileInput && fileInput.files && fileInput.files[0];
 
-  fetch(draftUrl("edit", mid), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
-    body: JSON.stringify(body),
-  }).then(() => {
-    return fetch(draftUrl("teach", mid), {
+  const doEdit = (attachmentUrl) => {
+    const body = { text: editedText };
+    if (attachmentUrl) body.attachments = [attachmentUrl];
+    fetch(draftUrl("edit", mid), {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
       body: JSON.stringify(body),
+    }).then(() => {
+      return fetch(draftUrl("teach", mid), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+        body: JSON.stringify(body),
+      });
+    }).then(r => r.json()).then(d => {
+      if (d.status === "ok") {
+        reloadAllMessages();
+      } else {
+        alert("Send failed" + (d.errors ? ": " + d.errors.join(", ") : ""));
+        reloadAllMessages();
+      }
     });
-  }).then(r => r.json()).then(d => {
-    if (d.status === "ok") {
-      reloadAllMessages();
-    } else {
-      alert("Send failed" + (d.errors ? ": " + d.errors.join(", ") : ""));
-      reloadAllMessages();
-    }
-  });
+  };
+
+  if (file) {
+    const fd = new FormData();
+    fd.append("image", file);
+    fd.append("conversation_id", currentConvId);
+    fetch(draftUrl("upload", mid), {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF },
+      body: fd,
+    }).then(r => r.json()).then(uploadResult => {
+      doEdit(uploadResult.url || null);
+    }).catch(() => doEdit(null));
+  } else {
+    doEdit(null);
+  }
 });
 
 /* Draft: clear attachment file */
