@@ -1788,7 +1788,7 @@ function sendMessage() {
   const text = input.value.trim();
   if (!text && !selectedFile) return;
 
-  /* optimistic */
+  /* optimistic — show a single combined placeholder until both sends complete */
   const row = document.createElement("div");
   row.className = "msg-row to";
   let html = text ? `<div class="msg-bubble">${escHtml(text)}</div>` : "";
@@ -1804,25 +1804,37 @@ function sendMessage() {
   input.value = "";
   stopPoll();
 
-  let req;
-  if (selectedFile) {
+  /* Send text and image as two separate messages (text first, then image) */
+  let textPromise = Promise.resolve();
+  if (text) {
+    textPromise = fetch("{% url 'back:send_message' %}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-CSRFToken": CSRF },
+      body: JSON.stringify({ conversation_id: currentConvId, text })
+    }).then(r => r.json()).then(d => {
+      if (d.status !== "ok") throw new Error("Text send failed");
+    });
+  }
+
+  textPromise.then(() => {
+    if (!selectedFile) return;
     const fd = new FormData();
     fd.append("conversation_id", currentConvId);
     fd.append("image", selectedFile);
-    if (text) fd.append("text", text);
-    req = fetch("{% url 'back:send_image' %}", { method:"POST", headers:{"X-CSRFToken":CSRF}, body: fd });
-  } else {
-    req = fetch("{% url 'back:send_message' %}", { method:"POST",
-      headers:{"Content-Type":"application/json","X-CSRFToken":CSRF},
-      body: JSON.stringify({ conversation_id: currentConvId, text }) });
-  }
-
-  req.then(r => r.json()).then(d => {
-    if (d.status !== "ok") row.innerHTML = `<div class="msg-bubble" style="background:#fef2f2;color:#ef4444">Failed to send</div>`;
-    else row.remove();
+    return fetch("{% url 'back:send_image' %}", {
+      method: "POST",
+      headers: { "X-CSRFToken": CSRF },
+      body: fd
+    }).then(r => r.json()).then(d => {
+      if (d.status !== "ok") throw new Error("Image send failed");
+    });
+  }).then(() => {
+    row.remove();
   }).catch(() => {
-    row.innerHTML = `<div class="msg-bubble" style="background:#fef2f2;color:#ef4444">Error sending</div>`;
-  }).finally(() => startPoll());
+    row.innerHTML = `<div class="msg-bubble" style="background:#fef2f2;color:#ef4444">Failed to send</div>`;
+  }).finally(() => {
+    startPoll();
+  });
 
   clearAttachment();
 }

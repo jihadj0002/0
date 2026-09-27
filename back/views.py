@@ -562,7 +562,13 @@ def send_image_ajax(request):
     msg = Message.objects.create(
         conversation=convo,
         sender="agent",
-        attachments={"payload": {"url": image_url}}  # Save image URL as an attachment field
+        text=None,
+        attachments={
+            "type": "image",
+            "payload": {"url": image_url},
+            "url": image_url,
+            "images": [image_url],
+        }
     )
     print("Message Created")
 
@@ -621,11 +627,16 @@ def send_image_ajax(request):
         if not integration:
             return HttpResponseForbidden("WhatsApp integration not configured.")
 
-        # Assuming that `attachments` contains the image URL
         msg = Message.objects.create(
             conversation=convo,
             sender="agent",
-            attachments={"payload": {"url": image_url}}
+            text=None,
+            attachments={
+                "type": "image",
+                "payload": {"url": image_url},
+                "url": image_url,
+                "images": [image_url],
+            }
         )
 
         url = "https://www.wasenderapi.com/api/send-message"
@@ -2191,7 +2202,13 @@ def draft_send(request, message_id):
 
     from api.ai.sender import send_reply
 
-    result = send_reply(msg.conversation, msg.text, image_urls=msg.attachments)
+    image_urls = None
+    if isinstance(msg.attachments, dict):
+        image_urls = msg.attachments.get("images") or ([msg.attachments["url"]] if msg.attachments.get("url") else None)
+    elif isinstance(msg.attachments, list):
+        image_urls = msg.attachments
+
+    result = send_reply(msg.conversation, msg.text, image_urls=image_urls)
 
     if result.get("ok"):
         msg.status = "sent"
@@ -2228,6 +2245,13 @@ def draft_edit(request, message_id):
 
     msg.text = text or None
     if attachments is not None:
+        if isinstance(attachments, list):
+            attachments = {
+                "type": "image",
+                "images": attachments,
+                "url": attachments[0] if attachments else None,
+                "payload": {"url": attachments[0]} if attachments else None,
+            }
         msg.attachments = attachments
     msg.save(update_fields=["text", "attachments"])
 
@@ -2263,12 +2287,25 @@ def draft_send_teach(request, message_id):
 
     msg.text = text or None
     if "attachments" in data:
+        if isinstance(attachments, list):
+            attachments = {
+                "type": "image",
+                "images": attachments,
+                "url": attachments[0] if attachments else None,
+                "payload": {"url": attachments[0]} if attachments else None,
+            }
         msg.attachments = attachments
     msg.save(update_fields=["text", "attachments"])
 
     from api.ai.sender import send_reply
 
-    send_result = send_reply(msg.conversation, msg.text, image_urls=msg.attachments)
+    image_urls = None
+    if isinstance(msg.attachments, dict):
+        image_urls = msg.attachments.get("images") or ([msg.attachments["url"]] if msg.attachments.get("url") else None)
+    elif isinstance(msg.attachments, list):
+        image_urls = msg.attachments
+
+    send_result = send_reply(msg.conversation, msg.text, image_urls=image_urls)
 
     if send_result.get("ok"):
         msg.status = "sent"
