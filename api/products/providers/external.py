@@ -196,14 +196,43 @@ class ExternalProvider(ProductProvider):
             return None
 
     def search(self, query, limit=5) -> list:
-        # ?sku= is unreliable on the ERP — route everything through ?query=.
+        # Strategy 1: ?query= (covers name / keyword matching).
         try:
             data = self._get("products", params={"query": query})
             rows = [self._normalize(p) for p in self._items(data)]
-            return rows[: int(limit)]
-        except Exception as exc:
-            self.last_error = exc
-            return []
+            if rows:
+                return rows[: int(limit)]
+        except Exception:
+            pass
+
+        # Strategy 2: if query looks like a numeric SKU, try ?sku= as fallback.
+        # ?sku= was called unreliable in the past, but it may match where
+        # ?query= does not (e.g. exact SKU lookups).
+        cleaned = (query or "").strip()
+        if cleaned and cleaned.replace("-", "").replace("_", "").isdigit():
+            try:
+                data = self._get("products", params={"sku": cleaned})
+                rows = [self._normalize(p) for p in self._items(data)]
+                if rows:
+                    return rows[: int(limit)]
+            except Exception:
+                pass
+
+        # Strategy 3: try individual words from the query as separate ?query=
+        # calls (catches cases where the full phrase is too specific).
+        words = [w for w in cleaned.split() if len(w) >= 3]
+        if len(words) > 1:
+            for w in words[:3]:
+                try:
+                    data = self._get("products", params={"query": w})
+                    rows = [self._normalize(p) for p in self._items(data)]
+                    if rows:
+                        return rows[: int(limit)]
+                except Exception:
+                    continue
+
+        self.last_error = Exception(f"No results for query='{query}'")
+        return []
 
     def create_order(self, order_payload: dict) -> dict:
         """``order_payload`` is the canonical dict built by orders.py.

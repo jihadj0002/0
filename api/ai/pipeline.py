@@ -415,13 +415,9 @@ def run(conversation, incoming_message):
                 conversation=conversation, sender="customer",
             ).exclude(attachments=None).order_by("-timestamp").first()
             if latest_img_msg and latest_img_msg.attachments:
-                att = latest_img_msg.attachments
-                ia = att.get("analysis_data") or {}
-                asearch = att.get("analysis_search") or []
+                ia = latest_img_msg.attachments.get("analysis_data") or {}
                 if ia:
                     image_analysis = ia
-                    if asearch:
-                        image_analysis["analysis_search"] = asearch
         except Exception:
             pass
 

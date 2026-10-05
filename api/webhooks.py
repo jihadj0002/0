@@ -379,7 +379,6 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
         try:
             import uuid as _uuid
             from api.ai.media import analyze_image_structured
-            from api.ai.tools import tool_search_products
             # Bill the vision call against its own reply_id (never counted as
             # a customer "reply" — tokens/credits only).
             media_reply_id = _uuid.uuid4().hex
@@ -404,46 +403,6 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
                     parts.append(f"Capacity: {data['capacity']}")
                 caption = msg_text or ""
                 msg_text = f"{caption}\n[Image: {' | '.join(parts)}]".strip()
-
-            # Pre-search catalog using image analysis to prime focused products.
-            search_queries = []
-            sku = (data.get("sku") or "").strip()
-            name = (data.get("product_name") or "").strip()
-            if sku:
-                search_queries.append(sku)
-            if name:
-                search_queries.append(name)
-                words = [w for w in name.split() if w]
-                if len(words) >= 2:
-                    first_two = " ".join(words[:2])
-                    last_two = " ".join(words[-2:])
-                    if first_two not in search_queries:
-                        search_queries.append(first_two)
-                    if last_two not in search_queries:
-                        search_queries.append(last_two)
-
-            search_results = []
-            for query in search_queries[:4]:
-                try:
-                    result = tool_search_products(
-                        conv.user,
-                        query,
-                        limit=5,
-                        conversation=conv,
-                    )
-                    names = [p.get("name", "") for p in result.get("products", [])][:5]
-                    search_results.append({
-                        "query": query,
-                        "total": result.get("total", 0),
-                        "names": names,
-                    })
-                except Exception as exc:
-                    search_results.append({
-                        "query": query,
-                        "error": str(exc),
-                    })
-            if search_results:
-                attachments["analysis_search"] = search_results
 
             # Deduct the vision cost (tokens were logged under media_reply_id)
             try:

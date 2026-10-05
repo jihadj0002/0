@@ -102,9 +102,9 @@ def build_system_prompt(user, conversation, image_analysis=None):
     analysis, catalog hints).
 
     ``image_analysis`` — optional dict from api.ai.media.analyze_image_structured
-    (sku, product_name, brand, description) plus ``analysis_search`` for
-    pre-search results. When the current turn was triggered by an image, this
-    tells the AI that the catalog was already searched so it doesn't re-search.
+    (sku, product_name, brand, type, capacity, color, description). When an image
+    triggered the current turn, this gives the AI the raw extracted data to use
+    with search_products on its own.
     """
     from context.models import AgentIdentity, BehaviorRules, StoreConfig
     from api.products.factory import get_active_source, is_external
@@ -159,20 +159,21 @@ def build_system_prompt(user, conversation, image_analysis=None):
     if summary:
         sections.append((80, f"## CHAT SUMMARY (older messages, condensed)\n{summary[:1500]}"))
 
-    # --- Layer 3: image pre-search awareness (priority 70) ---
+    # --- Layer 3: image analysis data (priority 70) ---
     if image_analysis:
         img = (
-            "## Image Analysis (already processed)\n"
-            "The customer sent an image. The system analyzed it and pre-searched "
-            "the catalog for matching products (results in 'Recent Searched Products' "
-            "below). Do NOT search again unless the customer asks for something different."
+            "## Image from Customer\n"
+            "The customer sent an image. The system extracted these details from it. "
+            "Use search_products with one or more of these values (SKU, name, brand, "
+            "type, etc.) to find the product in your catalog. You may need to try "
+            "different search terms if the first attempt doesn't match."
         )
-        if image_analysis.get("sku"):
-            img += f"\nDetected SKU: {image_analysis['sku']}"
-        if image_analysis.get("product_name"):
-            img += f"\nDetected name: {image_analysis['product_name']}"
-        if image_analysis.get("brand"):
-            img += f"\nDetected brand: {image_analysis['brand']}"
+        for key, label in [("sku", "SKU"), ("product_name", "Name"),
+                            ("type", "Type"), ("brand", "Brand"),
+                            ("capacity", "Capacity"), ("color", "Color")]:
+            val = image_analysis.get(key)
+            if val:
+                img += f"\n  {label}: {val}"
         sections.append((70, img))
 
     # --- Layer 3: focused products (priority 75) ---
