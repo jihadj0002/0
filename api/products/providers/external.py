@@ -185,54 +185,24 @@ class ExternalProvider(ProductProvider):
             return []
 
     def get_product(self, external_id):
+        # ERP doesn't support GET /products/{id} — use search_term instead.
         try:
-            data = self._get(f"products/{external_id}")
-            raw = data.get("data", data) if isinstance(data, dict) and "data" in data else data
-            if not raw:
-                return None
-            return self._normalize(raw)
+            data = self._get("products", params={"search_term": external_id})
+            rows = [self._normalize(p) for p in self._items(data)]
+            return rows[0] if rows else None
         except Exception as exc:
             self.last_error = exc
             return None
 
     def search(self, query, limit=5) -> list:
-        # Strategy 1: ?query= (covers name / keyword matching).
+        # ERP uses ?search_term= for full-text search (name, description, SKU).
         try:
-            data = self._get("products", params={"query": query})
+            data = self._get("products", params={"search_term": query})
             rows = [self._normalize(p) for p in self._items(data)]
-            if rows:
-                return rows[: int(limit)]
-        except Exception:
-            pass
-
-        # Strategy 2: if query looks like a numeric SKU, try ?sku= as fallback.
-        # ?sku= was called unreliable in the past, but it may match where
-        # ?query= does not (e.g. exact SKU lookups).
-        cleaned = (query or "").strip()
-        if cleaned and cleaned.replace("-", "").replace("_", "").isdigit():
-            try:
-                data = self._get("products", params={"sku": cleaned})
-                rows = [self._normalize(p) for p in self._items(data)]
-                if rows:
-                    return rows[: int(limit)]
-            except Exception:
-                pass
-
-        # Strategy 3: try individual words from the query as separate ?query=
-        # calls (catches cases where the full phrase is too specific).
-        words = [w for w in cleaned.split() if len(w) >= 3]
-        if len(words) > 1:
-            for w in words[:3]:
-                try:
-                    data = self._get("products", params={"query": w})
-                    rows = [self._normalize(p) for p in self._items(data)]
-                    if rows:
-                        return rows[: int(limit)]
-                except Exception:
-                    continue
-
-        self.last_error = Exception(f"No results for query='{query}'")
-        return []
+            return rows[: int(limit)]
+        except Exception as exc:
+            self.last_error = exc
+            return []
 
     def create_order(self, order_payload: dict) -> dict:
         """``order_payload`` is the canonical dict built by orders.py.

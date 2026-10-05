@@ -488,7 +488,7 @@ def _clear_focus_product(conversation):
 
 def _external_row(r):
     row = {
-        "pid": r["external_id"],
+        "pid": r["sku"] or r["external_id"],
         "name": r["name"],
         "price": r["price"],
         "discounted_price": r.get("discounted_price"),
