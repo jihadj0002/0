@@ -832,6 +832,15 @@ def run(conversation, incoming_message):
 
     is_training = bool(profile and profile.is_training)
 
+    # Deduct credits — tokens were already spent by OpenRouter.
+    # Run BEFORE the training-mode return so deductions always happen,
+    # even when the bot reply is saved as a draft (training) rather than sent live.
+    try:
+        from billing.deductions import deduct_for_reply
+        deduct_for_reply(user, reply_id)
+    except Exception:
+        logger.exception("Credit deduction failed reply_id=%s", reply_id)
+
     if is_training:
         # In training mode, save the bot's reply as a draft for review instead of sending it.
         Message.objects.create(
@@ -865,21 +874,13 @@ def run(conversation, incoming_message):
         )
 
     # Rolling chat summary: on long conversations, one cheap call keeps the
-    # facts that the history window would drop. Logged under the same reply_id
-    # (billed in the deduction that follows).
+    # facts that the history window would drop.
     try:
         msg_count = Message.objects.filter(conversation=conversation).count()
         if msg_count >= SUMMARY_MIN_MESSAGES:
             _refresh_chat_summary(conversation, model, reply_id)
     except Exception:
         logger.exception("Chat summary refresh failed reply_id=%s", reply_id)
-
-    # Deduct credits after reply is confirmed sent
-    try:
-        from billing.deductions import deduct_for_reply
-        deduct_for_reply(user, reply_id)
-    except Exception:
-        logger.exception("Credit deduction failed reply_id=%s", reply_id)
 
     # CRM recompute: derive scores/stage/lifecycle from this turn's signals.
     try:
