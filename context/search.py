@@ -1,5 +1,7 @@
 import logging
 
+from django.core.cache import cache
+
 from .embeddings import generate_embedding
 from .models import RAGChunk
 
@@ -39,7 +41,10 @@ def search_chunks(user, query, top_k=3, min_score=0.3):
     if not query_vec:
         return []
 
-    chunks = list(RAGChunk.objects.filter(user=user, is_active=True))
+    chunks = cache.get(f"rag:{user.id}:active_chunks")
+    if chunks is None:
+        chunks = list(RAGChunk.objects.filter(user=user, is_active=True))
+        cache.set(f"rag:{user.id}:active_chunks", chunks, 300)
 
     if not chunks:
         return []

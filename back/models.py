@@ -13,6 +13,7 @@ from shortuuid.django_fields import ShortUUIDField
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from datetime import timedelta
+from django.core.cache import cache
 
 from back.crypto import encrypt_value, decrypt_value
 
@@ -120,9 +121,15 @@ class Integration(models.Model):
 
     @classmethod
     def get_active(cls, user, platform):
-        """The integration to use for a platform: a connected one wins, else the most recent."""
+        cache_key = f"integration:{user.id}:{platform}"
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
         qs = cls.objects.filter(user=user, platform=platform)
-        return qs.filter(is_connected=True).order_by("-id").first() or qs.order_by("-id").first()
+        integration = qs.filter(is_connected=True).order_by("-id").first() or qs.order_by("-id").first()
+        if integration is not None:
+            cache.set(cache_key, integration, 60)
+        return integration
 
 # -----------------------
 # Products

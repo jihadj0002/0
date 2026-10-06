@@ -16,6 +16,8 @@ from django.views.decorators.csrf import csrf_exempt
 
 from back.models import Conversation, Integration, Message, MessageBatch
 
+from django.core.cache import cache
+
 from .utils.parsers import parse_instagram, parse_messenger, parse_telegram, parse_whatsapp
 from .utils.whatsapp import download_whatsapp_media
 
@@ -547,11 +549,15 @@ class _BaseWebhookView(View):
     platform = None
 
     def _get_integration(self, username):
-        try:
-            user = User.objects.get(username=username)
-            return Integration.get_active(user, self.platform)
-        except User.DoesNotExist:
-            return None
+        cache_key = f"user:by_username:{username}"
+        user = cache.get(cache_key)
+        if user is None:
+            try:
+                user = User.objects.get(username=username)
+                cache.set(cache_key, user, 300)
+            except User.DoesNotExist:
+                return None
+        return Integration.get_active(user, self.platform)
 
     def _submit(self, integration, messages):
         if messages:
@@ -773,14 +779,19 @@ class MetaAppWebhookView(View):
             logger.info("App-level webhook: entry with no id, skipping")
             return
 
-        # Attribute the event to the Integration registered for this page/IG id.
-        qs = Integration.objects.filter(platform=platform, integration_id=entry_id)
-        if platform == "instagram":
-            qs = Integration.objects.filter(
-                Q(platform=platform)
-                & (Q(integration_id=entry_id) | Q(ig_account_id=entry_id))
-            )
-        integration = qs.first()
+        # Cache Integration lookup by platform entry_id
+        cache_key = f"integration:by_platform_id:{platform}:{entry_id}"
+        integration = cache.get(cache_key)
+        if integration is None:
+            qs = Integration.objects.filter(platform=platform, integration_id=entry_id)
+            if platform == "instagram":
+                qs = Integration.objects.filter(
+                    Q(platform=platform)
+                    & (Q(integration_id=entry_id) | Q(ig_account_id=entry_id))
+                )
+            integration = qs.first()
+            if integration is not None:
+                cache.set(cache_key, integration, 60)
         if not integration:
             logger.info(
                 "App-level webhook: no integration for platform=%s entry_id=%s",

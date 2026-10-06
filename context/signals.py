@@ -2,6 +2,7 @@ import hashlib
 import logging
 import threading
 
+from django.core.cache import cache
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
@@ -21,6 +22,14 @@ def create_context_defaults(sender, instance, created, **kwargs):
     AgentIdentity.objects.get_or_create(user=instance)
     StoreConfig.objects.get_or_create(user=instance)
     BehaviorRules.objects.get_or_create(user=instance)
+
+
+@receiver(post_save, sender=AgentIdentity, dispatch_uid="cache_invalidate_agent")
+@receiver(post_save, sender=StoreConfig, dispatch_uid="cache_invalidate_store")
+@receiver(post_save, sender=BehaviorRules, dispatch_uid="cache_invalidate_rules")
+def invalidate_context_cache(sender, instance, **kwargs):
+    cache.delete(f"ctx:{instance.user_id}")
+    cache.delete(f"rag:{instance.user_id}:active_chunks")
 
 
 @receiver(post_save, sender=BehaviorRules, dispatch_uid="rag_process_both")

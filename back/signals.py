@@ -5,6 +5,7 @@ from django.dispatch import receiver
 from django.contrib.auth.models import User
 from .models import UserProfile, Sale, OrderItem
 from .models import Message, Integration, Conversation
+from django.core.cache import cache
 import requests
 import json
 
@@ -124,6 +125,13 @@ def update_message_counters(sender, instance, created, **kwargs):
 
     if updates:
         Conversation.objects.filter(pk=instance.conversation_id).update(**updates)
+
+
+@receiver(post_save, sender=Integration, dispatch_uid="cache_invalidate_integration")
+def invalidate_integration_cache(sender, instance, **kwargs):
+    cache.delete(f"integration:{instance.user_id}:{instance.platform}")
+    if instance.integration_id:
+        cache.delete(f"integration:by_platform_id:{instance.platform}:{instance.integration_id}")
 
 
 # Pipeline is now triggered by the 5-second batch timer in api/webhooks.py,

@@ -1,7 +1,9 @@
+import hashlib
 import logging
 import os
 
 from openai import OpenAI
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -24,12 +26,19 @@ def generate_embedding(text):
     if not text or not text.strip():
         return []
 
+    cache_key = f"embed:{hashlib.md5(text.strip().encode('utf-8')).hexdigest()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         response = _client().embeddings.create(
             model=EMBEDDING_MODEL,
             input=text.strip(),
         )
-        return response.data[0].embedding
+        embedding = response.data[0].embedding
+        cache.set(cache_key, embedding, 86400)
+        return embedding
     except Exception:
         logger.exception("Embedding generation failed")
         return []

@@ -108,10 +108,17 @@ def build_system_prompt(user, conversation, image_analysis=None):
     """
     from context.models import AgentIdentity, BehaviorRules, StoreConfig
     from api.products.factory import get_active_source, is_external
+    from django.core.cache import cache
 
-    identity = AgentIdentity.objects.filter(user=user).first()
-    store = StoreConfig.objects.filter(user=user).first()
-    rules = BehaviorRules.objects.filter(user=user).first()
+    cache_key = f"ctx:{user.id}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        identity, store, rules = cached
+    else:
+        identity = AgentIdentity.objects.filter(user=user).first()
+        store = StoreConfig.objects.filter(user=user).first()
+        rules = BehaviorRules.objects.filter(user=user).first()
+        cache.set(cache_key, (identity, store, rules), 300)
 
     source = get_active_source(user)
     external_catalog = bool(source) and is_external(user)
