@@ -730,8 +730,69 @@
   font-size: 0.6rem; font-weight: 600;
   background: #e2e8f0; color: #475569; padding: 1px 6px; border-radius: 3px;
 }
+/* TEMPORARY: AI Logs timeline styles - removable */
+.ai-logs-pane {
+  padding: 0; display: flex; flex-direction: column; height: 100%;
+}
+.ai-logs-header {
+  font-size: 0.82rem; font-weight: 700; color: #0f172a;
+  padding: 14px 16px 10px; border-bottom: 1px solid #eef2f6;
+}
+.ai-logs-body {
+  flex: 1; overflow-y: auto; padding: 0;
+}
+.ai-logs-empty {
+  text-align: center; padding: 30px 16px; color: #94a3b8; font-size: 0.82rem;
+}
+.ai-log-group {
+  margin: 0; border-bottom: 1px solid #f0f2f5; padding: 10px 14px;
+}
+.ai-log-group-header {
+  font-size: 0.7rem; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+}
+.ai-log-group-header .dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; display: inline-block;
+}
+.ai-log-entry {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 4px 0 4px 8px; border-left: 2px solid #e2e8f0; margin-left: 4px;
+  position: relative;
+}
+.ai-log-entry::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: #cbd5e1; position: absolute; left: -5px; top: 10px;
+}
+.ai-log-entry.tool-exec::before { background: #8b5cf6; }
+.ai-log-entry-icon { font-size: 0.75rem; flex-shrink: 0; width: 18px; text-align: center; padding-top: 2px; }
+.ai-log-entry-body { flex: 1; min-width: 0; }
+.ai-log-entry-tool {
+  font-size: 0.75rem; font-weight: 700; color: #4f46e5;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.ai-log-entry-time {
+  font-size: 0.65rem; color: #94a3b8; margin-left: 6px;
+}
+.ai-log-entry-summary {
+  font-size: 0.73rem; color: #334155; margin-top: 1px; line-height: 1.4;
+}
+.ai-log-entry-args {
+  margin-top: 3px; cursor: pointer;
+}
+.ai-log-entry-args summary {
+  font-size: 0.65rem; color: #64748b; font-weight: 600;
+}
+.ai-log-entry-args pre {
+  font-size: 0.63rem; background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 6px; padding: 6px 8px; margin-top: 3px;
+  white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow: auto;
+  color: #334155;
+}
+/* END TEMPORARY */
 </style>
 {% endblock %}
+
 
 {% block content %}
 <div class="chat-layout" id="chatLayout">
@@ -798,6 +859,9 @@
   <aside class="rp" id="rpPanel">
     <div class="rp-tabs">
       <button class="rp-tab active" data-pane="profile" onclick="switchRpTab(this,'profile')">👤 Profile</button>
+      <!-- TEMPORARY: AI Logs tab - removable when tool logs are no longer public -->
+      <button class="rp-tab" data-pane="ai-logs" onclick="switchRpTab(this,'ai-logs')">🤖 AI Logs</button>
+      <!-- END TEMPORARY -->
     </div>
 
     <div class="rp-body">
@@ -821,6 +885,15 @@
         <div class="profile-section-title" id="rpSummaryTitle" style="display:none">Summary</div>
         <div class="profile-summary" id="rpSummary" style="display:none"></div>
       </div>
+
+      <!-- TEMPORARY: AI Logs pane - removable when tool logs are no longer public -->
+      <div id="paneAiLogs" class="ai-logs-pane" style="display:none;">
+        <div class="ai-logs-header">AI Tool Timeline</div>
+        <div class="ai-logs-body" id="aiLogsBody">
+          <div class="ai-logs-empty">Select a conversation to view AI logs</div>
+        </div>
+      </div>
+      <!-- END TEMPORARY -->
 
     </div>
   </aside>
@@ -987,6 +1060,9 @@ function openConversation(id, el) {
     appendMessages(msgCache[id]);
     lastMsgId = msgCache[id].at(-1)?.id || 0;
     startPoll();
+    // TEMPORARY: fetch AI logs
+    fetchToolLogs(id);
+    // END TEMPORARY
     return;
   }
 
@@ -997,6 +1073,9 @@ function openConversation(id, el) {
       msgCache[id] = data.messages;
       appendMessages(data.messages);
       startPoll();
+      // TEMPORARY: fetch AI logs
+      fetchToolLogs(id);
+      // END TEMPORARY
     });
 }
 
@@ -1914,8 +1993,54 @@ convPollTimer = setInterval(() => loadConversations(activePlatform), 5000);
 function switchRpTab(btn, pane) {
   document.querySelectorAll(".rp-tab").forEach(t => t.classList.remove("active"));
   btn.classList.add("active");
-  document.getElementById("paneProfile").style.display = "block";
+  document.getElementById("paneProfile").style.display = pane === "profile" ? "block" : "none";
+  document.getElementById("paneAiLogs").style.display = pane === "ai-logs" ? "flex" : "none";
 }
+
+/* TEMPORARY: AI Tool Logs fetch and render - removable */
+function fetchToolLogs(convId) {
+  if (!convId) return;
+  fetch(`{% url 'back:ajax_tool_logs' %}?cid=${convId}`)
+    .then(r => r.json())
+    .then(data => {
+      renderToolLogs(data.logs || []);
+    })
+    .catch(() => {});
+}
+
+function renderToolLogs(logs) {
+  const body = document.getElementById("aiLogsBody");
+  if (!logs.length) {
+    body.innerHTML = '<div class="ai-logs-empty">No AI activity yet for this conversation</div>';
+    return;
+  }
+  body.innerHTML = logs.map(group => `
+    <div class="ai-log-group">
+      <div class="ai-log-group-header">
+        <span class="dot"></span>
+        Reply · ${escHtml(group.timestamp)}
+        <span style="font-weight:400;color:#94a3b8;font-size:0.65rem;">${group.tools.length} tool call(s)</span>
+      </div>
+      ${group.tools.map(t => `
+        <div class="ai-log-entry tool-exec">
+          <span class="ai-log-entry-icon">⚡</span>
+          <div class="ai-log-entry-body">
+            <div class="ai-log-entry-tool">
+              ${escHtml(t.tool_name)}
+              <span class="ai-log-entry-time">${t.execution_time_ms}ms</span>
+            </div>
+            <div class="ai-log-entry-summary">${escHtml(t.result_summary)}</div>
+            <details class="ai-log-entry-args">
+              <summary>Show arguments</summary>
+              <pre>${escHtml(JSON.stringify(t.arguments, null, 2))}</pre>
+            </details>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+/* END TEMPORARY */
 
 /* ==============================
    BOOT

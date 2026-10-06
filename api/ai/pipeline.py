@@ -445,6 +445,9 @@ def run(conversation, incoming_message):
     create_order_called = False
     last_search = None
     last_order = None
+    # TEMPORARY: track tool calls for raw_payload
+    _tool_names_called = []
+    # END TEMPORARY
     # (tool_name, canonical_args) → (result, tool_content) — prevents the model
     # from burning tokens on identical repeated calls (e.g. get_product_details
     # with the same pid 5 times in a row). First repeat is answered with a nudge
@@ -560,6 +563,10 @@ def run(conversation, incoming_message):
                 if fn_name == "create_order":
                     last_order = _dup_result
                     create_order_called = True
+                # TEMPORARY: track dedup tool calls too
+                if fn_name not in ("get_product_details", "get_order_status", "update_customer", "create_ticket"):
+                    _tool_names_called.append(fn_name)
+                # END TEMPORARY
                 continue
 
             t0 = time.time()
@@ -629,6 +636,10 @@ def run(conversation, incoming_message):
                 create_order_called = True
 
             # Log every tool call to ToolCallLog for audit trail
+            # TEMPORARY: track tool names for raw_payload on bot message
+            if fn_name not in ("get_product_details", "get_order_status", "update_customer", "create_ticket"):
+                _tool_names_called.append(fn_name)
+            # END TEMPORARY
             try:
                 ToolCallLog.objects.create(
                     conversation=conversation,
@@ -849,7 +860,13 @@ def run(conversation, incoming_message):
             text=final_text,
             attachments=attachment or None,
             status="draft",
-            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message)
+            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message),
+            # TEMPORARY: populate raw_payload for tool trace visibility
+            raw_payload={
+                "intent": conversation.detected_intent or "",
+                "tool_calls": [{"tool": t} for t in _tool_names_called],
+            },
+            # END TEMPORARY
         )
         logger.info("Bot reply saved as draft for training mode reply_id=%s conv=%s", reply_id, conversation.pk)
         return
@@ -861,7 +878,13 @@ def run(conversation, incoming_message):
             sender="bot",
             text=final_text,
             attachments=attachment or None,
-            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message)
+            incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message),
+            # TEMPORARY: populate raw_payload for tool trace visibility
+            raw_payload={
+                "intent": conversation.detected_intent or "",
+                "tool_calls": [{"tool": t} for t in _tool_names_called],
+            },
+            # END TEMPORARY
         )
 
         # Send via platform — pass product_cards only for multi-product carousel;

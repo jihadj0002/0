@@ -46,6 +46,9 @@ urlpatterns = [
     
     path("chats/ajax_messages", views.ajax_load_messages, name="ajax_load_messages"),
     path("chats/ajax_conversations", views.ajax_load_conversations, name="ajax_load_conversations"),
+    # TEMPORARY: AI Tool Logs endpoint - removable
+    path("chats/ajax_tool_logs", views.ajax_tool_logs, name="ajax_tool_logs"),
+    # END TEMPORARY
 
     path("stats", views.stats, name="stats"),
     path("options", views.settingss, name="options"),

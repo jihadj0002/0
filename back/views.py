@@ -4,7 +4,7 @@ from django.core.files.storage import default_storage
 from django.contrib.auth.decorators import login_required, user_passes_test
 
 from django.db.models import Sum, Count, Q, Avg
-from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem, ProductSource, SupportTicket
+from .models import Product, Conversation, Sale, Message, Integration, Package, PackageItem, ProductSource, SupportTicket, ToolCallLog
 from django.views.decorators.http import require_GET
 # Create your views here.
 from django.db.models.functions import TruncDay
@@ -2394,3 +2394,33 @@ def draft_upload(request, message_id):
     image_url = default_storage.url(file_path)
 
     return JsonResponse({"status": "ok", "url": image_url})
+
+# TEMPORARY: AI Tool Logs AJAX endpoint - removable when tool logs are no longer public
+@login_required
+@require_GET
+def ajax_tool_logs(request):
+    convo_id = request.GET.get("cid")
+    if not convo_id:
+        return JsonResponse({"logs": []})
+    convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
+    logs = ToolCallLog.objects.filter(
+        conversation=convo, user=request.user
+    ).order_by("timestamp", "iteration")
+    grouped = {}
+    for log in logs:
+        rid = log.reply_id
+        if rid not in grouped:
+            grouped[rid] = {
+                "reply_id": rid,
+                "timestamp": log.timestamp.strftime("%H:%M:%S"),
+                "tools": [],
+            }
+        grouped[rid]["tools"].append({
+            "tool_name": log.tool_name,
+            "arguments": log.arguments,
+            "result_summary": log.result_summary,
+            "execution_time_ms": log.execution_time_ms,
+            "iteration": log.iteration,
+        })
+    return JsonResponse({"logs": list(grouped.values())})
+# END TEMPORARY
