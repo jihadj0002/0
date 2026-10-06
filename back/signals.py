@@ -132,6 +132,8 @@ def invalidate_integration_cache(sender, instance, **kwargs):
     cache.delete(f"integration:{instance.user_id}:{instance.platform}")
     if instance.integration_id:
         cache.delete(f"integration:by_platform_id:{instance.platform}:{instance.integration_id}")
+    if instance.ig_account_id:
+        cache.delete(f"integration:by_platform_id:{instance.platform}:{instance.ig_account_id}")
 
 
 # Pipeline is now triggered by the 5-second batch timer in api/webhooks.py,
