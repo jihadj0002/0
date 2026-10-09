@@ -2,9 +2,9 @@ import hashlib
 import hmac
 import json
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 
+import django_rq
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.db import IntegrityError, close_old_connections
@@ -23,31 +23,9 @@ from .utils.whatsapp import download_whatsapp_media
 
 logger = logging.getLogger(__name__)
 
-# Bounded thread pool — handles burst traffic without spawning unlimited threads.
-_executor = ThreadPoolExecutor(max_workers=50)
+BATCH_TIMER_SECONDS = 14
 
-# Per-conversation timers: {conversation_id: threading.Timer}
-# When a new message arrives for a conversation, any existing timer is cancelled
-# and a fresh 5-second timer is started. This ensures rapid bursts are combined
-# into one AI turn rather than triggering a pipeline call per message.
-_batch_timers: dict[int, threading.Timer] = {}
-_batch_timers_lock = threading.Lock()
-
-# Per-conversation pipeline locks — prevents overlapping run() calls for the
-# same conversation. When a timer fires and the lock is already held (previous
-# pipeline still running), this invocation skips; the unprocessed batches stay
-# in the DB and will be picked up by the next timer.
-_conv_locks: dict[int, threading.Lock] = {}
-_conv_locks_lock = threading.Lock()
-
-# Pending batches queue — when _fire_batch_pipeline can't acquire the lock,
-# the caller's batch PKs are appended here.  The running pipeline drains this
-# queue after finishing, so bursts collapse into ONE run instead of multiple
-# sequential runs with overlapping context.
-_pending_batches: dict[int, list[int]] = {}
-_pending_batches_lock = threading.Lock()
-
-BATCH_TIMER_SECONDS = 4  # wait for burst to settle (snappier chat UX)
+_RQ_QUEUE = "default"
 
 
 # ---------------------------------------------------------------------------
@@ -77,174 +55,73 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 # ---------------------------------------------------------------------------
 
 def _schedule_batch_pipeline(conversation_id):
-    """
-    (Re)start the 4-second batch timer for a conversation.
-    Cancels any existing timer so rapid message bursts are collapsed into one
-    pipeline run that fires 7 seconds after the LAST message in the burst.
-
-    The timer callback submits work to the shared thread pool rather than
-    running directly in a timer thread — this avoids spawning unlimited
-    database connections and keeps pipeline work managed by the same pool.
-    """
-    with _batch_timers_lock:
-        existing = _batch_timers.get(conversation_id)
-        if existing is not None:
-            existing.cancel()
-        t = threading.Timer(BATCH_TIMER_SECONDS, lambda cid: _executor.submit(_fire_batch_pipeline, cid), args=(conversation_id,))
-        t.daemon = True
-        _batch_timers[conversation_id] = t
-        t.start()
+    redis_key = f"batch_pipeline:{conversation_id}"
+    if cache.add(redis_key, True, BATCH_TIMER_SECONDS):
+        django_rq.get_queue(_RQ_QUEUE).enqueue_in(
+            timedelta(seconds=BATCH_TIMER_SECONDS),
+            _fire_batch_pipeline,
+            conversation_id,
+        )
 
 
 def _fire_batch_pipeline(conversation_id):
-    """
-    Called (via executor) after 4 seconds of silence for a conversation.
-    Combines all unprocessed MessageBatch rows into a single AI turn.
+    from types import SimpleNamespace
 
-    Locks per-conversation so overlapping runs never happen.  Batch rows are
-    pinned by primary key to prevent concurrent runs from stealing each other's
-    batches.
-    """
-    # Acquire per-conversation lock (non-blocking) — skip if already running.
-    with _conv_locks_lock:
-        conv_lock = _conv_locks.get(conversation_id)
-        if conv_lock is None:
-            conv_lock = threading.Lock()
-            _conv_locks[conversation_id] = conv_lock
-
-    if not conv_lock.acquire(blocking=False):
-        # Pipeline is already running. Merge our batches into the pending queue
-        # instead of creating a separate run. The running pipeline drains the
-        # queue after it finishes, keeping context coherent.
-        stray_pks = list(
-            MessageBatch.objects.filter(
-                conversation_id=conversation_id, processed=False,
-            ).order_by("timestamp").values_list("pk", flat=True)
-        )
-        if stray_pks:
-            with _pending_batches_lock:
-                _pending_batches.setdefault(conversation_id, []).extend(stray_pks)
-            logger.info(
-                "Pipeline already running conv=%s — merged %d batches into pending queue",
-                conversation_id, len(stray_pks),
-            )
-        return
+    close_old_connections()
+    cache.delete(f"batch_pipeline:{conversation_id}")
 
     try:
-        with _batch_timers_lock:
-            _batch_timers.pop(conversation_id, None)
-
-        close_old_connections()
-        from types import SimpleNamespace
-
         conversation = Conversation.objects.get(id=conversation_id)
-
-        # Guard: don't fire if AI was disabled since the timer was scheduled.
-        # A temporarily-disabled conversation (human handoff) auto-re-enables
-        # once its delay elapsed — new messages must wake it up again.
-        ai_still_enabled = conversation.is_ai_enabled
-        if not ai_still_enabled:
-            try:
-                ai_still_enabled = conversation.auto_enable_ai()
-            except Exception:
-                logger.exception("auto_enable_ai failed conv=%s", conversation.pk)
-        ai_still_enabled = ai_still_enabled and Integration.objects.filter(
-            user=conversation.user,
-            platform=conversation.platform,
-            is_enabled=True,
-        ).exists()
-        if not ai_still_enabled:
-            MessageBatch.objects.filter(
-                conversation=conversation, processed=False
-            ).update(processed=True)
-            return
-
-        # Pin batch primary keys so concurrent invocations don't interfere.
-        batch_pks = list(
-            MessageBatch.objects.filter(
-                conversation=conversation,
-                processed=False,
-            ).order_by("timestamp").values_list("pk", flat=True)
-        )
-        if not batch_pks:
-            return
-
-        # F4: multiple messages collapsed into one batch are handled as ONE turn
-        # whose query is the LAST message — earlier burst messages ("Ji" then
-        # "Pic den") stay in the Message history and must not pollute the
-        # search query ("Ji\nPic den" searches junk). The newest message best
-        # reflects what the customer currently wants; the older ones already
-        # exist as history rows the pipeline context builds on.
-        batch_items = [
-            b for b in MessageBatch.objects.filter(pk__in=batch_pks)
-            .order_by("timestamp")
-            if b.message_text.strip()
-        ]
-        if not batch_items:
-            MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
-            return
-        combined_text = batch_items[-1].message_text
-
-        unified = SimpleNamespace(text=combined_text)
-        try:
-            from api.ai.pipeline import run
-            run(conversation, unified)
-        except Exception:
-            logger.exception(
-                "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
-            )
-            return
-
-        # Only mark consumed AFTER pipeline completes successfully, and only
-        # our pinned batches — never touch batches that arrived in the meantime.
-        MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
-
-        # Drain any batches that arrived (via _pending_batches merge) while
-        # the pipeline was running — process them immediately so close bursts
-        # collapse into one run.
-        with _pending_batches_lock:
-            merged_pks = _pending_batches.pop(conversation_id, [])
-        if merged_pks:
-            # Deduplicate: only process batches that weren't already handled.
-            fresh_pks = list(
-                MessageBatch.objects.filter(
-                    pk__in=merged_pks, processed=False,
-                ).order_by("timestamp").values_list("pk", flat=True)
-            )
-            if fresh_pks:
-                logger.info("Draining %d merged batches for conv=%s", len(fresh_pks), conversation_id)
-                combined_text = "\n".join(
-                    b.message_text
-                    for b in MessageBatch.objects.filter(pk__in=fresh_pks)
-                    if b.message_text.strip()
-                )
-                if combined_text.strip():
-                    unified = SimpleNamespace(text=combined_text)
-                    try:
-                        from api.ai.pipeline import run
-                        run(conversation, unified)
-                        MessageBatch.objects.filter(pk__in=fresh_pks).update(processed=True)
-                    except Exception:
-                        logger.exception(
-                            "Merged pipeline crashed conv=%s — batches preserved", conversation_id
-                        )
-        elif MessageBatch.objects.filter(
-            conversation=conversation, processed=False
-        ).exists():
-            # Fallback: new batches arrived outside the merge path.
-            _schedule_batch_pipeline(conversation_id)
-
     except Conversation.DoesNotExist:
-        pass
+        return
+
+    ai_still_enabled = conversation.is_ai_enabled
+    if not ai_still_enabled:
+        try:
+            ai_still_enabled = conversation.auto_enable_ai()
+        except Exception:
+            logger.exception("auto_enable_ai failed conv=%s", conversation.pk)
+    ai_still_enabled = ai_still_enabled and Integration.objects.filter(
+        user=conversation.user,
+        platform=conversation.platform,
+        is_enabled=True,
+    ).exists()
+    if not ai_still_enabled:
+        MessageBatch.objects.filter(
+            conversation=conversation, processed=False
+        ).update(processed=True)
+        return
+
+    batch_pks = list(
+        MessageBatch.objects.filter(
+            conversation=conversation,
+            processed=False,
+        ).order_by("timestamp").values_list("pk", flat=True)
+    )
+    if not batch_pks:
+        return
+
+    batch_items = [
+        b for b in MessageBatch.objects.filter(pk__in=batch_pks)
+        .order_by("timestamp")
+        if b.message_text.strip()
+    ]
+    if not batch_items:
+        MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+        return
+    combined_text = batch_items[-1].message_text
+
+    unified = SimpleNamespace(text=combined_text)
+    try:
+        from api.ai.pipeline import run
+        run(conversation, unified)
     except Exception:
-        logger.exception("_fire_batch_pipeline failed for conversation=%s", conversation_id)
-    finally:
-        conv_lock.release()
-        # Clean up the lock entry so the dict doesn't grow unbounded.
-        with _conv_locks_lock:
-            if _conv_locks.get(conversation_id) is conv_lock:
-                del _conv_locks[conversation_id]
-        close_old_connections()
+        logger.exception(
+            "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
+        )
+        return
+
+    MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
 
 
 def _process_webhook(user_id, platform, unified_messages, access_token):
@@ -309,7 +186,7 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
 
     # Fetch Messenger profile asynchronously so it never blocks message processing.
     if created and platform == "messenger":
-        _executor.submit(_fetch_and_update_profile, conv.pk, customer_id, access_token)
+        django_rq.get_queue(_RQ_QUEUE).enqueue(_fetch_and_update_profile, conv.pk, customer_id, access_token)
 
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
@@ -561,7 +438,7 @@ class _BaseWebhookView(View):
 
     def _submit(self, integration, messages):
         if messages:
-            _executor.submit(
+            django_rq.get_queue(_RQ_QUEUE).enqueue(
                 _process_webhook,
                 integration.user_id,
                 self.platform,
@@ -813,7 +690,7 @@ class MetaAppWebhookView(View):
         if not messages:
             return
 
-        _executor.submit(
+        django_rq.get_queue(_RQ_QUEUE).enqueue(
             _process_webhook,
             integration.user_id,
             platform,

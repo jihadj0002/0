@@ -91,7 +91,7 @@ def _split_text_messages(text):
     return parts if len(parts) > 1 else [text]
 
 
-def _fallback_reply(last_search, pending_images, product_cards):
+def _fallback_reply(last_search, pending_images, product_cards, customer_text="", tools_called=None):
     if pending_images or product_cards:
         return "ছবিগুলো পাঠালাম। কোনটা পছন্দ হয়েছে?"
 
@@ -108,7 +108,16 @@ def _fallback_reply(last_search, pending_images, product_cards):
         if labels:
             return f"এইগুলো আছে: {', '.join(labels)}। কোনটা দেখতে চান?"
 
-    return "দুঃখিত, ঠিকভাবে বুঝতে পারিনি। একটু বিস্তারিত বলবেন?"
+    if tools_called:
+        if "search_products" in tools_called:
+            total = (last_search or {}).get("total", -1) if last_search else -1
+            if total == 0:
+                return "দুঃখিত, আপনার অনুরোধ অনুযায়ী কোনো প্রোডাক্ট খুঁজে পাইনি। অন্য কিছু বলবেন?"
+            return "দুঃখিত, প্রোডাক্ট খুঁজতে সমস্যা হচ্ছে। আবার বলবেন?"
+        if "search_knowledge_base" in tools_called:
+            return "এই বিষয়ে আমার কাছে কোনো তথ্য নেই। দোকানের ঠিকানা বা যোগাযোগের জন্য বলতে পারেন?"
+
+    return "দুঃখিত, উত্তর দিতে সমস্যা হচ্ছে। একটু পরে আবার লিখবেন?"
 
 
 
@@ -460,7 +469,7 @@ def run(conversation, incoming_message):
     start_time = time.monotonic()
     for iteration in range(MAX_TOOL_ITERATIONS):
         if time.monotonic() - start_time > MAX_RUN_SECONDS:
-            final_text = "দুঃখিত, উত্তর দিতে একটু সময় লাগছে। আবার সংক্ষেপে বলবেন?"
+            final_text = "উত্তর দিতে সময় বেশি লাগছে। আবার লিখবেন?"
             break
         try:
             llm_msg, usage = call_llm(
@@ -472,6 +481,7 @@ def run(conversation, incoming_message):
             )
         except Exception:
             logger.exception("LLM call failed reply_id=%s iter=%d", reply_id, iteration)
+            final_text = "উত্তর দিতে সময় বেশি লাগছে। আবার চেষ্টা করবেন?"
             break
 
         _log(user, reply_id, usage, call_type=f"call_{iteration + 1}")
@@ -800,9 +810,9 @@ def run(conversation, incoming_message):
                 else:
                     final_text = "অর্ডার করতে কিছু তথ্য দরকার। নাম, ফোন আর ঠিকানা দিবেন?"
             else:
-                final_text = _fallback_reply(last_search, pending_images, product_cards)
+                final_text = _fallback_reply(last_search, pending_images, product_cards, customer_text, _tool_names_called)
         else:
-            final_text = _fallback_reply(last_search, pending_images, product_cards)
+            final_text = _fallback_reply(last_search, pending_images, product_cards, customer_text, _tool_names_called)
 
     # Auto-confirm guard: customer said a clear "yes" to a pending order draft
     # and the LLM didn't call create_order — the backend creates the order.
