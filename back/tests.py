@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from back.models import Integration
+from back.models import Integration, Conversation, Message
 from back.views import _needs_setup
 
 
@@ -161,3 +161,99 @@ class OAuthNextTests(TestCase):
         request = type("R", (), {"session": {}})()
         resp = _redirect_after_oauth(request)
         self.assertEqual(resp.url, reverse("back:options"))
+
+
+class DraftMessageTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            username="draft_user", password="pass1234567"
+        )
+        self.convo = Conversation.objects.create(
+            user=self.user,
+            platform="messenger",
+            customer_id="cust_1",
+            customer_name="Draft Customer",
+        )
+        self.client.login(username="draft_user", password="pass1234567")
+
+    def make_message(self, text="Hello", status="sent"):
+        return Message.objects.create(
+            conversation=self.convo,
+            sender="bot",
+            status=status,
+            text=text,
+        )
+
+    def load_messages(self):
+        resp = self.client.get(
+            reverse("back:ajax_load_messages"), {"cid": self.convo.id}
+        )
+        self.assertEqual(resp.status_code, 200)
+        return resp.json()
+
+    def test_draft_cancel_sets_canceled_status(self):
+        draft = self.make_message(text="Hi there", status="draft")
+        resp = self.client.post(reverse("back:draft_cancel", args=[draft.id]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()["status"], "ok")
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, "canceled")
+
+    def test_draft_cancel_requires_post(self):
+        draft = self.make_message(text="Hi there", status="draft")
+        resp = self.client.get(reverse("back:draft_cancel", args=[draft.id]))
+        self.assertEqual(resp.status_code, 405)
+
+    def test_draft_cancel_rejects_other_users_draft(self):
+        User = get_user_model()
+        other = User.objects.create_user(
+            username="other_user", password="pass1234567"
+        )
+        other_convo = Conversation.objects.create(
+            user=other, platform="messenger", customer_id="cust_other"
+        )
+        other_draft = Message.objects.create(
+            conversation=other_convo, sender="bot", status="draft", text="Nope"
+        )
+        resp = self.client.post(reverse("back:draft_cancel", args=[other_draft.id]))
+        self.assertEqual(resp.status_code, 404)
+        other_draft.refresh_from_db()
+        self.assertEqual(other_draft.status, "draft")
+
+    def test_load_messages_excludes_canceled(self):
+        sent = self.make_message(text="Sent", status="sent")
+        draft = self.make_message(text="Draft", status="draft")
+        canceled = self.make_message(text="Canceled", status="canceled")
+
+        data = self.load_messages()
+        ids = [m["id"] for m in data["messages"]]
+
+        self.assertIn(sent.id, ids)
+        self.assertIn(draft.id, ids)
+        self.assertNotIn(canceled.id, ids)
+
+    def test_canceled_not_returned_via_polling(self):
+        draft = self.make_message(text="Draft", status="draft")
+        canceled = self.make_message(text="Canceled", status="canceled")
+
+        data = self.load_messages()
+        ids = [m["id"] for m in data["messages"]]
+        self.assertIn(draft.id, ids)
+
+        resp = self.client.get(
+            reverse("back:ajax_load_messages"),
+            {"cid": self.convo.id, "last_id": draft.id},
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()
+        ids = [m["id"] for m in data["messages"]]
+        self.assertNotIn(canceled.id, ids)
+
+    def test_pending_drafts_false_after_cancel(self):
+        draft = self.make_message(text="Draft", status="draft")
+        self.assertTrue(self.convo.pending_drafts)
+
+        self.client.post(reverse("back:draft_cancel", args=[draft.id]))
+        self.convo.refresh_from_db()
+        self.assertFalse(self.convo.pending_drafts)

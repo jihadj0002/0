@@ -57,7 +57,7 @@ _IMAGE_REQUEST_RE = re.compile(
 
 
 from .context import build_system_prompt, get_conversation_history
-from .providers import call_llm
+from .providers import call_llm_with_fallback as call_llm
 from .sender import send_reply
 from .tools import TOOL_DEFINITIONS, execute_tool, parse_focus_products
 

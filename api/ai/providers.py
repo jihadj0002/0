@@ -1,12 +1,13 @@
 import logging
 import os
 
-from openai import OpenAI
+from openai import InternalServerError, OpenAI
 
 logger = logging.getLogger(__name__)
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
+FALLBACK_MODEL = "openai/gpt-4o-mini"
 LLM_TIMEOUT = 180
 
 
@@ -46,3 +47,16 @@ def call_llm(messages, tools=None, model=None, temperature=0.7, max_tokens=1024)
         "input_tokens": usage.prompt_tokens if usage else 0,
         "output_tokens": usage.completion_tokens if usage else 0,
     }
+
+
+def call_llm_with_fallback(messages, tools=None, model=None, temperature=0.7, max_tokens=1024):
+    model = model or DEFAULT_MODEL
+    try:
+        return call_llm(messages, tools, model, temperature, max_tokens)
+    except InternalServerError:
+        if model == FALLBACK_MODEL:
+            raise
+        logger.warning(
+            "Primary model %s returned 5xx, retrying with fallback %s", model, FALLBACK_MODEL
+        )
+        return call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)

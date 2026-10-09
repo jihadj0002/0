@@ -1731,7 +1731,7 @@ document.addEventListener("click", e => {
   e.preventDefault();
   const mid = btn.dataset.messageId;
   if (!mid) return;
-  if (!confirm("Cancel this draft? (It will still count towards your usage.)")) return;
+  if (!confirm("Cancel this draft?")) return;
 
   const row = btn.closest(".msg-row.draft");
   btn.textContent = "Canceling…";
@@ -1741,10 +1741,10 @@ document.addEventListener("click", e => {
     headers: { "X-CSRFToken": CSRF },
   }).then(r => r.json()).then(d => {
     if (d.status === "ok") {
-      reloadAllMessages();
+      if (row) row.remove();
     } else {
       alert("Cancel failed");
-      reloadAllMessages();
+      if (row) reloadAllMessages();
     }
   });
 });

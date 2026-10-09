@@ -398,7 +398,7 @@ def ajax_load_messages(request):
     # Messages query
     # ==========================
 
-    qs = Message.objects.filter(conversation=convo).defer("raw_payload")
+    qs = Message.objects.filter(conversation=convo).exclude(status="canceled").defer("raw_payload")
 
     if last_msg_id:
         qs = qs.filter(id__gt=last_msg_id).order_by("id")
