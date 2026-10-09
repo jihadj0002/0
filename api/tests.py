@@ -10,7 +10,7 @@ from django.utils import timezone
 from back.models import Conversation, Integration, Message, Product, Sale, ToolCallLog
 from context.crm_models import OrderDraft
 from context.models import SessionContext, StoreConfig
-from api.ai.pipeline import _images_recently_sent, _maybe_auto_confirm_order, run
+from api.ai.pipeline import _images_recently_sent, _maybe_auto_confirm_order, _summarize_tool_result, run
 from api.ai.tools import execute_tool
 
 
@@ -595,3 +595,107 @@ class MetaOAuthFlowTestCase(TestCase):
         # Flag stays set until the selection is finalized (cleared by
         # _clear_oauth_session after meta_oauth_select) so the retry is one-shot.
         self.assertEqual(req.session.get("meta_oauth_retried_pages"), True)
+
+
+class ExternalSearchErrorCarryTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="ext_user", password="x")
+        self.conv = Conversation.objects.create(
+            user=self.user,
+            platform="messenger",
+            customer_id="psid_ext",
+        )
+        Integration.objects.create(
+            user=self.user, platform="messenger",
+            access_token="tok", is_connected=True, is_enabled=True,
+        )
+
+    @patch("api.products.factory.get_active_source")
+    @patch("api.products.factory.get_provider")
+    @patch("api.products.factory.is_external")
+    def test_search_carries_http_403_error(
+        self, mock_is_external, mock_get_provider, mock_get_active_source
+    ):
+        mock_get_active_source.return_value = MagicMock(mode="live")
+        mock_is_external.return_value = True
+
+        import requests
+        err = requests.exceptions.HTTPError(
+            "403 Client Error", response=MagicMock(status_code=403)
+        )
+        mock_provider = MagicMock()
+        mock_provider.search.return_value = []
+        mock_provider.last_error = err
+        mock_get_provider.return_value = mock_provider
+
+        result = execute_tool(
+            "search_products", {"query": "blue dress", "limit": 5}, self.user, self.conv
+        )
+        self.assertEqual(result.get("_error"), "ERP HTTP 403")
+        self.assertEqual(result.get("products"), [])
+        self.assertEqual(result.get("total"), 0)
+
+    @patch("api.products.factory.get_active_source")
+    @patch("api.products.factory.get_provider")
+    @patch("api.products.factory.is_external")
+    def test_search_carries_connection_error(
+        self, mock_is_external, mock_get_provider, mock_get_active_source
+    ):
+        mock_get_active_source.return_value = MagicMock(mode="live")
+        mock_is_external.return_value = True
+
+        import requests
+        err = requests.exceptions.ConnectionError("Connection refused")
+        mock_provider = MagicMock()
+        mock_provider.search.return_value = []
+        mock_provider.last_error = err
+        mock_get_provider.return_value = mock_provider
+
+        result = execute_tool(
+            "search_products", {"query": "blue dress", "limit": 5}, self.user, self.conv
+        )
+        self.assertEqual(result.get("_error"), "ConnectionError")
+        self.assertEqual(result.get("products"), [])
+        self.assertEqual(result.get("total"), 0)
+
+    @patch("api.products.factory.get_active_source")
+    @patch("api.products.factory.get_provider")
+    @patch("api.products.factory.is_external")
+    def test_search_no_error_when_provider_returns_empty(
+        self, mock_is_external, mock_get_provider, mock_get_active_source
+    ):
+        mock_get_active_source.return_value = MagicMock(mode="live")
+        mock_is_external.return_value = True
+
+        mock_provider = MagicMock()
+        mock_provider.search.return_value = []
+        mock_provider.last_error = None
+        mock_get_provider.return_value = mock_provider
+
+        result = execute_tool(
+            "search_products", {"query": "blue dress", "limit": 5}, self.user, self.conv
+        )
+        self.assertNotIn("_error", result)
+        self.assertEqual(result.get("products"), [])
+        self.assertEqual(result.get("total"), 0)
+
+    def test_summarize_shows_http_error(self):
+        result = _summarize_tool_result(
+            "search_products",
+            {"_error": "ERP HTTP 404", "products": [], "total": 0},
+        )
+        self.assertEqual(result, "Search failed — ERP HTTP 404")
+
+    def test_summarize_shows_connection_error(self):
+        result = _summarize_tool_result(
+            "search_products",
+            {"_error": "ConnectionError", "products": [], "total": 0},
+        )
+        self.assertEqual(result, "Search failed — ConnectionError")
+
+    def test_summarize_ignores_error_key_when_absent(self):
+        result = _summarize_tool_result(
+            "search_products",
+            {"products": [{"name": "Apple", "pid": "sku_a"}], "total": 1},
+        )
+        self.assertIn("Found 1 product", result)

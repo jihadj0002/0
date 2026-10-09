@@ -190,6 +190,8 @@ def _summarize_tool_result(tool_name, result):
         return f"Error: {result['error']}"
 
     if tool_name == "search_products":
+        if result.get("_error"):
+            return f"Search failed — {result['_error']}"
         products = result.get("products", [])
         names = [p.get("name", p.get("pid", "?"))[:40] for p in products[:5]]
         extra = f" (+{len(products)-5} more)" if len(products) > 5 else ""

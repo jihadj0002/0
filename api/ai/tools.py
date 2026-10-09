@@ -637,7 +637,7 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
             # Nothing matched the query — tell the model so it can say unavailable
             # or try a genuinely different keyword (don't fall through to junk).
             if query and query.strip():
-                return {
+                result = {
                     "products": [],
                     "total": 0,
                     "_instruction": (
@@ -646,6 +646,18 @@ def tool_search_products(user, query, limit=10, conversation=None, min_price=Non
                         "unavailable. Do NOT present unrelated products."
                     ),
                 }
+                err = getattr(provider, "last_error", None)
+                if err is not None:
+                    status = err.response.status_code if hasattr(err, "response") and err.response is not None else None
+                    if status:
+                        result["_error"] = f"ERP HTTP {status}"
+                    else:
+                        result["_error"] = str(type(err).__name__)
+                    logger.warning(
+                        "External search ERP error for user=%s query=%r error=%s",
+                        user.pk, query, result["_error"],
+                    )
+                return result
             # Empty query — fall through to local DB / featured handling.
     except Exception:
         logger.exception("Live search_products failed; falling back to local DB")
