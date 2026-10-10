@@ -467,6 +467,7 @@ def run(conversation, incoming_message):
     _dup_nudged = set()
     _search_calls = 0
     _thread_pids = set()
+    _external_search_errored = False
 
     start_time = time.monotonic()
     for iteration in range(MAX_TOOL_ITERATIONS):
@@ -623,6 +624,12 @@ def run(conversation, incoming_message):
                     _search_calls += 1
                 result = execute_tool(fn_name, fn_args, user, conversation)
                 elapsed = int((time.time() - t0) * 1000)
+
+            if fn_name == "search_products" and isinstance(result, dict):
+                if result.get("_error"):
+                    _external_search_errored = True
+                elif result.get("products"):
+                    _external_search_errored = False
 
             # Same-pids short-circuit: a search that returns only products already
             # shown this turn re-lists them verbatim in the thread (one of the
@@ -799,6 +806,22 @@ def run(conversation, incoming_message):
         if transferred:
             final_text = "আমি এখন একজন মানুষ এজেন্টের সাথে যুক্ত করে দিচ্ছি। একটু অপেক্ষা করুন।"
             break
+
+    if _external_search_errored:
+        from api.products.factory import is_external
+        if is_external(user):
+            from back.models import SupportTicket
+            SupportTicket.objects.get_or_create(
+                conversation=conversation,
+                defaults={
+                    "subject": "Product search unavailable (ERP error)",
+                    "description": f"ERP returned errors for all search attempts.\nCustomer: {customer_text[:300]}",
+                    "priority": "medium",
+                },
+            )
+            conversation.disable_ai()
+            logger.info("Silent transfer conv=%s — ERP search failed, ticket created", conversation.pk)
+            return
 
     if not final_text:
         logger.warning("Pipeline produced no reply reply_id=%s conv=%s", reply_id, conversation.pk)
