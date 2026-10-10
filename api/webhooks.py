@@ -67,12 +67,17 @@ def _schedule_batch_pipeline(conversation_id):
 def _fire_batch_pipeline(conversation_id):
     from types import SimpleNamespace
 
+    lock_key = f"pipeline_inflight:{conversation_id}"
+    if not cache.add(lock_key, True, 120):
+        logger.info("Pipeline already in flight conv=%s — skipping", conversation_id)
+        return
     close_old_connections()
     cache.delete(f"batch_pipeline:{conversation_id}")
 
     try:
         conversation = Conversation.objects.get(id=conversation_id)
     except Conversation.DoesNotExist:
+        cache.delete(lock_key)
         return
 
     ai_still_enabled = conversation.is_ai_enabled
@@ -90,6 +95,7 @@ def _fire_batch_pipeline(conversation_id):
         MessageBatch.objects.filter(
             conversation=conversation, processed=False
         ).update(processed=True)
+        cache.delete(lock_key)
         return
 
     batch_pks = list(
@@ -99,6 +105,7 @@ def _fire_batch_pipeline(conversation_id):
         ).order_by("timestamp").values_list("pk", flat=True)
     )
     if not batch_pks:
+        cache.delete(lock_key)
         return
 
     batch_items = [
@@ -108,6 +115,7 @@ def _fire_batch_pipeline(conversation_id):
     ]
     if not batch_items:
         MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+        cache.delete(lock_key)
         return
     combined_text = batch_items[-1].message_text
 
@@ -119,9 +127,11 @@ def _fire_batch_pipeline(conversation_id):
         logger.exception(
             "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
         )
+        cache.delete(lock_key)
         return
 
     MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+    cache.delete(lock_key)
 
 
 def _process_webhook(user_id, platform, unified_messages, access_token):
@@ -708,7 +718,11 @@ class MetaAppWebhookView(View):
 # ---------------------------------------------------------------------------
 
 def recover_zombie_batches():
-    """Fire the pipeline for any MessageBatch rows left behind after a crash/restart."""
+    """Enqueue RQ jobs for unprocessed MessageBatch rows. Never runs the pipeline directly."""
+    import django_rq
+    lock_key = "zombie_recovery_lock"
+    if not cache.add(lock_key, True, 300):
+        return
     close_old_connections()
     orphan = MessageBatch.objects.filter(processed=False)
     if not orphan.exists():
@@ -721,7 +735,7 @@ def recover_zombie_batches():
             if not conv.is_ai_enabled:
                 orphan.filter(conversation_id=cid).update(processed=True)
                 continue
-            _fire_batch_pipeline(cid)
+            django_rq.get_queue(_RQ_QUEUE).enqueue(_fire_batch_pipeline, cid)
         except Conversation.DoesNotExist:
             orphan.filter(conversation_id=cid).delete()
         except Exception:
