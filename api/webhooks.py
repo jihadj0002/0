@@ -662,7 +662,8 @@ class WasenderWebhookView(_BaseWebhookView):
                 "WasenderAPI parse empty user=%s event=%s body=%s",
                 username, payload.get("event", "???"), sample,
             )
-        self._submit(integration, parsed)
+        else:
+            self._submit(integration, parsed)
         return HttpResponse("EVENT_RECEIVED", status=200)
 
 
