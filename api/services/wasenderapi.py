@@ -47,7 +47,7 @@ class WasenderService:
         return self._post("/send-message", payload)
 
     def decrypt_media(self, media_key, url, mime_type):
-        resp = self._post_raw(
+        resp, _ = self._post_raw(
             "/decrypt-media",
             {"mediaKey": media_key, "url": url, "mimetype": mime_type},
         )
@@ -74,9 +74,9 @@ class WasenderService:
             return None
 
     def _post(self, path, payload):
-        result = self._post_raw(path, payload)
+        result, error = self._post_raw(path, payload)
         if result is None:
-            return {"ok": False, "error": "HTTP request failed (check logs)"}
+            return {"ok": False, "error": error or "HTTP request failed (check logs)"}
         if isinstance(result, dict) and result.get("success"):
             return {"ok": True, "data": result.get("data") or result}
         if isinstance(result, dict):
@@ -89,10 +89,12 @@ class WasenderService:
         try:
             resp = requests.post(url, headers=self.headers, json=payload, timeout=15)
             if not resp.ok:
-                msg = f"{url}: {resp.text[:200]}"
+                body = resp.text[:300]
+                msg = f"HTTP {resp.status_code}: {body}"
                 logger.warning("WasenderAPI request failed %s", msg)
-                return None
-            return resp.json()
+                return None, msg
+            return resp.json(), None
         except requests.RequestException as exc:
+            msg = f"request error: {exc}"
             logger.warning("WasenderAPI request error: %s", exc)
-            return None
+            return None, msg
