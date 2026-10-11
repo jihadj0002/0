@@ -672,23 +672,6 @@ class WasenderWebhookView(_BaseWebhookView):
 
 
 # ---------------------------------------------------------------------------
-# Debug: inspect last WasenderAPI webhook payload
-# ---------------------------------------------------------------------------
-
-@method_decorator(csrf_exempt, name="dispatch")
-class WasenderDebugView(View):
-    """Temporary — shows the last raw WasenderAPI webhook body for debugging."""
-
-    def get(self, request, username):
-        raw = cache.get(f"wasender_debug:{username}", "no payload captured yet")
-        from django.http import JsonResponse
-        return JsonResponse({"raw": raw})
-
-    def post(self, request, username):
-        return self.get(request, username)
-
-
-# ---------------------------------------------------------------------------
 # Telegram — POST only, secret token header
 # ---------------------------------------------------------------------------
 
