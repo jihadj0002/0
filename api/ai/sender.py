@@ -173,31 +173,32 @@ def _whatsapp_wasender(conversation, integration, texts, image_urls, product_car
     sent = {"cards": 0, "images": 0, "texts": 0}
     errors = []
 
-    # Product cards: send each product's first image as an image-with-caption
     for card in (product_cards or [])[:5]:
         images = _public_urls(card.get("images"))
         if not images:
             continue
         result = service.send_image(to, images[0], caption=_card_caption(card))
-        if result:
+        if result and result.get("ok"):
             sent["cards"] += 1
         else:
-            errors.append(f"card send failed")
+            err = (result or {}).get("error", "unknown")
+            errors.append(f"card send: {err}")
 
-    # Send each image URL directly (WasenderAPI fetches the URL)
     for img_url in _public_urls(image_urls)[:5]:
         result = service.send_image(to, img_url)
-        if result:
+        if result and result.get("ok"):
             sent["images"] += 1
         else:
-            errors.append(f"image send failed: {img_url[:60]}")
+            err = (result or {}).get("error", "unknown")
+            errors.append(f"image send: {err}")
 
     for text in texts:
         result = service.send_text(to, text)
-        if result:
+        if result and result.get("ok"):
             sent["texts"] += 1
         else:
-            errors.append(f"text send failed: {text[:50]}")
+            err = (result or {}).get("error", "unknown")
+            errors.append(f"text send: {err}")
 
     return {"ok": not errors, "sent": sent, "errors": errors}
 

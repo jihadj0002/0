@@ -908,28 +908,38 @@ def run(conversation, incoming_message):
     
     else:
 
-        Message.objects.create(
+        bot_msg = Message.objects.create(
             conversation=conversation,
             sender="bot",
             text=final_text,
             attachments=attachment or None,
             incoming_message=incoming_message.text if hasattr(incoming_message, 'text') else str(incoming_message),
-            # TEMPORARY: populate raw_payload for tool trace visibility
             raw_payload={
                 "intent": conversation.detected_intent or "",
                 "tool_calls": [{"tool": t} for t in _tool_names_called],
             },
-            # END TEMPORARY
         )
 
-        # Send via platform — pass product_cards only for multi-product carousel;
-        # single-product images are sent individually (avoids duplicate image messages).
-        send_reply(
+        # Send via platform
+        result = send_reply(
             conversation,
             _split_text_messages(final_text),
             image_urls=unique_images or None,
             product_cards=product_cards if len(product_cards) > 1 else None,
         )
+
+        # Update message with delivery report
+        if result:
+            bot_msg.raw_payload["send_report"] = {
+                "ok": result.get("ok", False),
+                "sent": result.get("sent", {}),
+                "errors": result.get("errors", []),
+            }
+            if not result.get("ok"):
+                bot_msg.status = "failed"
+            else:
+                bot_msg.status = "sent"
+            bot_msg.save(update_fields=["raw_payload", "status"])
 
     # Rolling chat summary: on long conversations, one cheap call keeps the
     # facts that the history window would drop.

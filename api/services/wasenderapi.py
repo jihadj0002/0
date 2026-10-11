@@ -8,7 +8,12 @@ WASENDER_BASE = "https://www.wasenderapi.com/api"
 
 
 class WasenderService:
-    """Lightweight client for the WasenderAPI WhatsApp service."""
+    """Lightweight client for the WasenderAPI WhatsApp service.
+
+    All send_* methods return a dict:
+        {"ok": True, "data": {...}} on success
+        {"ok": False, "error": "..."} on failure
+    """
 
     def __init__(self, integration):
         self.token = integration.access_token
@@ -42,19 +47,16 @@ class WasenderService:
         return self._post("/send-message", payload)
 
     def decrypt_media(self, media_key, url, mime_type):
-        """Decrypt an encrypted media file via WasenderAPI.
-        Returns publicUrl string or None."""
         resp = self._post_raw(
             "/decrypt-media",
             {"mediaKey": media_key, "url": url, "mimetype": mime_type},
         )
-        if resp is not None:
+        if resp is not None and isinstance(resp, dict):
             data = resp.get("data") or resp
             return data.get("publicUrl") if isinstance(data, dict) else None
         return None
 
     def upload_media(self, file_bytes, mime_type):
-        """Upload binary media to WasenderAPI, returns publicUrl or None."""
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             resp = requests.post(
@@ -72,7 +74,15 @@ class WasenderService:
             return None
 
     def _post(self, path, payload):
-        return self._post_raw(path, payload)
+        result = self._post_raw(path, payload)
+        if result is None:
+            return {"ok": False, "error": "HTTP request failed (check logs)"}
+        if isinstance(result, dict) and result.get("success"):
+            return {"ok": True, "data": result.get("data") or result}
+        if isinstance(result, dict):
+            msg = result.get("message") or result.get("error") or "unknown error"
+            return {"ok": False, "error": msg}
+        return {"ok": True, "data": result}
 
     def _post_raw(self, path, payload):
         url = f"{WASENDER_BASE}{path}"
