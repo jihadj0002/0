@@ -55,10 +55,34 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
     expected = "sha256=" + h.hexdigest()
     return hmac.compare_digest(expected, signature_header)
 
-
 # ---------------------------------------------------------------------------
 # Background processing
 # ---------------------------------------------------------------------------
+
+import time as _time
+
+
+def _drain_pipeline_schedule():
+    """Fire any WhatsApp pipeline schedules whose time has come.
+    Called at the start of every WasenderAPI webhook — no worker needed."""
+    try:
+        from django.core.cache import caches
+        backend = caches["default"]
+        client = getattr(backend, "client", None)
+        if client is None:
+            return
+        conn = client.get_client() if hasattr(client, "get_client") else None
+        if conn is None:
+            return
+        now = _time.time()
+        ready = conn.zrangebyscore("pipeline:schedule", 0, now)
+        for cid_bytes in ready:
+            cid = int(cid_bytes.decode())
+            conn.zrem("pipeline:schedule", cid_bytes)
+            _fire_batch_pipeline(cid)
+    except Exception:
+        logger.exception("_drain_pipeline_schedule failed")
+
 
 def _schedule_batch_pipeline(conversation_id):
     redis_key = f"batch_pipeline:{conversation_id}"
@@ -68,6 +92,25 @@ def _schedule_batch_pipeline(conversation_id):
             _fire_batch_pipeline,
             conversation_id,
         )
+
+
+def _schedule_wasender_pipeline(conversation_id):
+    """Schedule WhatsApp pipeline via Redis sorted set — no RQ worker needed."""
+    redis_key = f"batch_pipeline:{conversation_id}"
+    if cache.add(redis_key, True, BATCH_TIMER_SECONDS):
+        try:
+            from django.core.cache import caches
+            backend = caches["default"]
+            client = getattr(backend, "client", None)
+            if client is None:
+                return
+            conn = client.get_client() if hasattr(client, "get_client") else None
+            if conn is None:
+                return
+            schedule_time = _time.time() + BATCH_TIMER_SECONDS
+            conn.zadd("pipeline:schedule", {str(conversation_id): schedule_time})
+        except Exception:
+            logger.exception("_schedule_wasender_pipeline failed conv=%s", conversation_id)
 
 
 def _fire_batch_pipeline(conversation_id):
@@ -650,7 +693,8 @@ class WasenderWebhookView(_BaseWebhookView):
         if not parsed:
             return HttpResponse("EVENT_RECEIVED", status=200)
 
-        # Process inline — no RQ worker dependency
+        _drain_pipeline_schedule()
+
         try:
             user = User.objects.get(username=username)
             ai_enabled = Integration.objects.filter(
@@ -664,7 +708,7 @@ class WasenderWebhookView(_BaseWebhookView):
                     ai_enabled, "wasender",
                 )
                 if conv_id and ai_enabled:
-                    _schedule_batch_pipeline(conv_id)
+                    _schedule_wasender_pipeline(conv_id)
         except Exception:
             logger.exception("WasenderAPI inline processing failed user=%s", username)
 
