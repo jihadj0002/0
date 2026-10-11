@@ -635,35 +635,39 @@ class WasenderWebhookView(_BaseWebhookView):
         if not integration:
             return HttpResponse("EVENT_RECEIVED", status=200)
 
-        # Verify webhook signature if webhook secret is configured
         signature = request.headers.get("X-Webhook-Signature", "")
         webhook_secret = integration.app_secret or ""
         if webhook_secret and signature and signature != webhook_secret:
             logger.warning("WasenderAPI webhook: signature mismatch for user=%s", username)
             return HttpResponse("EVENT_RECEIVED", status=200)
 
-        body = request.body
-
-        # DEBUG: save raw payload to cache for inspection
         try:
-            cache.set(f"wasender_debug:{username}", body[:3000].decode("utf-8", errors="replace"), 600)
-        except Exception:
-            pass
-
-        try:
-            payload = json.loads(body)
+            payload = json.loads(request.body)
         except json.JSONDecodeError:
             return HttpResponse("EVENT_RECEIVED", status=200)
 
         parsed = parse_wasender(payload)
         if not parsed:
-            sample = body[:1500].decode("utf-8", errors="replace")
-            logger.warning(
-                "WasenderAPI parse empty user=%s event=%s body=%s",
-                username, payload.get("event", "???"), sample,
-            )
-        else:
-            self._submit(integration, parsed)
+            return HttpResponse("EVENT_RECEIVED", status=200)
+
+        # Process inline — no RQ worker dependency
+        try:
+            user = User.objects.get(username=username)
+            ai_enabled = Integration.objects.filter(
+                user=integration.user, platform="whatsapp", is_enabled=True
+            ).exists()
+            for msg_data in parsed:
+                close_old_connections()
+                conv_id = _persist_message(
+                    user, "whatsapp", msg_data,
+                    integration.access_token or "",
+                    ai_enabled, "wasender",
+                )
+                if conv_id and ai_enabled:
+                    _schedule_batch_pipeline(conv_id)
+        except Exception:
+            logger.exception("WasenderAPI inline processing failed user=%s", username)
+
         return HttpResponse("EVENT_RECEIVED", status=200)
 
 
