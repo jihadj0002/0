@@ -3,7 +3,7 @@ from django.urls import path, include
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from . import views
-from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView, MetaAppWebhookView, WasenderWebhookView
+from .webhooks import WhatsAppWebhookView, MessengerWebhookView, InstagramWebhookView, TelegramWebhookView, MetaAppWebhookView, WasenderWebhookView, WasenderDebugView
 from .meta_oauth import (
     meta_oauth_start,
     meta_oauth_callback,
@@ -94,6 +94,7 @@ urlpatterns = [
     # Platform webhooks — per-user URLs registered with each platform
     path('<str:username>/webhook/whatsapp/', WhatsAppWebhookView.as_view(), name='webhook-whatsapp'),
     path('<str:username>/webhook/wasender/', WasenderWebhookView.as_view(), name='webhook-wasender'),
+    path('<str:username>/webhook/wasender/debug/', WasenderDebugView.as_view(), name='webhook-wasender-debug'),
     path('<str:username>/webhook/messenger/', MessengerWebhookView.as_view(), name='webhook-messenger'),
     path('<str:username>/webhook/instagram/', InstagramWebhookView.as_view(), name='webhook-instagram'),
     path('<str:username>/webhook/telegram/', TelegramWebhookView.as_view(), name='webhook-telegram'),

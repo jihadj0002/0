@@ -1,26 +1,7 @@
 """
 Parse WasenderAPI webhook payloads into the unified message dict format.
 
-WasenderAPI webhook payload (messages.received):
-{
-  "event": "messages.received",
-  "timestamp": 1633456789,
-  "data": {
-    "messages": {
-      "key": {
-        "id": "3EB0X123456789",
-        "fromMe": false,
-        "remoteJid": "1234567890@s.whatsapp.net",
-        "cleanedSenderPn": "1234567890",
-        "senderLid": "555555555@lid"
-      },
-      "messageBody": "Hello",
-      "message": { "conversation": "Hello" }
-    }
-  }
-}
-
-For media, message contains e.g. imageMessage, audioMessage, etc.
+Supports multiple payload shapes to handle doc/API discrepancies.
 """
 
 
@@ -29,40 +10,75 @@ def parse_wasender(payload):
     event = payload.get("event", "")
     data = payload.get("data", {})
 
-    # Only handle message events (received and sent)
-    if event not in ("messages.received", "messages.sent", "messages.upsert"):
+    if event not in ("messages.received", "messages.sent", "messages.upsert",
+                     "message.received", "message.sent", "message"):
         return messages
 
-    msg_data = data.get("messages")
+    # Try multiple key paths for the message object
+    msg_data = None
+    for candidate in (
+        data.get("messages"),
+        data.get("message"),
+        payload.get("messages"),
+        payload.get("message"),
+        data,
+        payload,
+    ):
+        if isinstance(candidate, list):
+            candidate = candidate[0] if candidate else None
+        if isinstance(candidate, dict):
+            msg_data = candidate
+            break
+
     if not msg_data:
         return messages
 
-    key = msg_data.get("key", {})
-    if key.get("fromMe", False) and event != "messages.received":
+    key = msg_data.get("key") or msg_data or {}
+    if not isinstance(key, dict):
         return messages
 
-    customer_id = (
-        key.get("cleanedSenderPn")
-        or key.get("senderPn", "").split("@")[0]
-        or key.get("remoteJid", "").split("@")[0]
-        or ""
-    )
+    # Skip messages we sent ourselves (unless it's a received event)
+    if key.get("fromMe", False) and event in ("messages.sent", "message.sent",
+                                                "messages.upsert", "message"):
+        return messages
+
+    customer_id = ""
+    for id_field in ("cleanedSenderPn", "senderPn", "cleanedParticipantPn"):
+        val = key.get(id_field)
+        if val:
+            customer_id = str(val).split("@")[0]
+            if customer_id:
+                break
+    if not customer_id:
+        remote = key.get("remoteJid", "")
+        if remote:
+            customer_id = remote.split("@")[0]
+    if not customer_id:
+        # Last resort: try to get it from the message itself
+        customer_id = msg_data.get("from") or msg_data.get("customer_id", "")
 
     if not customer_id:
         return messages
 
-    message_id = key.get("id")
+    message_id = key.get("id") or msg_data.get("id") or ""
     raw_message = msg_data.get("message", {})
-    message_body = msg_data.get("messageBody", "")
+    if not isinstance(raw_message, dict):
+        raw_message = {}
+    message_body = msg_data.get("messageBody", "") or msg_data.get("body", "") or msg_data.get("text", "")
 
     msg_type = "text"
     text = message_body
     attachments = None
 
-    # Detect media type
     if "imageMessage" in raw_message:
         msg_type = "image"
         media = raw_message["imageMessage"]
+        attachments = {"type": "image"}
+        _enrich_media(attachments, media)
+        text = media.get("caption") or message_body
+    elif "image" in raw_message:
+        msg_type = "image"
+        media = raw_message["image"]
         attachments = {"type": "image"}
         _enrich_media(attachments, media)
         text = media.get("caption") or message_body
@@ -115,7 +131,7 @@ def parse_wasender(payload):
         "customer_id": customer_id,
         "customer_name": None,
         "message_id": message_id,
-        "timestamp": str(payload.get("timestamp", "")),
+        "timestamp": str(payload.get("timestamp", "") or msg_data.get("timestamp", "")),
         "type": msg_type,
         "text": text,
         "attachments": attachments,
@@ -126,13 +142,10 @@ def parse_wasender(payload):
 
 
 def _enrich_media(attachments, media):
-    """Copy media fields needed for decryption."""
     for key in ("url", "mediaKey", "mimetype", "fileLength", "fileName", "id"):
         if key in media:
             attachments[key] = media[key]
-    # WasenderAPI sometimes delivers a direct downloadUrl
     if "downloadUrl" in media:
         attachments["url"] = media["downloadUrl"]
-    # Map mimetype to mime_type for compatibility with existing code
     if "mimetype" in media:
         attachments["mime_type"] = media["mimetype"]

@@ -642,13 +642,45 @@ class WasenderWebhookView(_BaseWebhookView):
             logger.warning("WasenderAPI webhook: signature mismatch for user=%s", username)
             return HttpResponse("EVENT_RECEIVED", status=200)
 
+        body = request.body
+
+        # DEBUG: save raw payload to cache for inspection
         try:
-            payload = json.loads(request.body)
+            cache.set(f"wasender_debug:{username}", body[:3000].decode("utf-8", errors="replace"), 600)
+        except Exception:
+            pass
+
+        try:
+            payload = json.loads(body)
         except json.JSONDecodeError:
             return HttpResponse("EVENT_RECEIVED", status=200)
 
-        self._submit(integration, parse_wasender(payload))
+        parsed = parse_wasender(payload)
+        if not parsed:
+            sample = body[:1500].decode("utf-8", errors="replace")
+            logger.warning(
+                "WasenderAPI parse empty user=%s event=%s body=%s",
+                username, payload.get("event", "???"), sample,
+            )
+        self._submit(integration, parsed)
         return HttpResponse("EVENT_RECEIVED", status=200)
+
+
+# ---------------------------------------------------------------------------
+# Debug: inspect last WasenderAPI webhook payload
+# ---------------------------------------------------------------------------
+
+@method_decorator(csrf_exempt, name="dispatch")
+class WasenderDebugView(View):
+    """Temporary — shows the last raw WasenderAPI webhook body for debugging."""
+
+    def get(self, request, username):
+        raw = cache.get(f"wasender_debug:{username}", "no payload captured yet")
+        from django.http import JsonResponse
+        return JsonResponse({"raw": raw})
+
+    def post(self, request, username):
+        return self.get(request, username)
 
 
 # ---------------------------------------------------------------------------
