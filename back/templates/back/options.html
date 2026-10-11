@@ -524,6 +524,7 @@
 
   <!-- ══ WHATSAPP ══ -->
   {% with intg=integrations.whatsapp %}
+  {% with provider=intg.provider|default:"meta" %}
   <div class="platform-card">
     <div class="card-head">
       <div class="platform-icon whatsapp">📱</div>
@@ -539,52 +540,106 @@
       {% csrf_token %}
       <input type="hidden" name="platform" value="whatsapp">
 
-      <div class="field-group">
-        <label class="field-label">Webhook URL <span style="color:#94a3b8">(paste into Meta App Dashboard)</span></label>
-        <div class="copy-row">
-          <input class="copy-input" type="text" value="{{ intg.webhook_url }}" readonly onclick="this.select()">
-          <button type="button" class="copy-btn" onclick="copyField(this, '{{ intg.webhook_url }}')">Copy</button>
+      <!-- Provider selector -->
+      <div class="provider-toggle" style="margin-bottom: 14px;">
+        <label style="display:block;font-size:0.82rem;color:var(--muted);margin-bottom:6px;">API Provider</label>
+        <div style="display:flex;gap:10px;">
+          <label class="provider-radio" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid #eef2f6;border-radius:8px;{% if provider == 'meta' %}background:#eef6ff;border-color:#1877F2{% endif %}">
+            <input type="radio" name="provider" value="meta" {% if provider == 'meta' %}checked{% endif %} onclick="toggleWasenderProvider(this)" style="accent-color:#1877F2;">
+            <span style="font-weight:600;">Meta Cloud API</span>
+            <span style="color:var(--muted);font-size:0.78rem;">Official</span>
+          </label>
+          <label class="provider-radio" style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:8px 14px;border:1px solid #eef2f6;border-radius:8px;{% if provider == 'wasender' %}background:#eef6ff;border-color:#1877F2{% endif %}">
+            <input type="radio" name="provider" value="wasender" {% if provider == 'wasender' %}checked{% endif %} onclick="toggleWasenderProvider(this)" style="accent-color:#1877F2;">
+            <span style="font-weight:600;">WasenderAPI</span>
+            <span style="color:var(--muted);font-size:0.78rem;">Third-party</span>
+          </label>
         </div>
       </div>
 
-      <div class="field-group">
-        <label class="field-label">Verify Token <span style="color:#94a3b8">(use when setting up the webhook in Meta)</span></label>
-        <div class="copy-row">
-          <input class="copy-input" type="text" value="{{ intg.verify_token }}" readonly onclick="this.select()">
-          <button type="button" class="copy-btn" onclick="copyField(this, '{{ intg.verify_token }}')">Copy</button>
+      <!-- WasenderAPI fields (hidden by default unless provider=wasender) -->
+      <div id="wasender-fields" style="display:{% if provider == 'wasender' %}block{% else %}none{% endif %};">
+        <div class="field-group">
+          <label class="field-label">Payload URL <span style="color:#94a3b8">(paste into WasenderAPI Session → Webhook URL)</span></label>
+          <div class="copy-row">
+            <input class="copy-input" type="text" value="https://{{ request.get_host }}/api/{{ request.user.username }}/webhook/wasender/" readonly onclick="this.select()">
+            <button type="button" class="copy-btn" onclick="copyField(this, 'https://{{ request.get_host }}/api/{{ request.user.username }}/webhook/wasender/')">Copy</button>
+          </div>
         </div>
+
+        <details class="advanced" open>
+          <summary>WasenderAPI credentials</summary>
+          <div class="advanced-body">
+            <div class="field-group">
+              <label class="field-label">Access Token (Session API Key)</label>
+              <input class="field-input secret" type="password" name="access_token" placeholder="WasenderAPI Session API Key" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
+            </div>
+            <div class="field-group">
+              <label class="field-label">Webhook Secret <span style="color:#94a3b8">(for X-Webhook-Signature verification)</span></label>
+              <input class="field-input secret" type="password" name="app_secret" placeholder="WasenderAPI Webhook Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
+            </div>
+            <div class="field-group">
+              <label class="field-label">Phone Number <span style="color:#94a3b8">(international format, e.g. +1234567890)</span></label>
+              <input class="field-input" type="text" name="integration_id" placeholder="+1234567890" value="{{ intg.integration_id|default:'' }}">
+            </div>
+            <div class="setup-hint">
+              <strong>Setup:</strong> WasenderAPI Dashboard → Sessions → Your Session → copy API Key and Webhook Secret.
+              Paste the Payload URL above into the Webhook URL field in WasenderAPI.
+              Subscribe to <code>messages.received</code> and <code>messages.sent</code>.
+            </div>
+          </div>
+        </details>
       </div>
 
-      <details class="advanced">
-        <summary>Advanced — manual setup (paste tokens yourself)</summary>
-        <div class="advanced-body">
-          {% if intg.is_connected and intg.connection_method == "oauth" %}
-            <div class="setup-hint">
-              Manual webhook setup is disabled because this account is connected through the app-level Meta webhook.
-            </div>
-          {% else %}
-            <div class="field-group">
-              <label class="field-label">Phone Number ID</label>
-              <input class="field-input" type="text" name="integration_id" placeholder="WhatsApp Phone Number ID" value="{{ intg.integration_id|default:'' }}">
-            </div>
-
-            <div class="field-group">
-              <label class="field-label">Access Token</label>
-              <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
-            </div>
-
-            <div class="field-group">
-              <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
-              <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
-            </div>
-
-            <div class="setup-hint">
-              <strong>Setup:</strong> Meta Developers → Your App → WhatsApp → Configuration → Webhook.
-              Paste the URL and Verify Token. Subscribe to <code>messages</code>. Copy your Phone Number ID from the API Setup tab.
-            </div>
-          {% endif %}
+      <!-- Meta Cloud API fields (hidden by default unless provider=meta) -->
+      <div id="meta-fields" style="display:{% if provider == 'meta' %}block{% else %}none{% endif %};">
+        <div class="field-group">
+          <label class="field-label">Webhook URL <span style="color:#94a3b8">(paste into Meta App Dashboard)</span></label>
+          <div class="copy-row">
+            <input class="copy-input" type="text" value="{{ intg.webhook_url }}" readonly onclick="this.select()">
+            <button type="button" class="copy-btn" onclick="copyField(this, '{{ intg.webhook_url }}')">Copy</button>
+          </div>
         </div>
-      </details>
+
+        <div class="field-group">
+          <label class="field-label">Verify Token <span style="color:#94a3b8">(use when setting up the webhook in Meta)</span></label>
+          <div class="copy-row">
+            <input class="copy-input" type="text" value="{{ intg.verify_token }}" readonly onclick="this.select()">
+            <button type="button" class="copy-btn" onclick="copyField(this, '{{ intg.verify_token }}')">Copy</button>
+          </div>
+        </div>
+
+        <details class="advanced">
+          <summary>Advanced — manual setup (paste tokens yourself)</summary>
+          <div class="advanced-body">
+            {% if intg.is_connected and intg.connection_method == "oauth" %}
+              <div class="setup-hint">
+                Manual webhook setup is disabled because this account is connected through the app-level Meta webhook.
+              </div>
+            {% else %}
+              <div class="field-group">
+                <label class="field-label">Phone Number ID</label>
+                <input class="field-input" type="text" name="integration_id" placeholder="WhatsApp Phone Number ID" value="{{ intg.integration_id|default:'' }}">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">Access Token</label>
+                <input class="field-input secret" type="password" name="access_token" placeholder="EAAxxxxx…" value="{{ intg.access_token|default:'' }}" autocomplete="new-password">
+              </div>
+
+              <div class="field-group">
+                <label class="field-label">App Secret <span style="color:#94a3b8">(for webhook signature verification)</span></label>
+                <input class="field-input secret" type="password" name="app_secret" placeholder="Meta App Secret" value="{{ intg.app_secret|default:'' }}" autocomplete="new-password">
+              </div>
+
+              <div class="setup-hint">
+                <strong>Setup:</strong> Meta Developers → Your App → WhatsApp → Configuration → Webhook.
+                Paste the URL and Verify Token. Subscribe to <code>messages</code>. Copy your Phone Number ID from the API Setup tab.
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      </div>
 
       <div class="card-foot" style="margin: 16px -22px -20px; padding: 14px 22px;">
         <div>
@@ -601,6 +656,7 @@
       </div>
     </form>
   </div>
+  {% endwith %}
   {% endwith %}
 
   <!-- ══ INSTAGRAM ══ -->
@@ -791,6 +847,20 @@ function copyField(btn, text) {
       btn.classList.remove('copied');
     }, 2000);
   });
+}
+
+function toggleWasenderProvider(radio) {
+  const isWasender = radio.value === 'wasender';
+  document.getElementById('wasender-fields').style.display = isWasender ? 'block' : 'none';
+  document.getElementById('meta-fields').style.display = isWasender ? 'none' : 'block';
+  // Update radio label styles
+  const labels = radio.closest('.provider-toggle').querySelectorAll('.provider-radio');
+  labels.forEach(l => {
+    l.style.background = '';
+    l.style.borderColor = '#eef2f6';
+  });
+  radio.parentElement.style.background = '#eef6ff';
+  radio.parentElement.style.borderColor = '#1877F2';
 }
 </script>
 {% endblock %}

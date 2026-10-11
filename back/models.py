@@ -95,8 +95,14 @@ class Integration(models.Model):
         ("telegram", "Telegram"),
     ]
 
+    PROVIDER_CHOICES = [
+        ("meta", "Meta Cloud API"),
+        ("wasender", "WasenderAPI"),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="integrations")
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
+    provider = models.CharField(max_length=20, choices=PROVIDER_CHOICES, default="meta", blank=True, null=True, help_text="WhatsApp provider: Meta Cloud API or WasenderAPI")
 
     webhook_url = models.URLField(blank=True, null=True)
     access_token = models.TextField(blank=True, null=True)

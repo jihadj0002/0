@@ -478,8 +478,8 @@ class SaleAdmin(admin.ModelAdmin):
 
 
 class IntegrationAdmin(admin.ModelAdmin):
-    list_display = ("platform", "user", "webhook_url", "access_token", "created_at", "is_enabled", "connection_method", "page_name", "is_connected", "token_expires_at")
-    list_filter = ("platform",)
+    list_display = ("platform", "provider", "user", "webhook_url", "access_token", "created_at", "is_enabled", "connection_method", "page_name", "is_connected", "token_expires_at")
+    list_filter = ("platform", "provider")
     search_fields = ("user",)
     ordering = ("-created_at",)
     readonly_fields = ("token_expires_at",)

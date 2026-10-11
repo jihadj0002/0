@@ -71,7 +71,11 @@ def send_reply(conversation, text, image_urls=None, product_cards=None):
 
         texts = _normalize_texts(text)
         if platform == "whatsapp":
-            result = _whatsapp(conversation, integration, texts, image_urls, product_cards)
+            provider = (integration.provider or "meta").lower()
+            if provider == "wasender":
+                result = _whatsapp_wasender(conversation, integration, texts, image_urls, product_cards)
+            else:
+                result = _whatsapp_meta(conversation, integration, texts, image_urls, product_cards)
         elif platform in ("messenger", "instagram"):
             result = _messenger(conversation, integration, texts, image_urls, product_cards)
         elif platform == "telegram":
@@ -85,10 +89,10 @@ def send_reply(conversation, text, image_urls=None, product_cards=None):
 
 
 # ---------------------------------------------------------------------------
-# Platform senders
+# WhatsApp — Meta Cloud API (original)
 # ---------------------------------------------------------------------------
 
-def _whatsapp(conversation, integration, texts, image_urls, product_cards=None):
+def _whatsapp_meta(conversation, integration, texts, image_urls, product_cards=None):
     phone_number_id = integration.integration_id
     token = integration.access_token
     url = f"{GRAPH_API_BASE}/{phone_number_id}/messages"
@@ -156,6 +160,51 @@ def _whatsapp(conversation, integration, texts, image_urls, product_cards=None):
 
     return {"ok": not errors, "sent": sent, "errors": errors}
 
+
+# ---------------------------------------------------------------------------
+# WhatsApp — WasenderAPI
+# ---------------------------------------------------------------------------
+
+def _whatsapp_wasender(conversation, integration, texts, image_urls, product_cards=None):
+    from api.services.wasenderapi import WasenderService
+    service = WasenderService(integration)
+    to = conversation.customer_id
+
+    sent = {"cards": 0, "images": 0, "texts": 0}
+    errors = []
+
+    # Product cards: send each product's first image as an image-with-caption
+    for card in (product_cards or [])[:5]:
+        images = _public_urls(card.get("images"))
+        if not images:
+            continue
+        result = service.send_image(to, images[0], caption=_card_caption(card))
+        if result:
+            sent["cards"] += 1
+        else:
+            errors.append(f"card send failed")
+
+    # Send each image URL directly (WasenderAPI fetches the URL)
+    for img_url in _public_urls(image_urls)[:5]:
+        result = service.send_image(to, img_url)
+        if result:
+            sent["images"] += 1
+        else:
+            errors.append(f"image send failed: {img_url[:60]}")
+
+    for text in texts:
+        result = service.send_text(to, text)
+        if result:
+            sent["texts"] += 1
+        else:
+            errors.append(f"text send failed: {text[:50]}")
+
+    return {"ok": not errors, "sent": sent, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Platform senders (Messenger, Instagram, Telegram — unchanged)
+# ---------------------------------------------------------------------------
 
 def _messenger(conversation, integration, texts, image_urls, product_cards=None):
     token = integration.access_token

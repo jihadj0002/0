@@ -2,11 +2,16 @@ import hashlib
 import hmac
 import json
 import logging
+import uuid
 from datetime import timedelta
+from types import SimpleNamespace
 
 import django_rq
+import requests
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, close_old_connections
 from django.db.models import Q
 from django.http import HttpResponse
@@ -19,6 +24,7 @@ from back.models import Conversation, Integration, Message, MessageBatch
 from django.core.cache import cache
 
 from .utils.parsers import parse_instagram, parse_messenger, parse_telegram, parse_whatsapp
+from .utils.wasenderapi_parser import parse_wasender
 from .utils.whatsapp import download_whatsapp_media
 
 logger = logging.getLogger(__name__)
@@ -134,7 +140,7 @@ def _fire_batch_pipeline(conversation_id):
     cache.delete(lock_key)
 
 
-def _process_webhook(user_id, platform, unified_messages, access_token):
+def _process_webhook(user_id, platform, unified_messages, access_token, provider="meta"):
     """
     Runs in a thread pool worker. Persists each message and (re)starts the
     per-conversation 5-second batch timer so rapid bursts are collapsed into
@@ -152,12 +158,9 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
 
         conversation_ids = set()
         for msg_data in unified_messages:
-            # Refresh the thread's DB connection before each message so a dead
-            # connection from a previous (failed) message can never kill the
-            # rest of the batch — Django transparently reconnects afterwards.
             close_old_connections()
             try:
-                conv_id = _persist_message(user, platform, msg_data, access_token, ai_enabled)
+                conv_id = _persist_message(user, platform, msg_data, access_token, ai_enabled, provider)
                 if conv_id:
                     conversation_ids.add(conv_id)
             except Exception:
@@ -179,7 +182,7 @@ def _process_webhook(user_id, platform, unified_messages, access_token):
         close_old_connections()
 
 
-def _persist_message(user, platform, msg_data, access_token, ai_enabled):
+def _persist_message(user, platform, msg_data, access_token, ai_enabled, provider="meta"):
     """Persist a single incoming message. Returns the conversation id, or None if dropped."""
     mid = msg_data.get("message_id") or None
     customer_id = msg_data.get("customer_id", "")
@@ -197,6 +200,10 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
     # Fetch Messenger profile asynchronously so it never blocks message processing.
     if created and platform == "messenger":
         django_rq.get_queue(_RQ_QUEUE).enqueue(_fetch_and_update_profile, conv.pk, customer_id, access_token)
+
+    # Fetch WasenderAPI contact name/profile pic for new WhatsApp conversations.
+    if created and platform == "whatsapp" and provider == "wasender":
+        django_rq.get_queue(_RQ_QUEUE).enqueue(_fetch_wasender_profile, conv.pk, customer_id, access_token)
 
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
@@ -231,18 +238,41 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled):
 
     # Download WhatsApp media while we're already in the background thread.
     # Other platforms serve public URLs directly — no extra step needed.
-    if platform == "whatsapp" and attachments and attachments.get("media_id"):
-        try:
-            public_url = download_whatsapp_media(
-                media_id=attachments["media_id"],
-                access_token=access_token,
-                mime_type=attachments.get("mime_type"),
-            )
-            attachments["url"] = public_url
-            attachments["stored"] = True
-        except Exception as exc:
-            logger.warning("WA media download failed mid=%s: %s", mid, exc)
-            attachments["download_error"] = str(exc)
+    if platform == "whatsapp" and attachments:
+        if attachments.get("mediaKey"):
+            # WasenderAPI encrypted media — decrypt via WasenderAPI endpoint
+            try:
+                from api.services.wasenderapi import WasenderService
+                wasender = WasenderService(SimpleNamespace(access_token=access_token))
+                decrypted_url = wasender.decrypt_media(
+                    media_key=attachments["mediaKey"],
+                    url=attachments.get("url", ""),
+                    mime_type=attachments.get("mime_type", ""),
+                )
+                if decrypted_url:
+                    resp = requests.get(decrypted_url, timeout=30)
+                    if resp.ok:
+                        ext = attachments.get("mime_type", "bin").split("/")[-1] or "bin"
+                        filename = f"wasender_media/{uuid.uuid4().hex}.{ext}"
+                        path = default_storage.save(filename, ContentFile(resp.content))
+                        attachments["url"] = default_storage.url(path)
+                        attachments["stored"] = True
+            except Exception as exc:
+                logger.warning("WasenderAPI media decrypt failed mid=%s: %s", mid, exc)
+                attachments["download_error"] = str(exc)
+        elif attachments.get("media_id"):
+            # Meta Cloud API media — two-step Graph API download
+            try:
+                public_url = download_whatsapp_media(
+                    media_id=attachments["media_id"],
+                    access_token=access_token,
+                    mime_type=attachments.get("mime_type"),
+                )
+                attachments["url"] = public_url
+                attachments["stored"] = True
+            except Exception as exc:
+                logger.warning("WA media download failed mid=%s: %s", mid, exc)
+                attachments["download_error"] = str(exc)
 
     # --- Media understanding ---
     # For images: run vision analysis and fold the description into the message text.
@@ -427,6 +457,52 @@ def _fetch_and_update_profile(conv_id, customer_id, access_token):
         close_old_connections()
 
 
+def _fetch_wasender_profile(conv_id, customer_id, access_token):
+    """Fetch WasenderAPI contact name + profile picture in background."""
+    close_old_connections()
+    try:
+        from api.utils.files import download_profile_to_storage
+        headers = {"Authorization": f"Bearer {access_token}"}
+        update_kwargs = {}
+
+        # 1. Get contact info → name
+        try:
+            resp = requests.get(
+                f"https://www.wasenderapi.com/api/contacts/{customer_id}",
+                headers=headers, timeout=10,
+            )
+            if resp.ok:
+                data = resp.json().get("data", {})
+                name = data.get("name") or data.get("pushname") or ""
+                if name:
+                    update_kwargs["customer_name"] = name
+        except Exception as exc:
+            logger.warning("Wasender contact info fetch failed conv=%s: %s", conv_id, exc)
+
+        # 2. Get profile picture URL
+        try:
+            resp2 = requests.get(
+                f"https://www.wasenderapi.com/api/contacts/{customer_id}/picture",
+                headers=headers, timeout=10,
+            )
+            if resp2.ok:
+                pic_url = (
+                    resp2.json().get("data", {}).get("imgUrl")
+                    or resp2.json().get("imgUrl")
+                )
+                if pic_url:
+                    update_kwargs["profile_image"] = download_profile_to_storage(pic_url)
+        except Exception as exc:
+            logger.warning("Wasender profile pic fetch failed conv=%s: %s", conv_id, exc)
+
+        if update_kwargs:
+            Conversation.objects.filter(pk=conv_id).update(**update_kwargs)
+    except Exception as exc:
+        logger.warning("Wasender profile fetch crashed conv=%s: %s", conv_id, exc)
+    finally:
+        close_old_connections()
+
+
 # ---------------------------------------------------------------------------
 # Base webhook view
 # ---------------------------------------------------------------------------
@@ -454,6 +530,7 @@ class _BaseWebhookView(View):
                 self.platform,
                 messages,
                 integration.access_token or "",
+                integration.provider or "meta",
             )
 
 
@@ -543,6 +620,35 @@ class InstagramWebhookView(_MetaWebhookView):
 
     def post(self, request, username):
         return self._handle_post(request, username, parse_instagram)
+
+
+# ---------------------------------------------------------------------------
+# WasenderAPI — WhatsApp via third-party provider (no GET verification)
+# ---------------------------------------------------------------------------
+
+@method_decorator(csrf_exempt, name="dispatch")
+class WasenderWebhookView(_BaseWebhookView):
+    platform = "whatsapp"
+
+    def post(self, request, username):
+        integration = self._get_integration(username)
+        if not integration:
+            return HttpResponse("EVENT_RECEIVED", status=200)
+
+        # Verify webhook signature if webhook secret is configured
+        signature = request.headers.get("X-Webhook-Signature", "")
+        webhook_secret = integration.app_secret or ""
+        if webhook_secret and signature and signature != webhook_secret:
+            logger.warning("WasenderAPI webhook: signature mismatch for user=%s", username)
+            return HttpResponse("EVENT_RECEIVED", status=200)
+
+        try:
+            payload = json.loads(request.body)
+        except json.JSONDecodeError:
+            return HttpResponse("EVENT_RECEIVED", status=200)
+
+        self._submit(integration, parse_wasender(payload))
+        return HttpResponse("EVENT_RECEIVED", status=200)
 
 
 # ---------------------------------------------------------------------------
@@ -706,6 +812,7 @@ class MetaAppWebhookView(View):
             platform,
             messages,
             integration.access_token or "",
+            integration.provider or "meta",
         )
         logger.info(
             "App-level webhook: submitted %s msgs to executor for user=%s",

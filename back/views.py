@@ -1126,7 +1126,12 @@ def settingss(request):
         target.app_secret    = request.POST.get("app_secret", "").strip() or None
         target.integration_id = request.POST.get("integration_id", "").strip() or None
         target.is_enabled    = request.POST.get("is_enabled") == "on"
-        target.save(update_fields=["access_token", "app_secret", "integration_id", "is_enabled"])
+        if platform == "whatsapp":
+            target.provider = request.POST.get("provider", "").strip() or "meta"
+        target.save(update_fields=["access_token", "app_secret", "integration_id", "is_enabled", "provider"] if platform == "whatsapp" else None)
+        # Re-save with explicit fields if provider wasn't included above
+        if platform != "whatsapp":
+            target.save(update_fields=["access_token", "app_secret", "integration_id", "is_enabled"])
         messages.success(request, f"{platform.capitalize()} settings saved.")
         return redirect("back:options")
 
