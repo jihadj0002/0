@@ -96,6 +96,24 @@ def resolve_order_items(user, items):
             continue
 
         if live_mode and provider is not None:
+            # If LLM already provided product data from search results, use it directly
+            if item.get("name") and (item.get("price") or item.get("unit_price")):
+                raw_price = str(item.get("price") or item.get("unit_price") or "0")
+                try:
+                    unit_price = Decimal(raw_price)
+                except Exception:
+                    unit_price = Decimal("0")
+                resolved.append({
+                    "pid": pid,
+                    "qty": qty,
+                    "unit_price": unit_price,
+                    "name": item["name"],
+                    "external_id": item.get("external_id") or pid,
+                    "variation_id": item.get("variation_id") or (requested_vid or None),
+                    "product": None,
+                })
+                continue
+
             r = None
             try:
                 r = provider.get_product(pid)
@@ -106,7 +124,7 @@ def resolve_order_items(user, items):
                     results = provider.search(pid, limit=1)
                     r = results[0] if results else None
                 except Exception:
-                    pass
+                    logger.warning("ERP search also failed for pid=%s during order resolution", pid)
             if r:
                 variations = r.get("variations") or []
                 chosen = None
@@ -150,6 +168,9 @@ def resolve_order_items(user, items):
                     "product": None,
                 })
                 continue
+            # ERP unavailable and no cached data
+            errors.append(f"Product '{pid}' not found (ERP unavailable)")
+            continue
 
         errors.append(f"Product '{pid}' not found")
 

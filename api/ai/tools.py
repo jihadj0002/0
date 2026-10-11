@@ -93,7 +93,10 @@ TOOL_DEFINITIONS = [
                             "type": "object",
                             "properties": {
                                 "pid": {"type": "string"},
+                                "name": {"type": "string", "description": "Product name (from search results)"},
+                                "price": {"type": "string", "description": "Product unit price (from search results)"},
                                 "quantity": {"type": "integer"},
+                                "external_id": {"type": "string"},
                                 "variation_id": {
                                     "type": "string",
                                     "description": "Required for products that have variations (size/color). Use the variation_id from search_products/get_product_details.",
