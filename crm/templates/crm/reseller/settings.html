@@ -55,12 +55,12 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <div style="display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap;">
-  <button class="tab-btn active" data-tab="store" onclick="switchTab('store')">Store</button>
-  <button class="tab-btn" data-tab="agent" onclick="switchTab('agent')">Agent</button>
-  <button class="tab-btn" data-tab="behavior" onclick="switchTab('behavior')">Behavior</button>
-  <button class="tab-btn" data-tab="knowledge" onclick="switchTab('knowledge')">Knowledge</button>
-  <button class="tab-btn" data-tab="ai" onclick="switchTab('ai')">AI Status</button>
-  <button class="tab-btn" data-tab="renewal" onclick="switchTab('renewal')">Renewal</button>
+  <button class="tab-btn {% if active_tab == 'store' %}active{% endif %}" data-tab="store" onclick="switchTab('store')">Store</button>
+  <button class="tab-btn {% if active_tab == 'agent' %}active{% endif %}" data-tab="agent" onclick="switchTab('agent')">Agent</button>
+  <button class="tab-btn {% if active_tab == 'behavior' %}active{% endif %}" data-tab="behavior" onclick="switchTab('behavior')">Behavior</button>
+  <button class="tab-btn {% if active_tab == 'knowledge' %}active{% endif %}" data-tab="knowledge" onclick="switchTab('knowledge')">Knowledge</button>
+  <button class="tab-btn {% if active_tab == 'ai' %}active{% endif %}" data-tab="ai" onclick="switchTab('ai')">AI Status</button>
+  <button class="tab-btn {% if active_tab == 'renewal' %}active{% endif %}" data-tab="renewal" onclick="switchTab('renewal')">Renewal</button>
 </div>
 
 <div id="tab-store" class="tab-content {% if active_tab == 'store' %}active{% endif %}">
@@ -235,6 +235,11 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>
 
 <div id="tab-ai" class="tab-content {% if active_tab == 'ai' %}active{% endif %}">
+  {% if integrations|length == 0 %}
+  <div style="background:#fef9c3;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:0.85rem;">
+    No platforms connected yet. Connect Messenger or WhatsApp for AI auto-reply to take effect.
+  </div>
+  {% endif %}
   <form method="POST">
     {% csrf_token %}
     <input type="hidden" name="section" value="ai">

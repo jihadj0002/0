@@ -378,10 +378,13 @@ def client_settings(request, user_id):
         elif section == "ai":
             ai_enabled = request.POST.get("ai_enabled") == "on"
             training_mode = request.POST.get("training_mode") == "on"
-            Integration.objects.filter(user=managed_user).update(is_enabled=ai_enabled)
+            count = Integration.objects.filter(user=managed_user).update(is_enabled=ai_enabled)
             managed_user.profile.is_training = training_mode
             managed_user.profile.save(update_fields=["is_training"])
-            messages.success(request, f"AI auto-reply {'ON' if ai_enabled else 'OFF'}, training mode {'ON' if training_mode else 'OFF'}.")
+            msg = f"AI auto-reply {'ON' if ai_enabled else 'OFF'}"
+            if count == 0:
+                msg += " (no integrations — will take effect when you connect one)"
+            messages.success(request, msg + f", training mode {'ON' if training_mode else 'OFF'}.")
             return redirect(f"{request.path}?tab=ai")
         messages.success(request, f"{section.capitalize()} settings updated.")
         return redirect(f"{request.path}?tab={section}")
