@@ -292,22 +292,31 @@ html, body {
 <body>
   <div class="app">
   <!-- Sidebar -->
-  <aside class="sidebar" id="sidebar">
+<aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="logo">MA</div>
       <div class="brand-text">Matrix AI</div>
     </div>
     <nav class="nav">
-      <a class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'back:dashboard' %}">🏠 Dashboard</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'products' %}active{% endif %}" href="{% url 'back:products' %}">📦 Products</a>
-      <!-- <a class="nav-item {% if request.resolver_match.url_name == 'packages' %}active{% endif %}" href="{% url 'back:packages' %}">🧾 Packages</a> -->
-      <a class="nav-item {% if request.resolver_match.url_name == 'orders' %}active{% endif %}" href="{% url 'back:orders' %}">🧾 Orders</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'c_dashboard' %}active{% endif %}" href="{% url 'back:c_dashboard' %}">🧾 Messages</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}">⚙️ Integrations</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'back:settings' %}">🤖 AI Settings</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'billing' %}active{% endif %}" href="{% url 'back:billing' %}">💳 Billing</a>
-      <a class="nav-item {% if request.resolver_match.url_name == 'tickets' %}active{% endif %}" href="{% url 'back:tickets' %}">🎫 Tickets</a>
-      <a class="nav-item" href="{% url 'front:logout' %}">🚪 Logout</a>
+{% if user.staff_profile.role == 'reseller' %}
+      <a class="nav-item {% if request.resolver_match.url_name == 'manage_users' %}active{% endif %}" href="{% url 'back:manage_users' %}"> Dashboard</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'customer_list' or request.resolver_match.url_name == 'add_client' %}active{% endif %}" href="{% url 'back:customer_list' %}"> Customers</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'wallet_overview' %}active{% endif %}" href="{% url 'back:wallet_overview' %}"> Credits & Wallet</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'reseller_stats' %}active{% endif %}" href="{% url 'back:reseller_stats' %}"> Usage & Analytics</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'transactions' %}active{% endif %}" href="{% url 'back:transactions' %}"> Transactions</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'reseller_settings' %}active{% endif %}" href="{% url 'back:reseller_settings' %}"> Settings</a>
+      <a class="nav-item" href="{% url 'front:logout' %}"> Logout</a>
+      {% else %}
+      <a class="nav-item {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}" href="{% url 'back:dashboard' %}"> Dashboard</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'products' %}active{% endif %}" href="{% url 'back:products' %}"> Products</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'orders' %}active{% endif %}" href="{% url 'back:orders' %}"> Orders</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'c_dashboard' %}active{% endif %}" href="{% url 'back:c_dashboard' %}"> Messages</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'options' %}active{% endif %}" href="{% url 'back:options' %}"> Integrations</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'settings' %}active{% endif %}" href="{% url 'back:settings' %}"> AI Settings</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'billing' %}active{% endif %}" href="{% url 'back:billing' %}"> Billing</a>
+      <a class="nav-item {% if request.resolver_match.url_name == 'tickets' %}active{% endif %}" href="{% url 'back:tickets' %}"> Tickets</a>
+      <a class="nav-item" href="{% url 'front:logout' %}"> Logout</a>
+      {% endif %}
     </nav>
   </aside>
 

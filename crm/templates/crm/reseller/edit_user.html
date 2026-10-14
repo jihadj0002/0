@@ -1,0 +1,45 @@
+{% extends "back/base.html" %}
+{% block title %}Edit User - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.form-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; max-width: 520px; }
+.form-card h1 { font-size: 1.4rem; margin: 0 0 4px; }
+.form-card p { color: var(--muted); margin: 0 0 20px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+.form-group input { width: 100%; padding: 10px 12px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 0.95rem; }
+.form-group input:focus { outline: none; border-color: var(--accent); }
+.form-actions { display: flex; gap: 12px; margin-top: 24px; }
+</style>
+<div class="form-card">
+  <h1>Edit User: {{ managed_user.username }}</h1>
+  <p>Update account details for this user.</p>
+  <form method="POST">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" value="{{ managed_user.username }}" disabled style="opacity: 0.6;">
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" name="email" value="{{ managed_user.email }}">
+    </div>
+    <div class="form-group">
+      <label>First Name</label>
+      <input type="text" name="first_name" value="{{ managed_user.first_name }}">
+    </div>
+    <div class="form-group">
+      <label>Last Name</label>
+      <input type="text" name="last_name" value="{{ managed_user.last_name }}">
+    </div>
+    <div class="form-group">
+      <label>New Password (leave blank to keep current)</label>
+      <input type="password" name="password" placeholder="Enter new password">
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Save Changes</button>
+      <a href="{% url 'back:manage_users' %}" class="btn-sm btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "back/base.html" %}
+{% load static %}
+{% block title %}{{ managed_user.username }} Overview - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.page-header .sub { color: var(--muted); font-size: 0.9rem; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 28px; }
+.stat-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; text-align: center; }
+.stat-card .num { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+.stat-card .lbl { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+.section { margin-bottom: 28px; }
+.section h2 { font-size: 1.15rem; margin: 0 0 12px; }
+.list-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+.list-card table { width: 100%; border-collapse: collapse; }
+.list-card th, .list-card td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+.list-card th { color: var(--muted); font-weight: 600; }
+.nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
+.nav-tabs a:hover { background: var(--soft); }
+.nav-tabs a.active { background: var(--accent); color: #fff; }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1>{{ managed_user.username }}</h1>
+    <div class="sub">{{ managed_user.email|default:"No email" }} — Joined {{ managed_user.date_joined|date:"M d, Y" }}</div>
+  </div>
+  <a href="{% url 'back:manage_users' %}" class="btn-sm btn-outline">Back to Users</a>
+</div>
+
+<div class="nav-tabs">
+  <a href="{% url 'back:client_overview' managed_user.pk %}" class="active">Overview</a>
+  <a href="{% url 'back:client_products' managed_user.pk %}">Products</a>
+  <a href="{% url 'back:client_orders' managed_user.pk %}">Orders</a>
+  <a href="{% url 'back:client_chats' managed_user.pk %}">Chats</a>
+  <a href="{% url 'back:client_settings' managed_user.pk %}">Settings</a>
+  <a href="{% url 'back:client_billing' managed_user.pk %}">Billing</a>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="num">{{ total_sales|floatformat:0 }}</div>
+    <div class="lbl">Sales (BDT)</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ total_conversations }}</div>
+    <div class="lbl">Conversations</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ active_products }}</div>
+    <div class="lbl">Active Products</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ orders_count }}</div>
+    <div class="lbl">Total Orders</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ balance.credits_remaining|default:0 }}</div>
+    <div class="lbl">Credits Left</div>
+  </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+  <div class="section">
+    <h2>Recent Orders</h2>
+    <div class="list-card">
+      {% if recent_orders %}
+      <table>
+        <tr><th>ID</th><th>Amount</th><th>Status</th></tr>
+        {% for o in recent_orders %}
+        <tr><td>{{ o.oid }}</td><td>{{ o.amount }}</td><td>{{ o.status }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <p style="color: var(--muted);">No orders yet.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="section">
+    <h2>Recent Conversations</h2>
+    <div class="list-card">
+      {% if recent_conversations %}
+      <table>
+        <tr><th>Customer</th><th>Platform</th><th>Last Message</th></tr>
+        {% for c in recent_conversations %}
+        <tr><td>{{ c.customer_name|default:c.customer_id }}</td><td>{{ c.platform }}</td><td>{{ c.message_text|truncatechars:30 }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}
+      <p style="color: var(--muted);">No conversations yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

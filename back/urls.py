@@ -1,6 +1,7 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from . import views
+from crm import reseller_views
 
 app_name = "back"
 
@@ -85,4 +86,21 @@ urlpatterns = [
     path("ai-debug/conversations", views.ai_debug_conversations, name="ai_debug_conversations"),
     path("ai-debug/context", views.ai_debug_context, name="ai_debug_context"),
     path("ai-debug/run-tool", views.ai_debug_run_tool, name="ai_debug_run_tool"),
+
+    # Manager (reseller) routes
+    path("manage/", reseller_views.dashboard, name="manage_users"),
+    path("manage/customers/", reseller_views.customer_list, name="customer_list"),
+    path("manage/add/", reseller_views.add_client, name="add_client"),
+    path("manage/wallet/", reseller_views.wallet_overview, name="wallet_overview"),
+    path("manage/transactions/", reseller_views.transactions, name="transactions"),
+    path("manage/settings/", reseller_views.reseller_settings_view, name="reseller_settings"),
+    path("manage/stats/", reseller_views.reseller_stats, name="reseller_stats"),
+    path("manage/<int:user_id>/edit/", reseller_views.edit_client, name="edit_client"),
+    path("manage/<int:user_id>/topup/", reseller_views.topup_client, name="topup_client"),
+    path("manage/<int:user_id>/overview/", reseller_views.client_overview, name="client_overview"),
+    path("manage/<int:user_id>/products/", reseller_views.client_products, name="client_products"),
+    path("manage/<int:user_id>/orders/", reseller_views.client_orders, name="client_orders"),
+    path("manage/<int:user_id>/chats/", reseller_views.client_chats, name="client_chats"),
+    path("manage/<int:user_id>/settings/", reseller_views.client_settings, name="client_settings"),
+    path("manage/<int:user_id>/billing/", reseller_views.client_billing, name="client_billing"),
 ]

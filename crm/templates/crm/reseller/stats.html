@@ -1,0 +1,39 @@
+{% extends "back/base.html" %}
+{% block title %}Sales Overview - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.stat-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; text-align: center; }
+.stat-card .num { font-size: 2rem; font-weight: 700; color: var(--accent); }
+.stat-card .lbl { font-size: 0.9rem; color: var(--muted); margin-top: 6px; }
+</style>
+
+<div class="page-header">
+  <h1> Sales Overview</h1>
+</div>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="num">{{ total_clients }}</div>
+    <div class="lbl">Total Clients</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ total_sales|floatformat:0 }}</div>
+    <div class="lbl">Total Sales (BDT)</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ total_orders }}</div>
+    <div class="lbl">Total Orders</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ total_conversations }}</div>
+    <div class="lbl">Total Conversations</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ total_credits|floatformat:0 }}</div>
+    <div class="lbl">Credits Across Users</div>
+  </div>
+</div>
+{% endblock %}

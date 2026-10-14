@@ -21,6 +21,8 @@ class Plan(models.Model):
 
     name = models.CharField(max_length=20, choices=PLAN_CHOICES, unique=True)
     monthly_credits = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    reseller_price = models.DecimalField(max_digits=12, decimal_places=4, default=0,
+                                         help_text="Credits deducted from reseller pool when assigning this plan")
     max_messages_per_month = models.IntegerField(default=0, help_text="0 = unlimited")
     allowed_models = models.JSONField(default=list, blank=True, help_text='e.g. ["openai/gpt-4o-mini"]')
     price_per_month = models.DecimalField(max_digits=10, decimal_places=2, default=0)
@@ -136,6 +138,9 @@ class CreditTransaction(models.Model):
         ("top_up", "Top-up"),
         ("adjustment", "Manual Adjustment"),
         ("plan_change", "Plan Change"),
+        ("top_up_pool_in", "Manager Pool Top-up"),
+        ("top_up_pool_out", "Manager Pool Deduction"),
+        ("top_up_from_manager", "Top-up from Manager"),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="credit_transactions")

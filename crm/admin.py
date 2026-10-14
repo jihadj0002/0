@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ResellerBalance, ResellerClient,
     StaffProfile, PipelineStage, Company, Lead, Activity, CallLog, Meeting,
     Task, Followup, SalesScript, FAQ, Customer, Notification, CrmSetting,
     LearningTopic, LearningArticle,
@@ -161,3 +162,16 @@ class CampaignLeadAdmin(admin.ModelAdmin):
     list_display = ["lead", "campaign", "status", "sent_at", "opened_at"]
     list_filter = ["status", "campaign"]
     search_fields = ["lead__name"]
+
+
+@admin.register(ResellerBalance)
+class ResellerBalanceAdmin(admin.ModelAdmin):
+    list_display = ["user", "pool_credits", "updated_at"]
+    search_fields = ["user__username", "user__email"]
+
+
+@admin.register(ResellerClient)
+class ResellerClientAdmin(admin.ModelAdmin):
+    list_display = ["reseller", "client", "created_at"]
+    list_filter = ["reseller"]
+    search_fields = ["reseller__username", "client__username"]

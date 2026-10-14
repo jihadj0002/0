@@ -1,0 +1,61 @@
+{% extends "back/base.html" %}
+{% block title %}Transactions - Reseller{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.filter-bar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.filter-bar a { padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.85rem; background: var(--panel); color: #0f172a; border: 1px solid #eef2f6; }
+.filter-bar a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.table-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; overflow-x: auto; }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th, .table-card td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; font-size: 0.85rem; }
+.table-card th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+.amt { font-weight: 600; }
+.amt.positive { color: #16a34a; }
+.amt.negative { color: #dc2626; }
+.type-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+.type-badge.top_up_pool_in { background: #eef2ff; color: #2563eb; }
+.type-badge.top_up_pool_out { background: #fef3c7; color: #d97706; }
+.type-badge.top_up_from_manager { background: #dcfce7; color: #16a34a; }
+.type-badge.deduction { background: #fee2e2; color: #dc2626; }
+.type-badge.top_up { background: #eef2ff; color: #2563eb; }
+</style>
+
+<div class="page-header">
+  <h1>Transactions</h1>
+</div>
+
+<div class="filter-bar">
+  <a href="{% url 'back:transactions' %}" class="{% if type_filter == '' %}active{% endif %}">All</a>
+  <a href="{% url 'back:transactions' %}?type=top_up_pool_in" class="{% if type_filter == 'top_up_pool_in' %}active{% endif %}">Pool In</a>
+  <a href="{% url 'back:transactions' %}?type=top_up_pool_out" class="{% if type_filter == 'top_up_pool_out' %}active{% endif %}">Allocations</a>
+  <a href="{% url 'back:transactions' %}?type=top_up_from_manager" class="{% if type_filter == 'top_up_from_manager' %}active{% endif %}">Top-ups</a>
+  <a href="{% url 'back:transactions' %}?type=deduction" class="{% if type_filter == 'deduction' %}active{% endif %}">Usage</a>
+</div>
+
+<div class="table-card">
+  <table>
+    <tr>
+      <th>Date</th>
+      <th>Type</th>
+      <th>User</th>
+      <th>Amount</th>
+      <th>Balance After</th>
+      <th>Note</th>
+    </tr>
+    {% for txn in txns %}
+    <tr>
+      <td style="font-size: 0.8rem; color: var(--muted);">{{ txn.timestamp|date:"d M H:i" }}</td>
+      <td><span class="type-badge {{ txn.transaction_type }}">{{ txn.get_transaction_type_display }}</span></td>
+      <td>{{ txn.user.username }}</td>
+      <td><span class="amt {% if txn.amount >= 0 %}positive{% else %}negative{% endif %}">{{ txn.amount }}</span></td>
+      <td>{{ txn.balance_after|floatformat:0 }}</td>
+      <td style="font-size: 0.85rem; color: var(--muted);">{{ txn.note|truncatechars:50|default:"—" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" style="text-align: center; color: var(--muted); padding: 40px;">No transactions found.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

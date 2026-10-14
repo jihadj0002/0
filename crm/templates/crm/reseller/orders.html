@@ -1,0 +1,56 @@
+{% extends "back/base.html" %}
+{% block title %}{{ managed_user.username }} Orders - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
+.nav-tabs a:hover { background: var(--soft); }
+.nav-tabs a.active { background: var(--accent); color: #fff; }
+.table-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; overflow-x: auto; }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th, .table-card td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+.table-card th { color: var(--muted); font-weight: 600; }
+.badge { padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; }
+.badge.completed { background: #dcfce7; color: #16a34a; }
+.badge.pending { background: #fef9c3; color: #ca8a04; }
+.badge.cancelled { background: #fee2e2; color: #dc2626; }
+</style>
+
+<div class="nav-tabs">
+  <a href="{% url 'back:client_overview' managed_user.pk %}">Overview</a>
+  <a href="{% url 'back:client_products' managed_user.pk %}">Products</a>
+  <a href="{% url 'back:client_orders' managed_user.pk %}" class="active">Orders</a>
+  <a href="{% url 'back:client_chats' managed_user.pk %}">Chats</a>
+  <a href="{% url 'back:client_settings' managed_user.pk %}">Settings</a>
+  <a href="{% url 'back:client_billing' managed_user.pk %}">Billing</a>
+</div>
+
+<div class="page-header">
+  <h1>Orders — {{ managed_user.username }}</h1>
+</div>
+
+<div class="table-card">
+  <table>
+    <tr>
+      <th>Order ID</th>
+      <th>Customer</th>
+      <th>Amount</th>
+      <th>Status</th>
+      <th>Date</th>
+    </tr>
+    {% for o in all_orders %}
+    <tr>
+      <td>{{ o.oid }}</td>
+      <td>{{ o.customer_name|default:"N/A" }}</td>
+      <td>{{ o.amount }} BDT</td>
+      <td><span class="badge {{ o.status }}">{{ o.status }}</span></td>
+      <td>{{ o.created_at|date:"d M Y" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" style="text-align: center; color: var(--muted); padding: 40px;">No orders yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

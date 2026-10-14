@@ -6,6 +6,7 @@ PLANS = [
     {
         "name": "free",
         "monthly_credits": Decimal("50.0000"),
+        "reseller_price": Decimal("0.0000"),
         "max_messages_per_month": 100,
         "allowed_models": ["openai/gpt-4o-mini"],
         "price_per_month": Decimal("0.00"),
@@ -13,6 +14,7 @@ PLANS = [
     {
         "name": "basic",
         "monthly_credits": Decimal("500.0000"),
+        "reseller_price": Decimal("250.0000"),
         "max_messages_per_month": 1000,
         "allowed_models": ["openai/gpt-4o-mini", "openai/gpt-4o"],
         "price_per_month": Decimal("9.99"),
@@ -20,6 +22,7 @@ PLANS = [
     {
         "name": "pro",
         "monthly_credits": Decimal("2000.0000"),
+        "reseller_price": Decimal("1000.0000"),
         "max_messages_per_month": 0,
         "allowed_models": ["openai/gpt-4o-mini", "openai/gpt-4o", "anthropic/claude-3-5-sonnet", "anthropic/claude-3-haiku"],
         "price_per_month": Decimal("29.99"),
@@ -27,6 +30,7 @@ PLANS = [
     {
         "name": "enterprise",
         "monthly_credits": Decimal("10000.0000"),
+        "reseller_price": Decimal("5000.0000"),
         "max_messages_per_month": 0,
         "allowed_models": [],
         "price_per_month": Decimal("99.99"),

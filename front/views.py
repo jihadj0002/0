@@ -113,7 +113,12 @@ def contact(request):
 
 
 def _post_login_redirect(user):
-    """Staff go to the CRM; tenants with an incomplete setup go to the wizard."""
+    """Staff go to the CRM; resellers go to manage users; tenants with an incomplete setup go to the wizard."""
+    try:
+        if user.staff_profile.role == "reseller" and user.staff_profile.is_active:
+            return redirect("back:manage_users")
+    except Exception:
+        pass
     try:
         if user.staff_profile.is_active:
             return redirect("crm:dashboard")

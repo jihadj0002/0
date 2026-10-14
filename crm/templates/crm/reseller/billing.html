@@ -1,0 +1,84 @@
+{% extends "back/base.html" %}
+{% block title %}{{ managed_user.username }} Billing - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
+.nav-tabs a:hover { background: var(--soft); }
+.nav-tabs a.active { background: var(--accent); color: #fff; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+.stat-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; text-align: center; }
+.stat-card .num { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+.stat-card .lbl { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+.table-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; overflow-x: auto; }
+.table-card table { width: 100%; border-collapse: collapse; }
+.table-card th, .table-card td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
+.table-card th { color: var(--muted); font-weight: 600; }
+.type-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; }
+.type-badge.deduction { background: #fee2e2; color: #dc2626; }
+.type-badge.top_up, .type-badge.top_up_from_manager { background: #dcfce7; color: #16a34a; }
+.type-badge.top_up_pool_in, .type-badge.top_up_pool_out { background: #eef2ff; color: #2563eb; }
+</style>
+
+<div class="nav-tabs">
+  <a href="{% url 'back:client_overview' managed_user.pk %}">Overview</a>
+  <a href="{% url 'back:client_products' managed_user.pk %}">Products</a>
+  <a href="{% url 'back:client_orders' managed_user.pk %}">Orders</a>
+  <a href="{% url 'back:client_chats' managed_user.pk %}">Chats</a>
+  <a href="{% url 'back:client_settings' managed_user.pk %}">Settings</a>
+  <a href="{% url 'back:client_billing' managed_user.pk %}" class="active">Billing</a>
+</div>
+
+<div class="page-header">
+  <h1>Billing — {{ managed_user.username }}</h1>
+</div>
+
+{% if balance %}
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="num">{{ balance.credits_remaining }}</div>
+    <div class="lbl">Credits Remaining</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ balance.plan.name|capfirst }}</div>
+    <div class="lbl">Plan</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ month_totals.credits|default:0|floatformat:0 }}</div>
+    <div class="lbl">Credits Used This Month</div>
+  </div>
+  <div class="stat-card">
+    <div class="num">{{ month_totals.replies|default:0 }}</div>
+    <div class="lbl">Replies This Month</div>
+  </div>
+</div>
+{% endif %}
+
+<div class="page-header" style="margin-top: 20px;">
+  <h2>Recent Transactions</h2>
+</div>
+<div class="table-card">
+  <table>
+    <tr>
+      <th>Type</th>
+      <th>Amount</th>
+      <th>Balance After</th>
+      <th>Note</th>
+      <th>Date</th>
+    </tr>
+    {% for txn in recent_txns %}
+    <tr>
+      <td><span class="type-badge {{ txn.transaction_type }}">{{ txn.get_transaction_type_display }}</span></td>
+      <td>{{ txn.amount }}</td>
+      <td>{{ txn.balance_after }}</td>
+      <td>{{ txn.note|default:"—" }}</td>
+      <td>{{ txn.timestamp|date:"d M H:i" }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" style="text-align: center; color: var(--muted); padding: 40px;">No transactions yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

@@ -14,6 +14,7 @@ class StaffProfile(models.Model):
         ("manager", "Sales Manager"),
         ("staff", "Sales Staff"),
         ("support", "Support"),
+        ("reseller", "Reseller"),
     ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="staff_profile")
@@ -757,3 +758,33 @@ class LearningArticle(models.Model):
                 counter += 1
             self.slug = slug
         super().save(*args, **kwargs)
+
+
+# -----------------------
+# Reseller / Manager
+# -----------------------
+class ResellerBalance(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="reseller_balance")
+    pool_credits = models.DecimalField(max_digits=12, decimal_places=4, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Reseller Balance"
+        verbose_name_plural = "Reseller Balances"
+
+    def __str__(self):
+        return f"{self.user.username} — pool: {self.pool_credits}"
+
+
+class ResellerClient(models.Model):
+    reseller = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reseller_clients")
+    client = models.OneToOneField(User, on_delete=models.CASCADE, related_name="reseller_of")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Reseller Client"
+        verbose_name_plural = "Reseller Clients"
+
+    def __str__(self):
+        return f"{self.reseller.username} → {self.client.username}"

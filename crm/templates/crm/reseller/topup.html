@@ -1,0 +1,43 @@
+{% extends "back/base.html" %}
+{% block title %}Top Up User - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.form-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; max-width: 520px; }
+.form-card h1 { font-size: 1.4rem; margin: 0 0 4px; }
+.form-card p { color: var(--muted); margin: 0 0 20px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.9rem; }
+.form-group input { width: 100%; padding: 10px 12px; border: 1px solid #d0d5dd; border-radius: 8px; font-size: 0.95rem; }
+.form-group input:focus { outline: none; border-color: var(--accent); }
+.balance-cards { display: flex; gap: 16px; margin-bottom: 24px; }
+.bal-card { flex: 1; background: #f8fafc; border-radius: 8px; padding: 16px; text-align: center; }
+.bal-card .num { font-size: 1.6rem; font-weight: 700; color: var(--accent); }
+.bal-card .lbl { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+.form-actions { display: flex; gap: 12px; margin-top: 24px; }
+</style>
+<div class="form-card">
+  <h1>Top Up: {{ managed_user.username }}</h1>
+  <p>Transfer credits from your pool to this user.</p>
+  <div class="balance-cards">
+    <div class="bal-card">
+      <div class="num">{{ reseller_balance.pool_credits }}</div>
+      <div class="lbl">Your Pool Credits</div>
+    </div>
+    <div class="bal-card">
+      <div class="num">{{ user_balance.credits_remaining }}</div>
+      <div class="lbl">User's Current Credits</div>
+    </div>
+  </div>
+  <form method="POST">
+    {% csrf_token %}
+    <div class="form-group">
+      <label>Amount to Transfer</label>
+      <input type="number" name="amount" min="1" step="any" required placeholder="e.g. 1000">
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-primary">Transfer Credits</button>
+      <a href="{% url 'back:manage_users' %}" class="btn-sm btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

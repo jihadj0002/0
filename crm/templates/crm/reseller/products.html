@@ -1,0 +1,62 @@
+{% extends "back/base.html" %}
+{% block title %}{{ managed_user.username }} Products - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
+.nav-tabs a:hover { background: var(--soft); }
+.nav-tabs a.active { background: var(--accent); color: #fff; }
+.prod-grid { display: grid; gap: 12px; }
+.prod-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; display: flex; justify-content: space-between; align-items: center; }
+.prod-info h4 { margin: 0; font-size: 1rem; }
+.prod-info .meta { color: var(--muted); font-size: 0.85rem; }
+.form-card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 24px; }
+.form-card h3 { margin: 0 0 12px; }
+.form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+.form-row input { flex: 1; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 6px; }
+</style>
+
+<div class="nav-tabs">
+  <a href="{% url 'back:client_overview' managed_user.pk %}">Overview</a>
+  <a href="{% url 'back:client_products' managed_user.pk %}" class="active">Products</a>
+  <a href="{% url 'back:client_orders' managed_user.pk %}">Orders</a>
+  <a href="{% url 'back:client_chats' managed_user.pk %}">Chats</a>
+  <a href="{% url 'back:client_settings' managed_user.pk %}">Settings</a>
+  <a href="{% url 'back:client_billing' managed_user.pk %}">Billing</a>
+</div>
+
+<div class="page-header">
+  <h1>Products — {{ managed_user.username }}</h1>
+</div>
+
+<div class="form-card">
+  <h3>Add Product</h3>
+  <form method="POST">
+    {% csrf_token %}
+    <div class="form-row">
+      <input type="text" name="name" placeholder="Product name" required>
+      <input type="number" name="price" placeholder="Price" step="any" required>
+      <input type="number" name="stock_quantity" placeholder="Stock" value="0">
+    </div>
+    <div class="form-row">
+      <input type="text" name="description" placeholder="Description (optional)" style="flex: 3;">
+    </div>
+    <button type="submit" class="btn-primary">Add Product</button>
+  </form>
+</div>
+
+<div class="prod-grid">
+  {% for p in all_products %}
+  <div class="prod-card">
+    <div class="prod-info">
+      <h4>{{ p.name }}</h4>
+      <div class="meta">{{ p.price }} BDT — Stock: {{ p.stock_quantity }}</div>
+    </div>
+  </div>
+  {% empty %}
+  <p style="color: var(--muted); text-align: center; padding: 40px;">No products yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

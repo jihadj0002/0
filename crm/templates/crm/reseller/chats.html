@@ -1,0 +1,68 @@
+{% extends "back/base.html" %}
+{% block title %}{{ managed_user.username }} Chats - Matrix AI{% endblock %}
+{% block content %}
+<style>
+.page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.page-header h1 { font-size: 1.6rem; margin: 0; }
+.nav-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+.nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
+.nav-tabs a:hover { background: var(--soft); }
+.nav-tabs a.active { background: var(--accent); color: #fff; }
+.chat-layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; min-height: 500px; }
+.convo-list { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px; overflow-y: auto; max-height: 600px; }
+.convo-item { padding: 10px 12px; border-radius: 8px; cursor: pointer; text-decoration: none; display: block; color: inherit; margin-bottom: 4px; }
+.convo-item:hover { background: var(--soft); }
+.convo-item.active { background: #eef2ff; }
+.convo-item .name { font-weight: 600; font-size: 0.9rem; }
+.convo-item .preview { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg-area { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; overflow-y: auto; max-height: 600px; }
+.msg { margin-bottom: 12px; padding: 10px 14px; border-radius: 8px; max-width: 80%; }
+.msg.customer { background: var(--soft); }
+.msg.bot, .msg.agent { background: #eef2ff; margin-left: auto; }
+.msg .sender { font-size: 0.75rem; font-weight: 600; color: var(--muted); margin-bottom: 2px; }
+.msg .text { font-size: 0.9rem; }
+.msg .time { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.empty-state { text-align: center; padding: 60px; color: var(--muted); }
+</style>
+
+<div class="nav-tabs">
+  <a href="{% url 'back:client_overview' managed_user.pk %}">Overview</a>
+  <a href="{% url 'back:client_products' managed_user.pk %}">Products</a>
+  <a href="{% url 'back:client_orders' managed_user.pk %}">Orders</a>
+  <a href="{% url 'back:client_chats' managed_user.pk %}" class="active">Chats</a>
+  <a href="{% url 'back:client_settings' managed_user.pk %}">Settings</a>
+  <a href="{% url 'back:client_billing' managed_user.pk %}">Billing</a>
+</div>
+
+<div class="page-header">
+  <h1>Chats — {{ managed_user.username }}</h1>
+</div>
+
+<div class="chat-layout">
+  <div class="convo-list">
+    {% for c in all_convo %}
+    <a href="?cid={{ c.id }}" class="convo-item {% if selected_convo.id == c.id %}active{% endif %}">
+      <div class="name">{{ c.customer_name|default:c.customer_id }}</div>
+      <div class="preview">{{ c.message_text|truncatechars:40|default:"No messages" }}</div>
+    </a>
+    {% empty %}
+    <p style="color: var(--muted); text-align: center;">No conversations.</p>
+    {% endfor %}
+  </div>
+  <div class="msg-area">
+    {% if messages_list %}
+      {% for m in messages_list %}
+      <div class="msg {{ m.sender }}">
+        <div class="sender">{{ m.get_sender_display }}</div>
+        <div class="text">{{ m.text }}</div>
+        <div class="time">{{ m.timestamp|date:"d M H:i" }}</div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <p>Select a conversation to view messages.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

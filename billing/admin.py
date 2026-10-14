@@ -9,7 +9,7 @@ from .models import CreditTransaction, ModelPricing, Plan, UsageSummary, UserBal
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    list_display = ("name", "monthly_credits", "max_messages_per_month", "price_per_month", "is_active")
+    list_display = ("name", "monthly_credits", "reseller_price", "max_messages_per_month", "price_per_month", "is_active")
     list_filter = ("is_active",)
     ordering = ("price_per_month",)
 
