@@ -780,7 +780,9 @@ class ResellerBalance(models.Model):
 class ResellerClient(models.Model):
     reseller = models.ForeignKey(User, on_delete=models.CASCADE, related_name="reseller_clients")
     client = models.OneToOneField(User, on_delete=models.CASCADE, related_name="reseller_of")
+    auto_renew = models.BooleanField(default=True, help_text="Auto-deduct renewal credits from reseller pool each month")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name = "Reseller Client"

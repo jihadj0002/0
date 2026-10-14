@@ -14,15 +14,19 @@
 .table-card th, .table-card td { text-align: left; padding: 12px 8px; border-bottom: 1px solid #f1f5f9; font-size: 0.9rem; }
 .table-card th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
 .badge { padding: 2px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; }
-.badge.active { background: #dcfce7; color: #16a34a; }
+.badge.active { backround: #dcfce7; color: #16a34a; }
 .badge.low { background: #fef3c7; color: #d97706; }
 .badge.suspended { background: #fee2e2; color: #dc2626; }
+.badge.renewal_needed { background: #ffedd5; color: #c2410c; }
 .actions-cell { display: flex; gap: 6px; flex-wrap: nowrap; }
 .btn-action { display: inline-flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: opacity 0.15s; white-space: nowrap; }
 .btn-action:hover { opacity: 0.8; }
 .btn-action.view { background: #eef2ff; color: #2563eb; }
 .btn-action.topup { background: #fef3c7; color: #d97706; }
 .btn-action.edit { background: #f1f5f9; color: #475569; }
+.btn-action.renew { background: #dcfce7; color: #16a34a; }
+.btn-action.suspend { background: #fee2e2; color: #dc2626; }
+.btn-action.reactivate { background: #eef2ff; color: #2563eb; }
 </style>
 
 <div class="page-header">
@@ -31,9 +35,10 @@
 </div>
 
 <div class="filter-bar">
-  <a href="{% url 'back:customer_list' %}" class="{% if active_filter == 'all' %}active{% endif %}">All ({{ user_data|length }})</a>
+  <a href="{% url 'back:customer_list' %}" class="{% if active_filter == 'all' %}active{% endif %}">All</a>
   <a href="{% url 'back:customer_list' %}?status=active" class="{% if active_filter == 'active' %}active{% endif %}">Active</a>
   <a href="{% url 'back:customer_list' %}?status=low" class="{% if active_filter == 'low' %}active{% endif %}">Low Credits</a>
+  <a href="{% url 'back:customer_list' %}?status=renewal_needed" class="{% if active_filter == 'renewal_needed' %}active{% endif %}">Renewal Needed</a>
   <a href="{% url 'back:customer_list' %}?status=suspended" class="{% if active_filter == 'suspended' %}active{% endif %}">Suspended</a>
   <form class="search-form" method="GET">
     <input type="text" name="q" placeholder="Search name or email..." value="{{ query }}">
@@ -49,7 +54,7 @@
       <th>Allocated</th>
       <th>Used</th>
       <th>Status</th>
-      <th>Created</th>
+      <th>Auto</th>
       <th>Actions</th>
     </tr>
     {% for item in user_data %}
@@ -62,12 +67,24 @@
       <td>{{ item.allocated|floatformat:0 }}</td>
       <td>{{ item.consumed|floatformat:0 }}</td>
       <td><span class="badge {{ item.status }}">{{ item.status }}</span></td>
-      <td style="font-size: 0.85rem; color: var(--muted);">{{ item.created|date:"d M Y" }}</td>
+      <td style="font-size: 0.8rem; color: var(--muted);">
+        {% if item.auto_renew %}ON{% else %}OFF{% endif %}
+        <a href="{% url 'back:toggle_auto_renew' item.user.pk %}" style="font-size: 0.75rem; color: var(--accent);">toggle</a>
+      </td>
       <td>
         <div class="actions-cell">
-          <a href="{% url 'back:client_overview' item.user.pk %}" class="btn-action view">👁 View</a>
-          <a href="{% url 'back:topup_client' item.user.pk %}" class="btn-action topup">💰 Top Up</a>
-          <a href="{% url 'back:edit_client' item.user.pk %}" class="btn-action edit">⚙ Edit</a>
+          <a href="{% url 'back:client_overview' item.user.pk %}" class="btn-action view">View</a>
+          {% if item.status == 'renewal_needed' or item.status == 'suspended' %}
+          <a href="{% url 'back:renew_client' item.user.pk %}" class="btn-action renew">Renew</a>
+          {% endif %}
+          {% if item.status == 'active' or item.status == 'low' %}
+          <a href="{% url 'back:topup_client' item.user.pk %}" class="btn-action topup">Top Up</a>
+          <a href="{% url 'back:suspend_client' item.user.pk %}" class="btn-action suspend" onclick="return confirm('Suspend this customer?')">Suspend</a>
+          {% endif %}
+          {% if item.status == 'suspended' %}
+          <a href="{% url 'back:reactivate_client' item.user.pk %}" class="btn-action reactivate">Reactivate</a>
+          {% endif %}
+          <a href="{% url 'back:edit_client' item.user.pk %}" class="btn-action edit">Edit</a>
         </div>
       </td>
     </tr>

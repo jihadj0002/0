@@ -103,4 +103,8 @@ urlpatterns = [
     path("manage/<int:user_id>/chats/", reseller_views.client_chats, name="client_chats"),
     path("manage/<int:user_id>/settings/", reseller_views.client_settings, name="client_settings"),
     path("manage/<int:user_id>/billing/", reseller_views.client_billing, name="client_billing"),
+    path("manage/<int:user_id>/renew/", reseller_views.renew_client, name="renew_client"),
+    path("manage/<int:user_id>/suspend/", reseller_views.suspend_client, name="suspend_client"),
+    path("manage/<int:user_id>/reactivate/", reseller_views.reactivate_client, name="reactivate_client"),
+    path("manage/<int:user_id>/toggle-auto-renew/", reseller_views.toggle_auto_renew, name="toggle_auto_renew"),
 ]

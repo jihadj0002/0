@@ -61,6 +61,14 @@ def dashboard(request):
             "credits": bal.credits_remaining if bal else 0,
         })
 
+    # Customers needing renewal (renewal_date has passed)
+    overdue = 0
+    for u in clients.iterator():
+        bal = getattr(u, "balance", None)
+        rc = getattr(u, "reseller_of", None)
+        if rc and bal and bal.renewal_date <= now:
+            overdue += 1
+
     return render(request, "crm/reseller/dashboard.html", {
         "total_customers": clients.count(),
         "pool_credits": pool,
@@ -70,6 +78,7 @@ def dashboard(request):
         "recent_activity": recent_activity,
         "recent_customers": recent_customers,
         "low_balance": pool > 0 and total_received > 0 and (pool / total_received) < Decimal("0.2"),
+        "overdue_count": overdue,
     })
 
 
@@ -387,6 +396,8 @@ def client_settings(request, user_id):
     integrations = list(Integration.objects.filter(user=managed_user))
     ai_active = any(i.is_enabled for i in integrations)
     is_training = managed_user.profile.is_training
+    rc = getattr(managed_user, "reseller_of", None)
+    auto_renew = rc.auto_renew if rc else True
     return render(request, "crm/reseller/settings.html", {
         "managed_user": managed_user,
         "identity": identity,
@@ -398,6 +409,7 @@ def client_settings(request, user_id):
         "timezones": timezones,
         "ai_active": ai_active,
         "is_training": is_training,
+        "auto_renew": auto_renew,
     })
 
 
@@ -450,6 +462,7 @@ def customer_list(request):
     users = _clients_qs(request).select_related("profile", "balance__plan").order_by("-date_joined")
     q = request.GET.get("q", "").strip()
     status_filter = request.GET.get("status", "all")
+    now = timezone.now().date()
     if q:
         users = users.filter(Q(username__icontains=q) | Q(email__icontains=q) | Q(first_name__icontains=q) | Q(last_name__icontains=q))
 
@@ -457,9 +470,12 @@ def customer_list(request):
     for u in users:
         bal = getattr(u, "balance", None)
         credits = bal.credits_remaining if bal else 0
+        rc = getattr(u, "reseller_of", None)
         # Determine status
         if not u.is_active:
             status = "suspended"
+        elif rc and bal and bal.renewal_date <= now:
+            status = "renewal_needed"
         elif credits <= 0:
             status = "low"
         else:
@@ -474,6 +490,7 @@ def customer_list(request):
             "allocated": allocated,
             "consumed": consumed,
             "status": status,
+            "auto_renew": rc.auto_renew if rc else True,
             "created": u.date_joined,
         })
 
@@ -563,3 +580,112 @@ def reseller_settings_view(request):
     return render(request, "crm/reseller/settings_profile.html", {
         "staff_profile": sp,
     })
+
+
+@login_required
+@reseller_required
+def renew_client(request, user_id):
+    """Manually renew a customer's plan — deduct reseller_price from pool, reset credits."""
+    managed_user = _get_client(request, user_id)
+    rc = getattr(managed_user, "reseller_of", None)
+    if not rc:
+        messages.error(request, "Customer is not linked to a reseller.")
+        return redirect("back:customer_list")
+
+    rb = reseller_pool(request.user)
+    if not rb:
+        messages.error(request, "Reseller balance not found.")
+        return redirect("back:customer_list")
+
+    try:
+        balance = UserBalance.objects.select_for_update().get(user=managed_user)
+    except UserBalance.DoesNotExist:
+        messages.error(request, "Customer balance not found.")
+        return redirect("back:customer_list")
+
+    cost = balance.plan.reseller_price
+    if cost > 0 and rb.pool_credits < cost:
+        messages.error(request, f"Insufficient pool credits. Need {cost}, have {rb.pool_credits}.")
+        return redirect("back:customer_list")
+
+    plan_name = balance.plan.name
+    with transaction.atomic():
+        if cost > 0:
+            rb2 = ResellerBalance.objects.select_for_update().get(pk=rb.pk)
+            rb2.pool_credits -= cost
+            rb2.save(update_fields=["pool_credits", "updated_at"])
+            CreditTransaction.objects.create(
+                user=request.user, amount=-cost, balance_after=rb2.pool_credits,
+                transaction_type="top_up_pool_out",
+                note=f"Manual renewal '{plan_name}' for {managed_user.username}",
+            )
+
+        balance.credits_remaining = balance.plan.monthly_credits
+        balance.credits_total = balance.plan.monthly_credits
+        balance.messages_used = 0
+        balance.renewal_date = UserBalance.next_renewal_date(balance.renewal_date)
+        balance.save(update_fields=["credits_remaining", "credits_total", "messages_used", "renewal_date", "updated_at"])
+
+        Integration.objects.filter(user=managed_user, is_enabled=False).update(is_enabled=True)
+
+        CreditTransaction.objects.create(
+            user=managed_user, amount=balance.plan.monthly_credits,
+            balance_after=balance.credits_remaining, transaction_type="renewal",
+            note=f"Monthly renewal — plan: {plan_name}",
+        )
+
+    messages.success(request, f"'{managed_user.username}' renewed successfully for {plan_name}.")
+    return redirect("back:customer_list")
+
+
+@login_required
+@reseller_required
+def suspend_client(request, user_id):
+    """Suspend a customer — set credits to 0, disable integrations."""
+    managed_user = _get_client(request, user_id)
+    try:
+        balance = UserBalance.objects.select_for_update().get(user=managed_user)
+    except UserBalance.DoesNotExist:
+        messages.error(request, "Customer balance not found.")
+        return redirect("back:customer_list")
+
+    balance.credits_remaining = Decimal("0")
+    balance.credits_total = Decimal("0")
+    balance.save(update_fields=["credits_remaining", "credits_total", "updated_at"])
+
+    Integration.objects.filter(user=managed_user, is_enabled=True).update(is_enabled=False)
+
+    CreditTransaction.objects.create(
+        user=managed_user, amount=0, balance_after=0, transaction_type="adjustment",
+        note=f"Account suspended by reseller {request.user.username}",
+    )
+
+    messages.success(request, f"'{managed_user.username}' has been suspended.")
+    return redirect("back:customer_list")
+
+
+@login_required
+@reseller_required
+def reactivate_client(request, user_id):
+    """Reactivate a suspended customer — re-enable integrations only (renewal adds credits)."""
+    managed_user = _get_client(request, user_id)
+    Integration.objects.filter(user=managed_user, is_enabled=False).update(is_enabled=True)
+    messages.success(request, f"'{managed_user.username}' has been reactivated. Use 'Renew' to add credits.")
+    return redirect("back:customer_list")
+
+
+@login_required
+@reseller_required
+def toggle_auto_renew(request, user_id):
+    """Toggle auto-renew for a customer."""
+    managed_user = _get_client(request, user_id)
+    rc = getattr(managed_user, "reseller_of", None)
+    if not rc:
+        messages.error(request, "Customer is not linked to a reseller.")
+        return redirect("back:customer_list")
+
+    rc.auto_renew = not rc.auto_renew
+    rc.save(update_fields=["auto_renew", "updated_at"])
+    state = "ON" if rc.auto_renew else "OFF"
+    messages.success(request, f"Auto-renew for '{managed_user.username}' turned {state}.")
+    return redirect("back:customer_list")

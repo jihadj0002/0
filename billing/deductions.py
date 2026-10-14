@@ -149,10 +149,69 @@ def top_up(user, amount, note=""):
 def _do_renewal(balance, _today=None):
     """
     Reset credits for a new billing period.
+
+    If the customer belongs to a reseller:
+      - If auto_renew=True: try to deduct reseller_price from the reseller's
+        pool.  If the pool is sufficient, renew normally.  If not, leave
+        the balance untouched (no free lunch).
+      - If auto_renew=False: do nothing — the reseller handles renewal
+        manually via the dashboard.
+
+    Direct (non-reseller) customers get the normal free renewal.
     Called inside an existing select_for_update() transaction block.
     """
     from .models import CreditTransaction, UserBalance
 
+    # ── Reseller check ─────────────────────────────────────────────────
+    try:
+        rc = balance.user.reseller_of
+    except Exception:
+        rc = None
+
+    if rc:
+        # Managed by a reseller
+        if rc.auto_renew:
+            from crm.models import ResellerBalance
+            from decimal import Decimal
+
+            cost = balance.plan.reseller_price
+            # cost could be 0 for the Free plan
+            if cost > 0:
+                try:
+                    rb = ResellerBalance.objects.select_for_update().get(user=rc.reseller)
+                except ResellerBalance.DoesNotExist:
+                    rb = None
+
+                if rb is None or rb.pool_credits < cost:
+                    # Insufficient pool – skip renewal, log a warning and
+                    # leave the balance untouched.  The customer will see a
+                    # "Renewal needed" status on the reseller dashboard.
+                    logger.warning(
+                        "Renewal skipped for user=%s (reseller=%s) — "
+                        "pool has %s, need %s",
+                        balance.user_id, rc.reseller_id,
+                        rb.pool_credits if rb else 0, cost,
+                    )
+                    return
+
+                # Sufficient – deduct from reseller pool
+                rb.pool_credits -= cost
+                rb.save(update_fields=["pool_credits", "updated_at"])
+
+                CreditTransaction.objects.create(
+                    user=rc.reseller,
+                    amount=-cost,
+                    balance_after=rb.pool_credits,
+                    transaction_type="top_up_pool_out",
+                    note=f"Auto-renewal '{balance.plan.name}' for {balance.user.username}",
+                )
+            # cost == 0 (Free plan) – skip deduction, just renew below
+
+        else:
+            # auto_renew is off – reseller handles manually
+            return
+
+    # ── Normal renewal (direct customers + reseller customers with pool) ─
     old_credits = balance.credits_remaining
     new_credits = balance.plan.monthly_credits
 

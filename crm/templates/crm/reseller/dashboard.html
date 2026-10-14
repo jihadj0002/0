@@ -11,6 +11,8 @@
 .stat-card .lbl { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
 .stat-card .sub { font-size: 0.8rem; color: #16a34a; margin-top: 2px; }
 .alert-banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 0.9rem; font-weight: 600; color: #92400e; }
+.alert-banner.danger { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
+.alert-banner.success { background: #dcfce7; border-color: #16a34a; color: #166534; }
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .card { background: var(--panel); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
 .card h2 { font-size: 1.05rem; margin: 0 0 12px; }
@@ -36,6 +38,10 @@
 
 {% if low_balance %}
 <div class="alert-banner">Low pool credits — you have {{ pool_credits }} credits remaining. Contact admin to reload.</div>
+{% endif %}
+
+{% if overdue_count %}
+<div class="alert-banner danger">{{ overdue_count }} customer(s) need renewal. <a href="{% url 'back:customer_list' %}?status=renewal_needed" style="color: #991b1b; font-weight: 700;">View</a></div>
 {% endif %}
 
 <div class="stats-grid">

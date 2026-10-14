@@ -60,6 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
   <button class="tab-btn" data-tab="behavior" onclick="switchTab('behavior')">Behavior</button>
   <button class="tab-btn" data-tab="knowledge" onclick="switchTab('knowledge')">Knowledge</button>
   <button class="tab-btn" data-tab="ai" onclick="switchTab('ai')">AI Status</button>
+  <button class="tab-btn" data-tab="renewal" onclick="switchTab('renewal')">Renewal</button>
 </div>
 
 <div id="tab-store" class="tab-content {% if active_tab == 'store' %}active{% endif %}">
@@ -261,5 +262,26 @@ document.addEventListener('DOMContentLoaded', function() {
       <button type="submit" class="btn-primary" style="margin-top: 16px;">Save AI Status</button>
     </div>
   </form>
+</div>
+
+<div id="tab-renewal" class="tab-content {% if active_tab == 'renewal' %}active{% endif %}">
+  <div class="form-card">
+    <h2>Auto-Renewal Settings</h2>
+    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+      <div style="font-size: 0.95rem; font-weight: 600;">Auto-Renewal is currently:</div>
+      {% if auto_renew %}
+      <span style="padding: 4px 16px; border-radius: 20px; background: #dcfce7; color: #16a34a; font-weight: 700; font-size: 0.9rem;">ON</span>
+      {% else %}
+      <span style="padding: 4px 16px; border-radius: 20px; background: #fee2e2; color: #dc2626; font-weight: 700; font-size: 0.9rem;">OFF</span>
+      {% endif %}
+    </div>
+    <p style="color: var(--muted); font-size: 0.85rem; margin-bottom: 16px;">
+      When ON: credits are automatically deducted from your pool each month to renew this customer's plan.
+      When OFF: you must manually renew via the Customers page.
+    </p>
+    <a href="{% url 'back:toggle_auto_renew' managed_user.pk %}" class="btn-primary" style="display: inline-block;">
+      Turn {% if auto_renew %}OFF{% else %}ON{% endif %} Auto-Renewal
+    </a>
+  </div>
 </div>
 {% endblock %}
