@@ -2,11 +2,11 @@ import hashlib
 import hmac
 import json
 import logging
+import threading
 import uuid
-from datetime import timedelta
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
-import django_rq
 import requests
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -29,38 +29,30 @@ from .utils.whatsapp import download_whatsapp_media
 
 logger = logging.getLogger(__name__)
 
-BATCH_TIMER_SECONDS = 14
+# Bounded in-process thread pool — handles burst traffic without spawning
+# unlimited threads and without depending on Redis/RQ workers. Runs alongside
+# the gunicorn web process; all webhook + pipeline work stays on this pool.
+_executor = ThreadPoolExecutor(max_workers=50)
 
-_RQ_QUEUE = "default"
+BATCH_TIMER_SECONDS = 5
+
+# Per-conversation debounce timers: {conversation_id: threading.Timer}.
+# The Redis cache key (below) decides which gunicorn process owns the burst;
+# within that process the timer collapses rapid messages into one AI turn.
+_batch_timers: dict[int, threading.Timer] = {}
+_batch_timers_lock = threading.Lock()
 
 
-def _safe_enqueue(func, *args, **kwargs):
-    """Enqueue *func* to RQ.  When RQ/Redis is unavailable, call *func*
-    synchronously as a fallback so messages are never silently dropped.
+def _run_in_executor(func, *args, **kwargs):
+    """Submit *func* to the in-process thread pool.
 
-    Returns ``True`` when the job was enqueued (or executed inline).
+    Returns ``True`` when the job was submitted (or executed inline).
     """
     try:
-        django_rq.get_queue(_RQ_QUEUE).enqueue(func, *args, **kwargs)
+        _executor.submit(func, *args, **kwargs)
         return True
     except Exception:
-        logger.warning("RQ enqueue failed — calling %s inline", func.__name__)
-        func(*args, **kwargs)
-        return False
-
-
-def _safe_enqueue_in(delay, func, *args, **kwargs):
-    """Like :func:`_safe_enqueue` but with ``enqueue_in(*delay, ...)``.
-
-    When RQ is unavailable the function is called immediately (no delay).
-    """
-    try:
-        django_rq.get_queue(_RQ_QUEUE).enqueue_in(
-            timedelta(seconds=delay), func, *args, **kwargs,
-        )
-        return True
-    except Exception:
-        logger.warning("RQ enqueue_in failed — calling %s inline", func.__name__)
+        logger.warning("Executor submit failed — calling %s inline", func.__name__)
         func(*args, **kwargs)
         return False
 
@@ -93,12 +85,25 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 
 def _schedule_batch_pipeline(conversation_id):
     redis_key = f"batch_pipeline:{conversation_id}"
-    if cache.add(redis_key, True, BATCH_TIMER_SECONDS):
-        _safe_enqueue_in(BATCH_TIMER_SECONDS, _fire_batch_pipeline, conversation_id)
+    if not cache.add(redis_key, True, BATCH_TIMER_SECONDS):
+        return
+    with _batch_timers_lock:
+        existing = _batch_timers.get(conversation_id)
+        if existing is not None:
+            existing.cancel()
+        t = threading.Timer(
+            BATCH_TIMER_SECONDS,
+            lambda cid: _run_in_executor(_fire_batch_pipeline, cid),
+            args=(conversation_id,),
+        )
+        t.daemon = True
+        _batch_timers[conversation_id] = t
+        t.start()
 
 
 def _fire_batch_pipeline(conversation_id):
-    from types import SimpleNamespace
+    with _batch_timers_lock:
+        _batch_timers.pop(conversation_id, None)
 
     lock_key = f"pipeline_inflight:{conversation_id}"
     if not cache.add(lock_key, True, 120):
@@ -226,11 +231,11 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled, provide
 
     # Fetch Messenger profile asynchronously so it never blocks message processing.
     if created and platform == "messenger":
-        _safe_enqueue(_fetch_and_update_profile, conv.pk, customer_id, access_token)
+        _run_in_executor(_fetch_and_update_profile, conv.pk, customer_id, access_token)
 
     # Fetch WasenderAPI contact name/profile pic for new WhatsApp conversations.
     if created and platform == "whatsapp" and provider == "wasender":
-        _safe_enqueue(_fetch_wasender_profile, conv.pk, customer_id, access_token)
+        _run_in_executor(_fetch_wasender_profile, conv.pk, customer_id, access_token)
 
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
@@ -551,7 +556,7 @@ class _BaseWebhookView(View):
 
     def _submit(self, integration, messages):
         if messages:
-            _safe_enqueue(
+            _run_in_executor(
                 _process_webhook,
                 integration.user_id,
                 self.platform,
@@ -690,7 +695,7 @@ class WasenderWebhookView(_BaseWebhookView):
                     ai_enabled, "wasender",
                 )
                 if conv_id and ai_enabled:
-                    _fire_batch_pipeline(conv_id)
+                    _schedule_batch_pipeline(conv_id)
         except Exception:
             logger.exception("WasenderAPI inline processing failed user=%s", username)
 
@@ -852,7 +857,7 @@ class MetaAppWebhookView(View):
         if not messages:
             return
 
-        _safe_enqueue(
+        _run_in_executor(
             _process_webhook,
             integration.user_id,
             platform,
@@ -871,8 +876,7 @@ class MetaAppWebhookView(View):
 # ---------------------------------------------------------------------------
 
 def recover_zombie_batches():
-    """Enqueue RQ jobs for unprocessed MessageBatch rows. Never runs the pipeline directly."""
-    import django_rq
+    """Process MessageBatch rows left behind after a restart via the in-process pool."""
     lock_key = "zombie_recovery_lock"
     if not cache.add(lock_key, True, 300):
         return
@@ -888,7 +892,7 @@ def recover_zombie_batches():
             if not conv.is_ai_enabled:
                 orphan.filter(conversation_id=cid).update(processed=True)
                 continue
-            _safe_enqueue(_fire_batch_pipeline, cid)
+            _run_in_executor(_fire_batch_pipeline, cid)
         except Conversation.DoesNotExist:
             orphan.filter(conversation_id=cid).delete()
         except Exception:

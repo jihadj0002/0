@@ -1,8 +1,7 @@
-import subprocess
 import sys
+import threading
 
 from django.apps import AppConfig
-from django.core.cache import cache
 
 
 class ApiConfig(AppConfig):
@@ -13,24 +12,9 @@ class ApiConfig(AppConfig):
         if "test" in sys.argv:
             return
         self._recover_zombies()
-        self._start_rq_workers()
 
     def _recover_zombies(self):
-        try:
+        def run():
             from .webhooks import recover_zombie_batches
             recover_zombie_batches()
-        except Exception:
-            pass
-
-    def _start_rq_workers(self):
-        if not cache.add("rq_worker_start_lock", True, 120):
-            return
-        try:
-            subprocess.Popen(
-                ["python", "manage.py", "rqworker-pool", "default", "email",
-                 "--num-workers", "5"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-        except Exception:
-            pass
+        threading.Thread(target=run, daemon=True).start()
