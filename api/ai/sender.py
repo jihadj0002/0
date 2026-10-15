@@ -533,3 +533,13 @@ def _post(url, headers, payload):
         msg = f"{url}: request error: {exc}"
         logger.warning("Platform send request error: %s", exc)
         return False, msg
+
+async def send_reply_async(conversation, text, image_urls=None, product_cards=None):
+    """Async wrapper around :func:`send_reply` for the event-loop pipeline.
+
+    The platform send itself is a burst of short HTTP posts; running it on the
+    sync pool keeps the loop free while staying behaviourally identical.
+    """
+    from api.concurrency import run_in_thread
+    return await run_in_thread(send_reply, conversation, text,
+                               image_urls=image_urls, product_cards=product_cards)

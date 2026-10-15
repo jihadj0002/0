@@ -2,7 +2,6 @@ import hashlib
 import hmac
 import json
 import logging
-import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
@@ -29,18 +28,19 @@ from .utils.whatsapp import download_whatsapp_media
 
 logger = logging.getLogger(__name__)
 
+from .concurrency import call_later, run_in_thread, submit_async, submit_sync
+
 # Bounded in-process thread pool — handles burst traffic without spawning
 # unlimited threads and without depending on Redis/RQ workers. Runs alongside
-# the gunicorn web process; all webhook + pipeline work stays on this pool.
+# the gunicorn web process; the fast webhook persist + profile fetches stay
+# on this pool while the AI pipeline itself runs on the async event loop.
 _executor = ThreadPoolExecutor(max_workers=50)
 
 BATCH_TIMER_SECONDS = 5
 
-# Per-conversation debounce timers: {conversation_id: threading.Timer}.
-# The Redis cache key (below) decides which gunicorn process owns the burst;
-# within that process the timer collapses rapid messages into one AI turn.
-_batch_timers: dict[int, threading.Timer] = {}
-_batch_timers_lock = threading.Lock()
+# Cross-process burst dedupe / single-run lock keys live in the Django cache
+# (Redis when available). The async fire for a conversation is submitted via
+# `call_later`; a single event loop services all conversations concurrently.
 
 
 def _run_in_executor(func, *args, **kwargs):
@@ -84,39 +84,33 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 
 
 def _schedule_batch_pipeline(conversation_id):
+    """Debounce the AI turn for a conversation.
+
+    The ``batch_pipeline:{cid}`` cache key (Redis when available) makes this a
+    cross-process dedupe: only the gunicorn process that wins ``cache.add`` is
+    responsible for firing the turn, so rapid bursts collapse into one call no
+    matter which web processes received the messages.
+
+    The fire itself is scheduled on the async event loop — never a blocking
+    thread — so a 30-90s LLM turn for one conversation doesn't hold anything
+    back for the thousands of other conversations being processed.
+    """
     redis_key = f"batch_pipeline:{conversation_id}"
     if not cache.add(redis_key, True, BATCH_TIMER_SECONDS):
         return
-    with _batch_timers_lock:
-        existing = _batch_timers.get(conversation_id)
-        if existing is not None:
-            existing.cancel()
-        t = threading.Timer(
-            BATCH_TIMER_SECONDS,
-            lambda cid: _run_in_executor(_fire_batch_pipeline, cid),
-            args=(conversation_id,),
-        )
-        t.daemon = True
-        _batch_timers[conversation_id] = t
-        t.start()
+    call_later(BATCH_TIMER_SECONDS, lambda: _fire_batch_pipeline(conversation_id))
 
 
-def _fire_batch_pipeline(conversation_id):
-    with _batch_timers_lock:
-        _batch_timers.pop(conversation_id, None)
+def _prepare_batch_pipeline(conversation_id):
+    """Synchronous DB prep for a pipeline turn (runs in the thread pool).
 
-    lock_key = f"pipeline_inflight:{conversation_id}"
-    if not cache.add(lock_key, True, 120):
-        logger.info("Pipeline already in flight conv=%s — skipping", conversation_id)
-        return
-    close_old_connections()
-    cache.delete(f"batch_pipeline:{conversation_id}")
-
+    Returns ``(conversation, batch_pks, combined_text)`` or None when there is
+    nothing to do / AI is disabled.
+    """
     try:
         conversation = Conversation.objects.get(id=conversation_id)
     except Conversation.DoesNotExist:
-        cache.delete(lock_key)
-        return
+        return None
 
     ai_still_enabled = conversation.is_ai_enabled
     if not ai_still_enabled:
@@ -133,8 +127,7 @@ def _fire_batch_pipeline(conversation_id):
         MessageBatch.objects.filter(
             conversation=conversation, processed=False
         ).update(processed=True)
-        cache.delete(lock_key)
-        return
+        return None
 
     batch_pks = list(
         MessageBatch.objects.filter(
@@ -143,8 +136,7 @@ def _fire_batch_pipeline(conversation_id):
         ).order_by("timestamp").values_list("pk", flat=True)
     )
     if not batch_pks:
-        cache.delete(lock_key)
-        return
+        return None
 
     batch_items = [
         b for b in MessageBatch.objects.filter(pk__in=batch_pks)
@@ -153,14 +145,39 @@ def _fire_batch_pipeline(conversation_id):
     ]
     if not batch_items:
         MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+        return None
+    combined_text = batch_items[-1].message_text
+    return conversation, batch_pks, combined_text
+
+
+def _mark_batches_processed(batch_pks):
+    MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+
+
+async def _fire_batch_pipeline(conversation_id):
+    """Run one AI turn for a conversation on the async event loop.
+
+    Coordination (lock + DB prep) is dispatched to the thread pool so the loop
+    stays responsive; the long LLM/ERP/send work is awaited inside
+    ``pipeline.run_async``. Batches are marked processed only on success so a
+    crash keeps them queued for the periodic zombie sweep.
+    """
+    lock_key = f"pipeline_inflight:{conversation_id}"
+    if not cache.add(lock_key, True, 120):
+        logger.info("Pipeline already in flight conv=%s — skipping", conversation_id)
+        return
+    cache.delete(f"batch_pipeline:{conversation_id}")
+
+    prep = await run_in_thread(_prepare_batch_pipeline, conversation_id)
+    if prep is None:
         cache.delete(lock_key)
         return
-    combined_text = batch_items[-1].message_text
 
+    conversation, batch_pks, combined_text = prep
     unified = SimpleNamespace(text=combined_text)
     try:
-        from api.ai.pipeline import run
-        run(conversation, unified)
+        from api.ai.pipeline import run_async
+        await run_async(conversation, unified)
     except Exception:
         logger.exception(
             "Pipeline crashed conv=%s — batches preserved for retry", conversation_id
@@ -168,7 +185,7 @@ def _fire_batch_pipeline(conversation_id):
         cache.delete(lock_key)
         return
 
-    MessageBatch.objects.filter(pk__in=batch_pks).update(processed=True)
+    await run_in_thread(_mark_batches_processed, batch_pks)
     cache.delete(lock_key)
 
 
@@ -876,7 +893,7 @@ class MetaAppWebhookView(View):
 # ---------------------------------------------------------------------------
 
 def recover_zombie_batches():
-    """Process MessageBatch rows left behind after a restart via the in-process pool."""
+    """Process MessageBatch rows left behind after a restart on the event loop."""
     lock_key = "zombie_recovery_lock"
     if not cache.add(lock_key, True, 300):
         return
@@ -892,7 +909,7 @@ def recover_zombie_batches():
             if not conv.is_ai_enabled:
                 orphan.filter(conversation_id=cid).update(processed=True)
                 continue
-            _run_in_executor(_fire_batch_pipeline, cid)
+            submit_async(_fire_batch_pipeline(cid))
         except Conversation.DoesNotExist:
             orphan.filter(conversation_id=cid).delete()
         except Exception:

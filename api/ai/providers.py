@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import os
 import threading
 import time
 
-from openai import InternalServerError, OpenAI, RateLimitError
+from openai import AsyncOpenAI, InternalServerError, OpenAI, RateLimitError
 
 logger = logging.getLogger(__name__)
 
@@ -102,3 +103,86 @@ def call_llm_with_fallback(messages, tools=None, model=None, temperature=0.7, ma
             "Primary model %s returned 5xx, retrying with fallback %s", model, FALLBACK_MODEL
         )
         return call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)
+
+
+# ---- Async LLM (event-loop path, for the AI pipeline) ---------------------
+# One AsyncOpenAI client per process, created lazily on the event-loop thread.
+# The SDK multiplexes thousands of concurrent in-flight requests over a single
+# connection pool, which is what gives the pipeline its massive concurrency.
+
+_async_client: AsyncOpenAI | None = None
+_async_client_lock = threading.Lock()
+
+
+def _async_client_instance():
+    global _async_client
+    if _async_client is None:
+        with _async_client_lock:
+            if _async_client is None:
+                _async_client = AsyncOpenAI(
+                    base_url=OPENROUTER_BASE_URL,
+                    api_key=_next_api_key(),
+                )
+    return _async_client
+
+
+async def async_call_llm(messages, tools=None, model=None, temperature=0.7, max_tokens=1024):
+    """Async equivalent of :func:`call_llm` — one LLM request, awaited.
+
+    Must be called from the running event loop. Retries on 429 use
+    ``asyncio.sleep`` so the loop keeps servicing other conversations.
+    """
+    model = model or DEFAULT_MODEL
+
+    kwargs = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    last_error = None
+    for attempt in range(MAX_RETRIES_ON_429 + 1):
+        try:
+            client = _async_client_instance()
+            response = await client.chat.completions.create(**kwargs)
+            msg = response.choices[0].message
+            usage = response.usage
+            return msg, {
+                "model": model,
+                "input_tokens": usage.prompt_tokens if usage else 0,
+                "output_tokens": usage.completion_tokens if usage else 0,
+            }
+        except RateLimitError as e:
+            last_error = e
+            if attempt < MAX_RETRIES_ON_429:
+                wait = INITIAL_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "Rate limited (attempt %d/%d), waiting %.1fs before retry",
+                    attempt + 1, MAX_RETRIES_ON_429 + 1, wait,
+                )
+                await asyncio.sleep(wait)
+                continue
+            logger.error("Rate limited after %d attempts, giving up", MAX_RETRIES_ON_429 + 1)
+            raise
+        except InternalServerError:
+            raise
+
+    raise last_error
+
+
+async def async_call_llm_with_fallback(
+    messages, tools=None, model=None, temperature=0.7, max_tokens=1024
+):
+    model = model or DEFAULT_MODEL
+    try:
+        return await async_call_llm(messages, tools, model, temperature, max_tokens)
+    except InternalServerError:
+        if model == FALLBACK_MODEL:
+            raise
+        logger.warning(
+            "Primary model %s returned 5xx, retrying with fallback %s", model, FALLBACK_MODEL
+        )
+        return await async_call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)

@@ -2,7 +2,7 @@ import logging
 
 from django.core.cache import cache
 
-from .embeddings import generate_embedding
+from .embeddings import generate_embedding, generate_embedding_async
 from .models import RAGChunk
 
 logger = logging.getLogger(__name__)
@@ -44,6 +44,56 @@ def search_chunks(user, query, top_k=3, min_score=0.3):
     chunks = cache.get(f"rag:{user.id}:active_chunks")
     if chunks is None:
         chunks = list(RAGChunk.objects.filter(user=user, is_active=True))
+        cache.set(f"rag:{user.id}:active_chunks", chunks, 300)
+
+    if not chunks:
+        return []
+
+    scored = []
+    for c in chunks:
+        if not c.embedding:
+            continue
+        score = cosine_similarity(query_vec, c.embedding)
+        if score >= min_score:
+            scored.append((score, c))
+
+    scored.sort(key=lambda x: -x[0])
+
+    results = []
+    for score, c in scored[:top_k]:
+        content = c.content
+        truncated = len(content) > MAX_CHUNK_CHARS
+        if truncated:
+            content = content[:MAX_CHUNK_CHARS] + "..."
+        results.append({
+            "content": content,
+            "source": c.get_source_display(),
+            "chunk_index": c.chunk_index,
+            "score": round(score, 4),
+            "truncated": truncated,
+        })
+
+    return results
+
+
+async def search_chunks_async(user, query, top_k=3, min_score=0.3):
+    """Async vector search — awaited on the event loop (embedding is network I/O)."""
+    if not query or not query.strip():
+        return []
+
+    query_vec = await generate_embedding_async(query)
+    if not query_vec:
+        return []
+
+    chunks = cache.get(f"rag:{user.id}:active_chunks")
+    if chunks is None:
+        # DB read must not run on the loop thread — offload to the sync pool.
+        from api.concurrency import run_in_thread
+
+        def _load_chunks():
+            return list(RAGChunk.objects.filter(user=user, is_active=True))
+
+        chunks = await run_in_thread(_load_chunks)
         cache.set(f"rag:{user.id}:active_chunks", chunks, 300)
 
     if not chunks:

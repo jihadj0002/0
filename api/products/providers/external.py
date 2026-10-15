@@ -12,9 +12,11 @@ Currently targets the monowamart ERP "AI" API. Key facts (confirmed live):
   * Orders are created with ``POST {base}/order`` (singular).
 """
 
+import asyncio
 import re
 import time
 
+import httpx
 import requests
 
 from .base import ProductProvider
@@ -22,6 +24,17 @@ from .base import ProductProvider
 TIMEOUT = 20
 RETRY_ATTEMPTS = 3
 RETRY_DELAY = 1.0
+
+# Shared async HTTP client used by the event-loop pipeline. httpx reuses
+# connections, so thousands of concurrent ERP lookups share a few sockets.
+_async_client: httpx.AsyncClient | None = None
+
+
+def _get_async_client() -> httpx.AsyncClient:
+    global _async_client
+    if _async_client is None:
+        _async_client = httpx.AsyncClient(timeout=httpx.Timeout(TIMEOUT))
+    return _async_client
 
 _BROWSER_HEADERS = {
     "User-Agent": (
@@ -168,6 +181,126 @@ class ExternalProvider(ProductProvider):
         return []
 
     # --------------------------------------------------------------- interface
+    async def _aget(self, path, params=None):
+        """Async GET with the same retry semantics as ``_get``.
+
+        Uses ``asyncio.sleep`` between retries so the event loop keeps
+        servicing other conversations while the ERP retries.
+        """
+        url = f"{self._base_url()}/{path.lstrip('/')}"
+        client = _get_async_client()
+        last_exc = None
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                r = await client.get(url, params=params, headers=self._headers())
+                if r.status_code >= 500 and attempt < RETRY_ATTEMPTS - 1:
+                    await asyncio.sleep(RETRY_DELAY)
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except httpx.TransportError as exc:
+                last_exc = exc
+                if attempt < RETRY_ATTEMPTS - 1:
+                    await asyncio.sleep(RETRY_DELAY)
+                    continue
+                raise
+        raise last_exc
+
+    async def alist_products(self, limit=50, page=1):
+        try:
+            data = await self._aget("products", params={"page": int(page)})
+            return [self._normalize(p) for p in self._items(data)]
+        except Exception as exc:
+            self.last_error = exc
+            return []
+
+    async def aget_product(self, external_id):
+        try:
+            data = await self._aget("products", params={"search_term": external_id})
+            rows = [self._normalize(p) for p in self._items(data)]
+            return rows[0] if rows else None
+        except Exception as exc:
+            self.last_error = exc
+            return None
+
+    async def asearch(self, query, limit=5):
+        try:
+            data = await self._aget("products", params={"search_term": query})
+            rows = [self._normalize(p) for p in self._items(data)]
+            return rows[: int(limit)]
+        except Exception as exc:
+            self.last_error = exc
+            return []
+
+    async def acreate_order(self, order_payload: dict) -> dict:
+        cust = order_payload.get("customer", {})
+        items = []
+        for it in order_payload.get("items", []):
+            entry = {"product_id": it.get("external_id"), "quantity": int(it.get("quantity") or 1)}
+            if it.get("variation_id"):
+                entry["variation_id"] = it["variation_id"]
+            items.append(entry)
+
+        erp_payload = {
+            "address": {
+                "name": cust.get("name", ""),
+                "mobile": cust.get("phone", ""),
+                "address": cust.get("address", ""),
+            },
+            "items": items,
+            "delivered_to": order_payload.get("delivery_zone", "inside_dhaka"),
+            "shipping_note": order_payload.get("note", ""),
+            "source": "ai",
+            "payment_method": "cod",
+            "rp_redeemed": 0,
+            "rp_redeemed_amount": 0,
+        }
+
+        url = f"{self._base_url()}/order"
+        if self.source and self.source.order_endpoint_url:
+            url = self.source.order_endpoint_url
+
+        try:
+            client = _get_async_client()
+            r = await client.post(url, json=erp_payload, headers=self._headers())
+            if r.status_code in (200, 201, 202):
+                try:
+                    data = r.json()
+                except Exception:
+                    data = {}
+                ext_id = None
+                container = data.get("data", data) if isinstance(data, dict) else {}
+                if isinstance(container, dict):
+                    for k in _ORDER_ID_KEYS:
+                        if container.get(k):
+                            ext_id = str(container[k])
+                            break
+                return {"ok": True, "external_order_id": ext_id, "raw": data, "error": None}
+            return {
+                "ok": False,
+                "external_order_id": None,
+                "raw": {"status": r.status_code, "body": r.text[:500]},
+                "error": f"HTTP {r.status_code}",
+            }
+        except Exception as e:
+            return {"ok": False, "external_order_id": None, "raw": {}, "error": str(e)}
+
+    async def aget_order_status(self, external_order_id) -> dict:
+        try:
+            data = await self._aget(f"orders/{external_order_id}")
+            raw = data.get("data", data) if isinstance(data, dict) and "data" in data else data
+            if not raw:
+                return {"ok": False, "error": "Order not found"}
+            return {
+                "ok": True,
+                "external_order_id": str(raw.get("id")),
+                "status": raw.get("status"),
+                "payment_status": raw.get("payment_status"),
+                "raw": raw,
+            }
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def test_connection(self) -> dict:
         try:
             data = self._get("products", params={"page": 1})

@@ -2,7 +2,7 @@ import hashlib
 import logging
 import os
 
-from openai import OpenAI
+from openai import AsyncOpenAI, OpenAI
 from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
@@ -10,12 +10,24 @@ logger = logging.getLogger(__name__)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 EMBEDDING_MODEL = "text-embedding-3-small"
 
+_async_client: AsyncOpenAI | None = None
+
 
 def _client():
     return OpenAI(
         base_url=OPENROUTER_BASE_URL,
         api_key=os.environ.get("OPENROUTER_API_KEY", ""),
     )
+
+
+def _async_client_instance():
+    global _async_client
+    if _async_client is None:
+        _async_client = AsyncOpenAI(
+            base_url=OPENROUTER_BASE_URL,
+            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        )
+    return _async_client
 
 
 def generate_embedding(text):
@@ -41,6 +53,29 @@ def generate_embedding(text):
         return embedding
     except Exception:
         logger.exception("Embedding generation failed")
+        return []
+
+
+async def generate_embedding_async(text):
+    """Async embedding lookup (awaited on the event loop); cache-first."""
+    if not text or not text.strip():
+        return []
+
+    cache_key = f"embed:{hashlib.md5(text.strip().encode('utf-8')).hexdigest()}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    try:
+        response = await _async_client_instance().embeddings.create(
+            model=EMBEDDING_MODEL,
+            input=text.strip(),
+        )
+        embedding = response.data[0].embedding
+        cache.set(cache_key, embedding, 86400)
+        return embedding
+    except Exception:
+        logger.exception("Async embedding generation failed")
         return []
 
 

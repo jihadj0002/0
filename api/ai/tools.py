@@ -1415,3 +1415,268 @@ def execute_tool(name, arguments, user, conversation):
     except Exception as exc:
         logger.exception("Tool '%s' raised an exception", name)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Async tools (event-loop path)
+# ---------------------------------------------------------------------------
+# The DB-only tools are fast; only the external-catalog tools hit the network,
+# so those get async variants that use the shared httpx client. Everything else
+# is dispatched to the sync pool so the event loop never blocks on DB work.
+
+from api.concurrency import run_in_thread
+
+
+async def _focus_products_async(conversation, products):
+    if not conversation or not products:
+        return
+    await run_in_thread(_focus_products, conversation, products)
+
+
+async def async_tool_search_products(user, query, limit=5, conversation=None,
+                                    min_price=None, max_price=None):
+    """Async search — external sources via shared httpx client, local DB fallback."""
+    def _resolve_source():
+        from api.products.factory import get_active_source, get_provider, is_external
+        source = get_active_source(user)
+        if source and source.mode == "live" and is_external(user):
+            return get_provider(user), True
+        return None, False
+
+    provider, external = await run_in_thread(_resolve_source)
+    try:
+        if external and provider is not None:
+            acs = getattr(provider, "asearch", None)
+            if not acs:
+                raise RuntimeError("provider has no async search")
+            if not (query and query.strip()):
+                rows = await provider.alist_products(limit=limit)
+                rows = rows or []
+                results = [_external_row(r) for r in rows]
+                results = _filter_by_budget(results, min_price, max_price)
+                if results:
+                    await _focus_products_async(conversation, results[:FOCUS_MAX])
+                    out = {"products": results, "total": len(results)}
+                    out["_instruction"] = _search_result_instruction(len(results))
+                    return out
+
+            all_results = []
+            seen_ids = set()
+            for variation in _generate_search_queries(query):
+                if len(seen_ids) >= 4 * limit:
+                    break
+                try:
+                    rows = await acs(variation, limit)
+                    rows = rows or []
+                    for r in rows:
+                        eid = r.get("external_id")
+                        if eid and eid not in seen_ids:
+                            seen_ids.add(eid)
+                            all_results.append(_external_row(r))
+                except Exception:
+                    logger.exception("External async search failed for variation=%s", variation)
+
+            all_results = _filter_by_budget(all_results, min_price, max_price)
+            all_results = all_results[:limit]
+            if all_results:
+                await _focus_products_async(conversation, all_results[:FOCUS_MAX])
+                out = {"products": all_results, "total": len(all_results)}
+                out["_instruction"] = _search_result_instruction(len(all_results), query)
+                return out
+            if query and query.strip():
+                result = {"products": [], "total": 0,
+                          "_instruction": (
+                              f'No catalog items matched "{query}". Either try ONE more search with a '
+                              "different/simpler keyword or synonym, or tell the customer it's currently "
+                              "unavailable. Do NOT present unrelated products."
+                          )}
+                err = getattr(provider, "last_error", None)
+                if err is not None:
+                    status = err.response.status_code if hasattr(err, "response") and err.response is not None else None
+                    result["_error"] = f"ERP HTTP {status}" if status else str(type(err).__name__)
+                return result
+    except Exception:
+        logger.exception("Async external search_products failed; falling back to local DB")
+
+    # Local DB path — fast, run directly (no network).
+    return await run_in_thread(tool_search_products, user, query, limit,
+                               conversation=conversation,
+                               min_price=min_price, max_price=max_price)
+
+
+async def async_tool_get_product_details(user, pid, conversation=None):
+    if conversation:
+        focus_list = parse_focus_products(conversation.current_product)
+        for fp in focus_list:
+            if fp.get("pid") == pid or fp.get("sku") == pid:
+                details = {
+                    "pid": fp.get("pid", ""),
+                    "name": fp.get("name", ""),
+                    "price": str(fp.get("price", "")),
+                    "discounted_price": str(fp.get("discounted_price") or ""),
+                    "stock": fp.get("stock", 0),
+                    "in_stock": fp.get("in_stock", True),
+                    "description": (fp.get("description") or "")[:300],
+                    "upsell_enabled": False,
+                }
+                if fp.get("sku"):
+                    details["sku"] = fp["sku"]
+                if fp.get("external_id"):
+                    details["external_id"] = fp["external_id"]
+                variations = fp.get("variations") or []
+                if variations:
+                    details["variations"] = variations
+                await run_in_thread(_focus_products, conversation, [details])
+                return details
+
+    provider = None
+    try:
+        def _resolve():
+            from api.products.factory import get_active_source, get_provider, is_external
+            source = get_active_source(user)
+            if source and source.mode == "live" and is_external(user):
+                return get_provider(user)
+            return None
+        provider = await run_in_thread(_resolve)
+        if provider is not None:
+            aget = getattr(provider, "aget_product", None)
+            if aget:
+                r = await aget(pid)
+                if not r:
+                    rows = await provider.asearch(pid, limit=1)
+                    r = rows[0] if rows else None
+                if r:
+                    details = {
+                        "pid": r["external_id"], "name": r["name"],
+                        "price": r["price"], "discounted_price": r.get("discounted_price"),
+                        "stock": r.get("stock", 0), "in_stock": r.get("in_stock", True),
+                        "description": r.get("description") or "", "upsell_enabled": False,
+                        "external_id": r["external_id"],
+                    }
+                    if r.get("sku"):
+                        details["sku"] = r["sku"]
+                    variations = r.get("variations") or []
+                    if variations:
+                        details["variations"] = variations
+                    await run_in_thread(_focus_products, conversation, [details])
+                    return details
+    except Exception:
+        logger.exception("Async external get_product_details failed; falling back to local DB")
+
+    return await run_in_thread(tool_get_product_details, user, pid, conversation=conversation)
+
+
+async def async_tool_get_order_status(user, order_id):
+    def _resolve_full():
+        from api.products.factory import get_active_source, get_provider, is_external
+        source = get_active_source(user)
+        if source and source.mode == "live" and is_external(user):
+            return get_provider(user)
+        return None
+
+    try:
+        provider = await run_in_thread(_resolve_full)
+        if provider is not None:
+            astat = getattr(provider, "aget_order_status", None)
+            if astat:
+                result = await astat(order_id)
+                if result and result.get("ok"):
+                    return {
+                        "order_id": result.get("external_order_id"),
+                        "status": result.get("status"),
+                        "external": True,
+                        "payment_status": result.get("payment_status"),
+                    }
+    except Exception:
+        logger.exception("Async external get_order_status failed; falling back")
+    return await run_in_thread(tool_get_order_status, user, order_id)
+
+
+async def async_tool_search_knowledge_base(user, query, limit=3):
+    from context.search import search_chunks_async
+    results = await search_chunks_async(user, query, top_k=limit, min_score=0.3)
+    if not results:
+        return {"results": [], "total": 0, "note": "No matching knowledge found"}
+    return {"results": results, "total": len(results)}
+
+
+async def execute_tool_async(name, arguments, user, conversation):
+    """Async tool dispatcher for the event-loop pipeline.
+
+    Network-bound tools (external catalog) run async; fast DB tools run via
+    ``run_in_thread`` so the loop stays free. Business logic is identical to
+    :func:`execute_tool`.
+    """
+    args = arguments if isinstance(arguments, dict) else {}
+
+    try:
+        if name == "search_products":
+            result = await async_tool_search_products(
+                user, args.get("query", ""),
+                min(int(args.get("limit", 5)), 5),
+                conversation=conversation,
+                min_price=args.get("min_price"), max_price=args.get("max_price"),
+            )
+            await run_in_thread(_crm_search_hook, conversation, args.get("query", ""), result)
+            return result
+
+        if name == "get_product_details":
+            result = await async_tool_get_product_details(user, args.get("pid", ""), conversation=conversation)
+            await run_in_thread(_crm_product_detail_hook, conversation, result)
+            return result
+
+        if name == "send_images":
+            result = await run_in_thread(tool_send_images, user, pid=args.get("pid", ""),
+                                         pids=args.get("pids"), conversation=conversation)
+            await run_in_thread(_crm_send_images_hook, conversation, result)
+            return result
+
+        if name == "create_order":
+            return await run_in_thread(
+                tool_create_order,
+                user=user, conversation=conversation,
+                customer_name=args.get("customer_name", ""),
+                customer_phone=args.get("customer_phone", ""),
+                customer_address=args.get("customer_address", ""),
+                customer_city=args.get("customer_city", ""),
+                delivery_zone=args.get("delivery_zone", "inside_dhaka"),
+                items=args.get("items", []),
+                customer_confirmed=bool(args.get("customer_confirmed", False)),
+            )
+
+        if name == "get_order_status":
+            result = await async_tool_get_order_status(user, args.get("order_id", ""))
+            return result
+
+        if name == "update_customer":
+            return await run_in_thread(
+                tool_update_customer,
+                conversation=conversation,
+                name=args.get("name"), phone=args.get("phone"),
+                city=args.get("city"), address=args.get("address"),
+            )
+
+        if name == "create_ticket":
+            result = await run_in_thread(
+                tool_create_ticket,
+                conversation=conversation,
+                subject=args.get("subject", ""),
+                description=args.get("description", ""),
+                priority=args.get("priority", "medium"),
+            )
+            await run_in_thread(_crm_ticket_hook, conversation, result)
+            return result
+
+        if name == "search_knowledge_base":
+            return await async_tool_search_knowledge_base(
+                user=user, query=args.get("query", ""), limit=int(args.get("limit", 3)),
+            )
+
+        if name == "think":
+            return tool_think(args.get("notes", ""))
+
+        return {"error": f"Unknown tool: {name}"}
+
+    except Exception as exc:
+        logger.exception("Async tool '%s' raised an exception", name)
+        return {"error": str(exc)}
