@@ -243,11 +243,12 @@ html, body {
 ============================== */
 @media (max-width: 1000px) {
   .menu-toggle {
-    display: block; /* show hamburger */
+    display: block;
   }
 
   .sidebar {
     transform: translateX(-100%);
+    padding: 16px;
   }
 
   .sidebar.active {
@@ -259,11 +260,22 @@ html, body {
   }
 
   body.sidebar-open {
-    overflow: hidden; /* prevent scroll when sidebar open */
+    overflow: hidden;
   }
 
   .search-wrap {
-    display: none; /* hide search if screen too small */
+    display: none;
+  }
+
+  .top-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .top-actions .btn-primary {
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    white-space: nowrap;
   }
 }
 
@@ -274,12 +286,45 @@ html, body {
   }
 
   .topbar {
-    padding: 16px;
+    padding: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .content {
     padding: 16px;
   }
+
+  .top-actions .btn-primary {
+    font-size: 0.75rem;
+    padding: 5px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .sidebar {
+    width: 220px;
+    padding: 12px;
+  }
+  .nav-item {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+}
+
+/* ==============================
+   MOBILE RESPONSIVE UTILITIES
+   Used by reseller & dashboard templates
+============================== */
+@media (max-width: 768px) {
+  .mobile-collapse { grid-template-columns: 1fr !important; }
+  .mobile-hide { display: none !important; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .form-row { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 480px) {
+  .stats-grid { grid-template-columns: 1fr 1fr !important; }
+  .card, .stat-card { padding: 14px; }
 }
 </style>
 

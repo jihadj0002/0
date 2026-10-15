@@ -16,6 +16,11 @@
 .form-card h3 { margin: 0 0 12px; }
 .form-row { display: flex; gap: 12px; margin-bottom: 12px; }
 .form-row input { flex: 1; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 6px; }
+
+@media (max-width: 640px) {
+  .form-row { flex-wrap: wrap; }
+  .form-row input { min-width: 100%; }
+}
 </style>
 
 <div class="nav-tabs">

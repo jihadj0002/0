@@ -23,7 +23,26 @@
 .msg .text { font-size: 0.9rem; }
 .msg .time { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
 .empty-state { text-align: center; padding: 60px; color: var(--muted); }
+
+/* Mobile: show list or messages, not both */
+.mobile-back { display: none; }
+@media (max-width: 768px) {
+  .chat-layout { grid-template-columns: 1fr; }
+  .convo-list { max-height: 300px; }
+  .convo-item { padding: 14px; }
+  .convo-item .name { font-size: 1rem; }
+  .msg-area { max-height: 400px; }
+  .msg { max-width: 90%; padding: 14px; }
+  .page-header { display: none; }
+  .mobile-back { display: block; margin-bottom: 8px; }
+  .mobile-back a { font-size: 0.9rem; color: var(--accent); text-decoration: none; }
+}
+@media (max-width: 480px) {
+  .convo-list { max-height: 250px; }
+  .msg { padding: 12px; font-size: 0.85rem; }
+}
 </style>
+<div class="mobile-back">{% if selected_convo %}<a href="?">&larr; Back to conversations</a>{% endif %}</div>
 
 <div class="nav-tabs">
   <a href="{% url 'back:client_overview' managed_user.pk %}">Overview</a>

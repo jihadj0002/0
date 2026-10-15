@@ -20,6 +20,15 @@
 .type-badge.top_up_from_manager { background: #dcfce7; color: #16a34a; }
 .type-badge.deduction { background: #fee2e2; color: #dc2626; }
 .type-badge.top_up { background: #eef2ff; color: #2563eb; }
+
+@media (max-width: 768px) {
+  .table-card { overflow: hidden; }
+  .table-card table, .table-card thead, .table-card tbody, .table-card th, .table-card td, .table-card tr { display: block; }
+  .table-card thead { display: none; }
+  .table-card tr { margin-bottom: 10px; border-radius: 8px; padding: 10px; background: var(--panel); border: 1px solid #eef2f6; }
+  .table-card td { display: flex; justify-content: space-between; padding: 5px 0; border: none; font-size: 0.82rem; }
+  .table-card td::before { content: attr(data-label); font-weight: 600; color: var(--muted); font-size: 0.78rem; }
+}
 </style>
 
 <div class="page-header">
@@ -47,10 +56,10 @@
     {% for txn in txns %}
     <tr>
       <td style="font-size: 0.8rem; color: var(--muted);">{{ txn.timestamp|date:"d M H:i" }}</td>
-      <td><span class="type-badge {{ txn.transaction_type }}">{{ txn.get_transaction_type_display }}</span></td>
-      <td>{{ txn.user.username }}</td>
-      <td><span class="amt {% if txn.amount >= 0 %}positive{% else %}negative{% endif %}">{{ txn.amount }}</span></td>
-      <td>{{ txn.balance_after|floatformat:0 }}</td>
+      <td data-label="Type"><span class="type-badge {{ txn.transaction_type }}">{{ txn.get_transaction_type_display }}</span></td>
+      <td data-label="User">{{ txn.user.username }}</td>
+      <td data-label="Amount"><span class="amt {% if txn.amount >= 0 %}positive{% else %}negative{% endif %}">{{ txn.amount }}</span></td>
+      <td data-label="Balance">{{ txn.balance_after|floatformat:0 }}</td>
       <td style="font-size: 0.85rem; color: var(--muted);">{{ txn.note|truncatechars:50|default:"—" }}</td>
     </tr>
     {% empty %}

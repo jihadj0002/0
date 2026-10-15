@@ -27,6 +27,20 @@
 .btn-action.renew { background: #dcfce7; color: #16a34a; }
 .btn-action.suspend { background: #fee2e2; color: #dc2626; }
 .btn-action.reactivate { background: #eef2ff; color: #2563eb; }
+
+/* Mobile: table → cards */
+@media (max-width: 768px) {
+  .table-card { overflow: hidden; }
+  .table-card table, .table-card thead, .table-card tbody, .table-card th, .table-card td, .table-card tr { display: block; }
+  .table-card thead { display: none; }
+  .table-card tr { margin-bottom: 12px; border-radius: 8px; padding: 12px; background: var(--panel); border: 1px solid #eef2f6; }
+  .table-card td { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border: none; font-size: 0.85rem; }
+  .table-card td::before { content: attr(data-label); font-weight: 600; color: var(--muted); font-size: 0.8rem; }
+  .actions-cell { flex-wrap: wrap; gap: 4px; }
+  .actions-cell .btn-action { flex: 1 1 auto; min-width: 60px; text-align: center; padding: 6px 8px; font-size: 0.78rem; }
+  .badge { font-size: 0.7rem; padding: 2px 8px; }
+  .filter-bar a { padding: 5px 10px; font-size: 0.78rem; }
+}
 </style>
 
 <div class="page-header">
@@ -59,19 +73,19 @@
     </tr>
     {% for item in user_data %}
     <tr>
-      <td>
+      <td data-label="Customer">
         <strong>{{ item.user.username }}</strong>
         {% if item.user.email %}<br><span style="color: var(--muted); font-size: 0.8rem;">{{ item.user.email }}</span>{% endif %}
       </td>
-      <td><strong>{{ item.credits|floatformat:0 }}</strong></td>
-      <td>{{ item.allocated|floatformat:0 }}</td>
-      <td>{{ item.consumed|floatformat:0 }}</td>
-      <td><span class="badge {{ item.status }}">{{ item.status }}</span></td>
-      <td style="font-size: 0.8rem; color: var(--muted);">
+      <td data-label="Balance"><strong>{{ item.credits|floatformat:0 }}</strong></td>
+      <td data-label="Allocated">{{ item.allocated|floatformat:0 }}</td>
+      <td data-label="Used">{{ item.consumed|floatformat:0 }}</td>
+      <td data-label="Status"><span class="badge {{ item.status }}">{{ item.status }}</span></td>
+      <td data-label="Auto" style="font-size: 0.8rem; color: var(--muted);">
         {% if item.auto_renew %}ON{% else %}OFF{% endif %}
         <a href="{% url 'back:toggle_auto_renew' item.user.pk %}" style="font-size: 0.75rem; color: var(--accent);">toggle</a>
       </td>
-      <td>
+      <td data-label="Actions">
         <div class="actions-cell">
           <a href="{% url 'back:client_overview' item.user.pk %}" class="btn-action view">View</a>
           {% if item.status == 'renewal_needed' or item.status == 'suspended' %}

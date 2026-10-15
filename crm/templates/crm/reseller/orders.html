@@ -16,6 +16,15 @@
 .badge.completed { background: #dcfce7; color: #16a34a; }
 .badge.pending { background: #fef9c3; color: #ca8a04; }
 .badge.cancelled { background: #fee2e2; color: #dc2626; }
+
+@media (max-width: 768px) {
+  .table-card { overflow: hidden; }
+  .table-card table, .table-card thead, .table-card tbody, .table-card th, .table-card td, .table-card tr { display: block; }
+  .table-card thead { display: none; }
+  .table-card tr { margin-bottom: 10px; border-radius: 8px; padding: 10px; background: var(--panel); border: 1px solid #eef2f6; }
+  .table-card td { display: flex; justify-content: space-between; padding: 5px 0; border: none; font-size: 0.82rem; }
+  .table-card td::before { content: attr(data-label); font-weight: 600; color: var(--muted); font-size: 0.78rem; }
+}
 </style>
 
 <div class="nav-tabs">
@@ -42,11 +51,11 @@
     </tr>
     {% for o in all_orders %}
     <tr>
-      <td>{{ o.oid }}</td>
-      <td>{{ o.customer_name|default:"N/A" }}</td>
-      <td>{{ o.amount }} BDT</td>
-      <td><span class="badge {{ o.status }}">{{ o.status }}</span></td>
-      <td>{{ o.created_at|date:"d M Y" }}</td>
+      <td data-label="Order ID">{{ o.oid }}</td>
+      <td data-label="Customer">{{ o.customer_name|default:"N/A" }}</td>
+      <td data-label="Amount">{{ o.amount }} BDT</td>
+      <td data-label="Status"><span class="badge {{ o.status }}">{{ o.status }}</span></td>
+      <td data-label="Date">{{ o.created_at|date:"d M Y" }}</td>
     </tr>
     {% empty %}
     <tr><td colspan="5" style="text-align: center; color: var(--muted); padding: 40px;">No orders yet.</td></tr>

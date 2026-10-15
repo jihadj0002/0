@@ -20,6 +20,10 @@
 .nav-tabs a { padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 0.9rem; background: var(--panel); color: #0f172a; }
 .nav-tabs a:hover { background: var(--soft); }
 .nav-tabs a.active { background: var(--accent); color: #fff; }
+
+@media (max-width: 768px) {
+  [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
 </style>
 
 <div class="page-header">

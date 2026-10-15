@@ -26,6 +26,11 @@
 .customer-row .name { font-weight: 600; font-size: 0.9rem; }
 .customer-row .credits { font-size: 0.85rem; color: var(--muted); }
 .quick-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+@media (max-width: 768px) {
+  .grid-2 { grid-template-columns: 1fr; }
+  .mobile-hide { display: none; }
+}
 </style>
 
 <div class="page-header">
