@@ -567,9 +567,8 @@ def send_image_ajax(request):
     if not integration:
         return HttpResponseForbidden(f"{convo.platform.capitalize()} integration not configured.")
 
-    if convo.platform in ("messenger", "instagram"):
+    if convo.platform == "messenger":
         access_token = integration.access_token
-        # Messenger and Instagram share the same Graph API /me/messages endpoint
         url = f"https://graph.facebook.com/v19.0/me/messages"
         params = {"access_token": access_token}
         payload = {
@@ -589,6 +588,37 @@ def send_image_ajax(request):
             return JsonResponse({
                 "status": "error",
                 "message": f"Failed to send image via {convo.platform.capitalize()} API.",
+                "api_response": response.text[:200],
+            }, status=500)
+        data = response.json()
+        message_id = data.get("message_id")
+        if message_id:
+            msg.mid = message_id
+            msg.save(update_fields=["mid"])
+
+    elif convo.platform == "instagram":
+        access_token = integration.access_token
+        sender_id = integration.ig_account_id or integration.integration_id
+        if not sender_id:
+            return HttpResponseForbidden("Instagram sender ID not configured.")
+        url = f"https://graph.facebook.com/v19.0/{sender_id}/messages"
+        payload = {
+            "recipient": {"id": convo.customer_id},
+            "message": {
+                "attachment": {
+                    "type": "image",
+                    "payload": {
+                        "url": image_url,
+                        "is_reusable": True,
+                    },
+                }
+            }
+        }
+        response = requests.post(url, json=payload, headers={"Authorization": f"Bearer {access_token}"})
+        if response.status_code != 200:
+            return JsonResponse({
+                "status": "error",
+                "message": f"Failed to send image via Instagram API.",
                 "api_response": response.text[:200],
             }, status=500)
         data = response.json()

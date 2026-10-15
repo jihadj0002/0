@@ -3,7 +3,9 @@ import logging
 
 import requests
 
-from back.models import Integration
+from back.models import Integration, Message
+from django.utils import timezone
+from datetime import timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +78,10 @@ def send_reply(conversation, text, image_urls=None, product_cards=None):
                 result = _whatsapp_wasender(conversation, integration, texts, image_urls, product_cards)
             else:
                 result = _whatsapp_meta(conversation, integration, texts, image_urls, product_cards)
-        elif platform in ("messenger", "instagram"):
+        elif platform == "messenger":
             result = _messenger(conversation, integration, texts, image_urls, product_cards)
+        elif platform == "instagram":
+            result = _instagram(conversation, integration, texts, image_urls, product_cards)
         elif platform == "telegram":
             result = _telegram(conversation, integration, texts, image_urls, product_cards)
         else:
@@ -207,11 +211,116 @@ def _whatsapp_wasender(conversation, integration, texts, image_urls, product_car
 # Platform senders (Messenger, Instagram, Telegram — unchanged)
 # ---------------------------------------------------------------------------
 
+_FACEBOOK_SUBCODE_24H = 2534022
+
+
+def _check_24h_window(conversation):
+    """Return an error string if the 24h messaging window is closed, or None.
+
+    Meta platforms (Messenger, Instagram) only allow outbound messages within
+    24 hours of the customer's last message.  This check avoids hitting the
+    API and getting a cryptic error back.
+    """
+    last_customer = Message.objects.filter(
+        conversation=conversation, sender="customer",
+    ).order_by("-timestamp").first()
+    if last_customer and timezone.now() - last_customer.timestamp > timedelta(hours=24):
+        last_seen = timezone.localtime(last_customer.timestamp).strftime("%d %b %Y at %H:%M")
+        return (
+            f"24-hour messaging window closed (customer last messaged {last_seen}). "
+            "The customer must send a new message before a reply can be sent."
+        )
+    return None
+
+
+def _instagram(conversation, integration, texts, image_urls, product_cards=None):
+    """Send a reply via Instagram Direct Messages (Graph API).
+
+    Uses the explicit IG Business Account ID in the endpoint URL —
+    ``/me/messages`` does NOT work for Instagram.
+    """
+    sender_id = integration.ig_account_id or integration.integration_id
+    if not sender_id:
+        return {"ok": False, "sent": {}, "errors": ["No Instagram sender ID configured"]}
+
+    window_err = _check_24h_window(conversation)
+    if window_err:
+        return {"ok": False, "sent": {}, "errors": [window_err]}
+
+    token = integration.access_token
+    url = f"{GRAPH_API_BASE}/{sender_id}/messages"
+    headers = {"Authorization": f"Bearer {token}"}
+    recipient = {"id": conversation.customer_id}
+
+    sent = {"cards": 0, "images": 0, "texts": 0}
+    errors = []
+
+    # Send product cards as a generic template carousel (max 10 elements)
+    if product_cards:
+        elements = []
+        for card in product_cards[:10]:
+            images = _public_urls(card.get("images", []))
+            price_str = ""
+            if card.get("discounted_price"):
+                price_str = f"৳{card['discounted_price']}"
+            elif card.get("price"):
+                price_str = f"৳{card['price']}"
+            subtitle = price_str[:80] if price_str else " "
+            btn_pid = card.get("pid") or card.get("sku", "")
+            elements.append({
+                "title": (card.get("name") or "Product")[:80],
+                "subtitle": subtitle,
+                "image_url": images[0] if images else None,
+                "buttons": [{
+                    "type": "postback",
+                    "title": f"View {card.get('name', 'Product')}"[:20],
+                    "payload": f"SELECT_PRODUCT|{btn_pid}",
+                }],
+            })
+        if elements:
+            ok, err = _post(url, headers, {
+                "recipient": recipient,
+                "message": {
+                    "attachment": {
+                        "type": "template",
+                        "payload": {
+                            "template_type": "generic",
+                            "elements": elements,
+                        },
+                    }
+                },
+            })
+            if ok:
+                sent["cards"] += 1
+            else:
+                errors.append(err)
+
+    for img_url in _public_urls(image_urls)[:5]:
+        ok, err = _messenger_send_image(url, headers, recipient, img_url)
+        if ok:
+            sent["images"] += 1
+        else:
+            errors.append(err)
+
+    for text in texts:
+        ok, err = _post(url, headers, {"recipient": recipient, "message": {"text": text}})
+        if ok:
+            sent["texts"] += 1
+        else:
+            errors.append(err)
+
+    return {"ok": not errors, "sent": sent, "errors": errors}
+
+
 def _messenger(conversation, integration, texts, image_urls, product_cards=None):
     token = integration.access_token
     url = f"{GRAPH_API_BASE}/me/messages"
     headers = {"Authorization": f"Bearer {token}"}
     recipient = {"id": conversation.customer_id}
+
+    window_err = _check_24h_window(conversation)
+    if window_err:
+        return {"ok": False, "sent": {}, "errors": [window_err]}
 
     sent = {"cards": 0, "images": 0, "texts": 0}
     errors = []
