@@ -160,12 +160,6 @@ def build_system_prompt(user, conversation, image_analysis=None):
     if crm_snapshot:
         sections.append((85, crm_snapshot))
 
-    # --- Layer 3: rolling chat summary (priority 80) — lets history shrink
-    # from 12 to 6 raw messages on long conversations without losing facts. ---
-    summary = (getattr(conversation, "chat_summary", "") or "").strip()
-    if summary:
-        sections.append((80, f"## CHAT SUMMARY (older messages, condensed)\n{summary[:1500]}"))
-
     # --- Layer 3: image analysis data (priority 70) ---
     if image_analysis:
         img = (

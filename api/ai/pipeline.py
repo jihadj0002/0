@@ -78,9 +78,6 @@ MAX_RUN_SECONDS = 90
 # #1 token-burn pattern (logs show 4-6 call replies repeating near-identical
 # queries). Search is multi-query server-side, so 3 calls is ample.
 MAX_SEARCH_CALLS_PER_REPLY = 3
-# Conversations longer than this get a rolling chat_summary so history can drop
-# from 12 to 6 raw messages without losing facts. Zero overhead below this.
-SUMMARY_MIN_MESSAGES = 40
 
 # Short affirmative messages that confirm an order while a draft is awaiting
 # confirmation (backend state machine disambiguates "yes" → order). Full-match
@@ -442,10 +439,7 @@ def run(conversation, incoming_message):
             pass
 
     system_prompt = build_system_prompt(user, conversation, image_analysis=image_analysis)
-    # Long conversations carry a condensed CHAT SUMMARY in the system prompt, so
-    # the raw-message window can be smaller without losing older facts.
-    has_summary = bool((getattr(conversation, "chat_summary", "") or "").strip())
-    history = get_conversation_history(conversation, limit=6 if has_summary else 12)
+    history = get_conversation_history(conversation, limit=12)
 
     # Ensure the triggering message is the last user turn
     if not history or history[-1].get("content") != customer_text or history[-1].get("role") != "user":
@@ -950,15 +944,6 @@ def run(conversation, incoming_message):
                 bot_msg.status = "sent"
             bot_msg.save(update_fields=["raw_payload", "status"])
 
-    # Rolling chat summary: on long conversations, one cheap call keeps the
-    # facts that the history window would drop.
-    try:
-        msg_count = Message.objects.filter(conversation=conversation).count()
-        if msg_count >= SUMMARY_MIN_MESSAGES:
-            _refresh_chat_summary(conversation, model, reply_id)
-    except Exception:
-        logger.exception("Chat summary refresh failed reply_id=%s", reply_id)
-
     # CRM recompute: derive scores/stage/lifecycle from this turn's signals.
     try:
         from context.crm.engine import recompute
@@ -979,48 +964,6 @@ def _log(user, reply_id, usage, call_type):
         )
     except Exception:
         logger.warning("UsageLog write failed reply_id=%s", reply_id)
-
-
-_SUMMARIZER_PROMPT = (
-    "Condense this customer-support chat for the AI's memory. Output ≤90 words, "
-    "short terse lines, in the chat's language. Facts only: customer identity "
-    "(name/phone/address/city known), products asked about / shown / selected, "
-    "order status and totals, buying intent or objections, tone/language, and "
-    "anything NOT to re-ask."
-)
-
-
-def _refresh_chat_summary(conversation, model, reply_id):
-    """Regenerate conversation.chat_summary with one cheap LLM call.
-
-    History input is the same window the pipeline already used; the saved
-    summary lets subsequent turns keep older facts with only 6 raw messages.
-    Never raises — failures simply keep the previous summary.
-    """
-    history = get_conversation_history(conversation, limit=12)
-    if not history:
-        return
-    try:
-        summary_msg, usage = call_llm(
-            messages=[{"role": "system", "content": _SUMMARIZER_PROMPT}] + history[-10:],
-            tools=None,
-            model=model,
-            temperature=0.2,
-            max_tokens=100,
-        )
-    except Exception:
-        logger.exception("Chat summary LLM call failed reply_id=%s", reply_id)
-        return
-    _log(conversation.user, reply_id, usage, call_type="chat_summary")
-    text = (summary_msg.content or "").strip()
-    if not text:
-        return
-    try:
-        from back.models import Conversation as _Conv
-        _Conv.objects.filter(pk=conversation.pk).update(chat_summary=text[:2000])
-        conversation.chat_summary = text[:2000]
-    except Exception:
-        logger.exception("Chat summary persist failed reply_id=%s", reply_id)
 
 
 # ===========================================================================
@@ -1117,8 +1060,7 @@ async def run_async(conversation, incoming_message):
 
     def _build_context():
         sp = build_system_prompt(user, conversation, image_analysis=image_analysis)
-        has_summary = bool((getattr(conversation, "chat_summary", "") or "").strip())
-        hist = get_conversation_history(conversation, limit=6 if has_summary else 12)
+        hist = get_conversation_history(conversation, limit=12)
         return sp, hist
 
     system_prompt, history = await run_in_thread(_build_context)
@@ -1572,46 +1514,7 @@ async def run_async(conversation, incoming_message):
         await run_in_thread(_save_send_report)
 
     try:
-        def _count_msgs():
-            return Message.objects.filter(conversation=conversation).count()
-        msg_count = await run_in_thread(_count_msgs)
-        if msg_count >= SUMMARY_MIN_MESSAGES:
-            await _refresh_chat_summary_async(conversation, model, reply_id)
-    except Exception:
-        logger.exception("Chat summary refresh failed reply_id=%s", reply_id)
-
-    try:
         from context.crm.engine import recompute
         await run_in_thread(recompute, conversation, customer_text=customer_text)
     except Exception:
         logger.exception("CRM recompute failed reply_id=%s conv=%s", reply_id, conversation.pk)
-
-
-async def _refresh_chat_summary_async(conversation, model, reply_id):
-    """Async twin of :func:`_refresh_chat_summary`."""
-    history = await run_in_thread(get_conversation_history, conversation, 12)
-    if not history:
-        return
-    try:
-        summary_msg, usage = await async_call_llm_with_fallback(
-            messages=[{"role": "system", "content": _SUMMARIZER_PROMPT}] + history[-10:],
-            tools=None,
-            model=model,
-            temperature=0.2,
-            max_tokens=100,
-        )
-    except Exception:
-        logger.exception("Chat summary LLM call failed reply_id=%s", reply_id)
-        return
-    await run_in_thread(_log, conversation.user, reply_id, usage, "chat_summary")
-    text = (summary_msg.content or "").strip()
-    if not text:
-        return
-    try:
-        def _persist_summary():
-            from back.models import Conversation as _Conv
-            _Conv.objects.filter(pk=conversation.pk).update(chat_summary=text[:2000])
-            conversation.chat_summary = text[:2000]
-        await run_in_thread(_persist_summary)
-    except Exception:
-        logger.exception("Chat summary persist failed reply_id=%s", reply_id)
