@@ -13,6 +13,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 import json, csv, requests
 from django.core.files.base import ContentFile
+from api.ai.sender import send_reply, _download_image
 from django.shortcuts import get_object_or_404
 from django.http import JsonResponse, HttpResponseBadRequest, HttpResponseForbidden
 from django.views.decorators.http import require_POST
@@ -529,36 +530,24 @@ def send_image_ajax(request):
     user = request.user
     print(f"User: {user}")
 
-    # Get conversation_id from POST data
     convo_id = request.POST.get("conversation_id")
-    print(f"Conversation ID: {convo_id}")
-    
-    # Get the image file from request
     image = request.FILES.get("image")
-    print(f"Image: {image}")
 
     if not convo_id or not image:
         return HttpResponseBadRequest("Missing conversation id or image")
 
-    # Get the conversation object
     convo = get_object_or_404(Conversation, id=convo_id, user=user)
 
     # =======================
-    # Save Image to Cloudflare R2
+    # Save Image to storage
     # =======================
-    
-    # Save image using the default storage backend (Cloudflare R2)
     file_name = f"{timezone.now().strftime('%Y%m%d%H%M%S')}_{image.name}"
     file_path = default_storage.save(f"media/{file_name}", ContentFile(image.read()))
-    
-    # Generate the public URL for the image
     image_url = default_storage.url(file_path)
-    print(f"Image URL: {image_url}")
-    
+
     # =======================
     # Save message to database
     # =======================
-    # Save message with the image attachment URL
     msg = Message.objects.create(
         conversation=convo,
         sender="agent",
@@ -570,19 +559,19 @@ def send_image_ajax(request):
             "images": [image_url],
         }
     )
-    print("Message Created")
 
     # =======================
-    # Facebook Messenger Integration
+    # Send via the correct platform
     # =======================
-    if convo.platform == "messenger":
-        integration = Integration.get_active(user, "messenger")
-        if not integration:
-            return HttpResponseForbidden("Messenger integration not configured.")
+    integration = Integration.get_active(user, convo.platform)
+    if not integration:
+        return HttpResponseForbidden(f"{convo.platform.capitalize()} integration not configured.")
 
+    if convo.platform in ("messenger", "instagram"):
         access_token = integration.access_token
-        sender_id = integration.integration_id
-
+        # Messenger and Instagram share the same Graph API /me/messages endpoint
+        url = f"https://graph.facebook.com/v19.0/me/messages"
+        params = {"access_token": access_token}
         payload = {
             "recipient": {"id": convo.customer_id},
             "message": {
@@ -590,86 +579,120 @@ def send_image_ajax(request):
                     "type": "image",
                     "payload": {
                         "url": image_url,
-                        "is_reusable": True
-                    }
+                        "is_reusable": True,
+                    },
                 }
             }
         }
-
-        # Send the image to the customer on Facebook Messenger
-        url = f"https://graph.facebook.com/v24.0/{sender_id}/messages"
-        params = {"access_token": access_token}
-        print(f"Messenger API URL: {url}")
-        
         response = requests.post(url, params=params, json=payload)
-        print(response)
-
         if response.status_code != 200:
             return JsonResponse({
                 "status": "error",
-                "message": "Failed to send image via Messenger API."
+                "message": f"Failed to send image via {convo.platform.capitalize()} API.",
+                "api_response": response.text[:200],
             }, status=500)
-        
-        # Extract the message_id from the response
         data = response.json()
         message_id = data.get("message_id")
-        print(f"Message ID from Facebook: {message_id}")
+        if message_id:
+            msg.mid = message_id
+            msg.save(update_fields=["mid"])
 
-        # Update the message with the received message_id
-        msg.mid = message_id
-        msg.save()
-
-    # =======================
-    # WhatsApp Integration
-    # =======================
     elif convo.platform == "whatsapp":
-        integration = Integration.get_active(user, "whatsapp")
-        if not integration:
-            return HttpResponseForbidden("WhatsApp integration not configured.")
-
-        msg = Message.objects.create(
-            conversation=convo,
-            sender="agent",
-            text=None,
-            attachments={
+        provider = (integration.provider or "meta").lower()
+        if provider == "wasender":
+            url = "https://www.wasenderapi.com/api/send-message"
+            headers = {"Authorization": f"Bearer {integration.access_token}"}
+            payload = {"to": convo.customer_id, "imageUrl": image_url}
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code != 200:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Failed to send image via WasenderAPI.",
+                    "api_response": response.text[:200],
+                }, status=500)
+            data = response.json()
+            message_id = data.get("message_id")
+            if message_id:
+                msg.mid = message_id
+                msg.save(update_fields=["mid"])
+        else:
+            # Meta Cloud API — upload media then send with media_id
+            from api.ai.sender import _whatsapp_upload_media
+            phone_id = integration.integration_id
+            if not phone_id:
+                return HttpResponseForbidden("WhatsApp Phone Number ID not configured.")
+            token = integration.access_token
+            base_url = f"https://graph.facebook.com/v19.0/{phone_id}"
+            media_id, media_err = _whatsapp_upload_media(f"{base_url}/messages",
+                {"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                image_url)
+            if not media_id:
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"Failed to upload media to WhatsApp: {media_err or 'unknown'}",
+                }, status=500)
+            url = f"{base_url}/messages"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": convo.customer_id,
                 "type": "image",
-                "payload": {"url": image_url},
-                "url": image_url,
-                "images": [image_url],
+                "image": {"id": media_id},
             }
-        )
+            response = requests.post(url, headers=headers, json=payload)
+            if response.status_code != 200:
+                return JsonResponse({
+                    "status": "error",
+                    "message": "Failed to send image via WhatsApp Cloud API.",
+                    "api_response": response.text[:200],
+                }, status=500)
+            data = response.json()
+            message_id = data.get("messages", [{}])[0].get("id")
+            if message_id:
+                msg.mid = message_id
+                msg.save(update_fields=["mid"])
 
-        url = "https://www.wasenderapi.com/api/send-message"
-        headers = {"Authorization": f"Bearer {integration.access_token}"}
-        data = {
-            "to": convo.customer_id,
-            "imageUrl": image_url
-        }
-
-        response = requests.post(url, headers=headers, json=data)
-
-        if response.status_code != 200:
-            return JsonResponse({
-                "status": "error",
-                "message": "Failed to send image via WhatsApp API."
-            }, status=500)
-        
-        # Extract the message_id from the response
-        data = response.json()
-        message_id = data.get("message_id")
-        print(f"Message ID from Whatsapp: {message_id}")
-
-        # Update the message with the received message_id
-        msg.mid = message_id
-        msg.save()
+    elif convo.platform == "telegram":
+        token = integration.access_token
+        base = f"https://api.telegram.org/bot{token}"
+        # Binary upload is reliable; URL fallback if download fails.
+        data, err = _download_image(image_url)
+        if data is not None:
+            resp = requests.post(
+                f"{base}/sendPhoto",
+                timeout=45,
+                data={"chat_id": convo.customer_id},
+                files={"photo": ("photo.jpg", data, "image/jpeg")},
+            )
+            if not resp.ok:
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"Failed to send image via Telegram API: {resp.text[:200]}",
+                }, status=500)
+        else:
+            resp = requests.post(
+                f"{base}/sendPhoto",
+                json={"chat_id": convo.customer_id, "photo": image_url},
+                timeout=10,
+            )
+            if not resp.ok:
+                return JsonResponse({
+                    "status": "error",
+                    "message": f"Failed to send image via Telegram API (URL fallback): {resp.text[:200]}",
+                }, status=500)
+        data = resp.json()
+        message_id = data.get("result", {}).get("message_id")
+        if message_id:
+            msg.mid = str(message_id)
+            msg.save(update_fields=["mid"])
 
     return JsonResponse({
         "status": "ok",
         "id": msg.id,
         "image_url": image_url,
         "sent_ts": timezone.localtime(msg.timestamp).strftime("%d %b, %Y %H:%M"),
-        "message_id": msg.mid,  # Return the saved message_id
-        "attachments": msg.attachments  # Include the full attachments object
+        "message_id": msg.mid,
+        "attachments": msg.attachments,
     })
 
 
@@ -716,102 +739,48 @@ def send_message_with_image_ajax(request):
 def send_message_ajax(request):
     user = request.user
 
-
     try:
         data = json.loads(request.body.decode('utf-8'))
         convo_id = data.get('conversation_id')
         text = data.get('text', '').strip()
-
     except Exception:
         return HttpResponseBadRequest("Invalid payload")
 
     if not convo_id or not text:
         return HttpResponseBadRequest("Missing conversation id or text")
 
-    
     convo = get_object_or_404(Conversation, id=convo_id, user=request.user)
-    
-    if convo.platform == "messenger":
 
-        integration = Integration.get_active(user, "messenger")
-        access_token = integration.access_token if integration else None
-        sender_id = integration.integration_id if integration else None
-        if not access_token and sender_id:
-            return HttpResponseForbidden("Messenger integration or Sender ID not configured.")
-        else:
-            url = f"https://graph.facebook.com/v23.0/{sender_id}/messages"
-            params = {
-                "access_token": access_token,
-            }
-            payload = {
-                "recipient": {"id": convo.customer_id},
-                "message": {"text": text},
-            }
-            response = requests.post(url, params=params, json=payload)
-            if response.status_code != 200:
-                return JsonResponse({
-                    "status": "error",
-                    "message": "Failed to send message via Messenger API."
-                }, status=500)
-    
-    if convo.platform == "whatsapp":
+    # Send via the unified sender (handles Messenger/Instagram/WhatsApp/Telegram
+    # with correct provider routing — Meta vs WasenderAPI for WhatsApp).
+    result = send_reply(convo, text)
 
-        integration = Integration.get_active(user, "whatsapp")
-        access_token = integration.access_token if integration else None
-        sender_id = integration.integration_id if integration else None
-        if not access_token and sender_id:
-            return HttpResponseForbidden("WhatsApp integration not configured.")
-        else:
-            url = "https://www.wasenderapi.com/api/send-message"
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json"
-            }
-
-            data = {
-                "to": f"{convo.customer_id}",
-                "text": text,
-            }
-            response = requests.post(url, headers=headers, json=data)
-            if response.status_code != 200:
-                return JsonResponse({
-                    "status": "error",
-                    "message": "Failed to send message via WhatsApp API."
-                }, status=500)
-    
-    
-
-    # Create customer message
+    # Persist the agent message locally regardless of send outcome.
     msg = Message.objects.create(
         conversation=convo,
-        sender='agent',   # if messages created by the logged-in agent; change to 'customer' if appropriate
+        sender='agent',
         text=text,
+        raw_payload={"send_report": result},
     )
 
     # Update conversation last message_text for preview
     convo.message_text = text
-    convo.save()
-    
+    convo.save(update_fields=["message_text"])
+
+    if not result.get("ok"):
+        return JsonResponse({
+            "status": "error",
+            "message": "Failed to send message via platform API.",
+            "errors": result.get("errors", []),
+        }, status=502)
+
     response_data = {
         "status": "ok",
         "id": msg.id,
         "text": msg.text,
         "sent_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
-        
     }
 
-    # If AI is enabled, simulate an immediate bot reply (replace with real AI call)
-    # if convo.is_ai_enabled:
-    #     bot_text = f"Auto-reply: Received '{text[:200]}'"
-    #     bot_msg = Message.objects.create(
-    #         conversation=convo,
-    #         sender='bot',
-    #         text=bot_text,
-    #     )
-    #     response_data.update({
-    #         "bot_reply_html": bot_msg.text,
-    #         "bot_reply_ts": timezone.localtime(msg.timestamp).strftime(f"%d %b, %Y %H:%M"),
-    #     })
     return JsonResponse(response_data)
 
 
@@ -1122,6 +1091,7 @@ def settingss(request):
             return redirect("back:options")
 
         target = integrations[platform]
+        old_enabled = target.is_enabled
         target.access_token  = request.POST.get("access_token", "").strip() or None
         target.app_secret    = request.POST.get("app_secret", "").strip() or None
         target.integration_id = request.POST.get("integration_id", "").strip() or None
@@ -1132,6 +1102,17 @@ def settingss(request):
         # Re-save with explicit fields if provider wasn't included above
         if platform != "whatsapp":
             target.save(update_fields=["access_token", "app_secret", "integration_id", "is_enabled"])
+
+        # Cascade: when the integration is disabled, disable AI on all conversations
+        # for this platform so the UI status is consistent with the integration toggle.
+        # When re-enabled, DO NOT auto-enable conversations — the user must use
+        # "Enable All" or toggle per-conversation.
+        if not target.is_enabled and old_enabled:
+            Conversation.objects.filter(user=user, platform=platform).update(
+                is_ai_enabled=False,
+                ai_auto_disabled=True,
+            )
+
         messages.success(request, f"{platform.capitalize()} settings saved.")
         return redirect("back:options")
 
@@ -1146,20 +1127,23 @@ def settingss(request):
 
 @login_required
 def disable_all_bots(request):
-    Conversation.objects.filter(user=request.user, is_ai_enabled=True).update(is_ai_enabled=False)
-    print("All bots disabled for user:", request.user.username)
-    # return JsonResponse({"success": True, "message": "All bots disabled."})
-    return redirect("back:options")  # update with your URL name
+    Conversation.objects.filter(user=request.user, is_ai_enabled=True).update(
+        is_ai_enabled=False,
+        ai_auto_disabled=True,
+    )
+    messages.success(request, "All bots disabled.")
+    return redirect("back:options")
+
 @login_required
-
-
 def enable_all_bots(request):
     platforms = Integration.objects.filter(
         user=request.user, is_enabled=True
     ).values_list("platform", flat=True)
     Conversation.objects.filter(
         user=request.user, platform__in=platforms
-    ).update(is_ai_enabled=True)
+    ).update(is_ai_enabled=True, ai_auto_disabled=False)
+    messages.success(request, "All bots enabled for all active platform integrations.")
+    return redirect("back:options")
 
 @login_required
 def add_product(request):

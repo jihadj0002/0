@@ -1639,23 +1639,25 @@ class DisableConvoAI(APIView):
         user = get_object_or_404(User, username=username)
         conversation = get_object_or_404(Conversation, id=id, user=user)
 
-        # Disable AI
         conversation.is_ai_enabled = False
-        conversation.save()
+        conversation.ai_auto_disabled = True
+        conversation.save(update_fields=["is_ai_enabled", "ai_auto_disabled"])
 
-        # Return JSON for AJAX fetch()
         return Response({
             'status': 'success',
             'message': 'AI disabled for this conversation',
             'ai_enabled': False,
             'conversation_id': conversation.id
         }, status=status.HTTP_200_OK)
+
+
 class EnableConvoAI(APIView):
     def get(self, request, username, id):
         user = get_object_or_404(User, username=username)
         conversation = get_object_or_404(Conversation, id=id, user=user)
         conversation.is_ai_enabled = True
-        conversation.save()
+        conversation.ai_auto_disabled = False
+        conversation.save(update_fields=["is_ai_enabled", "ai_auto_disabled"])
         return Response({'status': 'AI enabled for this conversation'}, status=status.HTTP_200_OK)
 
 class GetConvoAIStatus(APIView):
