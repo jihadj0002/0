@@ -34,6 +34,37 @@ BATCH_TIMER_SECONDS = 14
 _RQ_QUEUE = "default"
 
 
+def _safe_enqueue(func, *args, **kwargs):
+    """Enqueue *func* to RQ.  When RQ/Redis is unavailable, call *func*
+    synchronously as a fallback so messages are never silently dropped.
+
+    Returns ``True`` when the job was enqueued (or executed inline).
+    """
+    try:
+        django_rq.get_queue(_RQ_QUEUE).enqueue(func, *args, **kwargs)
+        return True
+    except Exception:
+        logger.warning("RQ enqueue failed — calling %s inline", func.__name__)
+        func(*args, **kwargs)
+        return False
+
+
+def _safe_enqueue_in(delay, func, *args, **kwargs):
+    """Like :func:`_safe_enqueue` but with ``enqueue_in(*delay, ...)``.
+
+    When RQ is unavailable the function is called immediately (no delay).
+    """
+    try:
+        django_rq.get_queue(_RQ_QUEUE).enqueue_in(
+            timedelta(seconds=delay), func, *args, **kwargs,
+        )
+        return True
+    except Exception:
+        logger.warning("RQ enqueue_in failed — calling %s inline", func.__name__)
+        func(*args, **kwargs)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Signature helpers
 # ---------------------------------------------------------------------------
@@ -63,11 +94,7 @@ def _verify_meta_signature(body_bytes, app_secret, signature_header):
 def _schedule_batch_pipeline(conversation_id):
     redis_key = f"batch_pipeline:{conversation_id}"
     if cache.add(redis_key, True, BATCH_TIMER_SECONDS):
-        django_rq.get_queue(_RQ_QUEUE).enqueue_in(
-            timedelta(seconds=BATCH_TIMER_SECONDS),
-            _fire_batch_pipeline,
-            conversation_id,
-        )
+        _safe_enqueue_in(BATCH_TIMER_SECONDS, _fire_batch_pipeline, conversation_id)
 
 
 def _fire_batch_pipeline(conversation_id):
@@ -199,11 +226,11 @@ def _persist_message(user, platform, msg_data, access_token, ai_enabled, provide
 
     # Fetch Messenger profile asynchronously so it never blocks message processing.
     if created and platform == "messenger":
-        django_rq.get_queue(_RQ_QUEUE).enqueue(_fetch_and_update_profile, conv.pk, customer_id, access_token)
+        _safe_enqueue(_fetch_and_update_profile, conv.pk, customer_id, access_token)
 
     # Fetch WasenderAPI contact name/profile pic for new WhatsApp conversations.
     if created and platform == "whatsapp" and provider == "wasender":
-        django_rq.get_queue(_RQ_QUEUE).enqueue(_fetch_wasender_profile, conv.pk, customer_id, access_token)
+        _safe_enqueue(_fetch_wasender_profile, conv.pk, customer_id, access_token)
 
     # Backfill name if we learned it and conversation was created without it
     if not created and msg_data.get("customer_name") and not conv.customer_name:
@@ -524,7 +551,7 @@ class _BaseWebhookView(View):
 
     def _submit(self, integration, messages):
         if messages:
-            django_rq.get_queue(_RQ_QUEUE).enqueue(
+            _safe_enqueue(
                 _process_webhook,
                 integration.user_id,
                 self.platform,
@@ -825,7 +852,7 @@ class MetaAppWebhookView(View):
         if not messages:
             return
 
-        django_rq.get_queue(_RQ_QUEUE).enqueue(
+        _safe_enqueue(
             _process_webhook,
             integration.user_id,
             platform,
@@ -861,7 +888,7 @@ def recover_zombie_batches():
             if not conv.is_ai_enabled:
                 orphan.filter(conversation_id=cid).update(processed=True)
                 continue
-            django_rq.get_queue(_RQ_QUEUE).enqueue(_fire_batch_pipeline, cid)
+            _safe_enqueue(_fire_batch_pipeline, cid)
         except Conversation.DoesNotExist:
             orphan.filter(conversation_id=cid).delete()
         except Exception:
