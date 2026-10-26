@@ -12,14 +12,10 @@ urlpatterns = [
     path("privacy-policy", views.privacy_policy, name="p_policy"),
     path("terms-and-conditions", views.terms, name="terms"),
 
-    # path("products", views.products, name="products"),
-    # path("stats", views.stats, name="stats"),
-    # path("options", views.sett, name="options"),
-    
-    # path("dashboard", views.dashboard, name="dashboard"),
-    # path("dashboard/chats", views.c_dashboard, name="c_dashboard"),
-    
     path("login", views.login_view, name="login"),
     path("signup", views.signup, name="signup"),
     path("logout", views.logout_view, name="logout"),
+
+    path("verify-email/<str:username>/", views.verify_email, name="verify_email"),
+    path("verify-email/<str:username>/resend/", views.resend_verification, name="resend_verification"),
 ]

@@ -122,9 +122,20 @@
                                        class="form-control form-control-lg" 
                                        placeholder="Choose a username" 
                                        required 
-                                       autofocus
-                                       value="{{ form.username.value|default:'' }}">
+                                       autofocus>
                                 <div class="form-text" id="usernameHelp">Username must be 3-30 characters long and contain only letters, numbers, and @/./+/-/_ characters.</div>
+                            </div>
+
+                            <!-- Email Field -->
+                            <div class="mb-3">
+                                <label for="id_email" class="form-label">Email Address</label>
+                                <input type="email" 
+                                       name="email" 
+                                       id="id_email" 
+                                       class="form-control form-control-lg" 
+                                       placeholder="your@email.com" 
+                                       required>
+                                <div class="invalid-feedback" id="emailError">Please enter a valid email address.</div>
                             </div>
 
                             <!-- Password Field -->
@@ -216,6 +227,23 @@
                 usernameField.focus();
             }
             
+            // Email validation
+            const emailField = document.getElementById('id_email');
+            const emailError = document.getElementById('emailError');
+            if (emailField) {
+                emailField.addEventListener('input', function() {
+                    const email = this.value;
+                    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (email.length > 0 && !re.test(email)) {
+                        this.classList.add('is-invalid');
+                        emailError.style.display = 'block';
+                    } else {
+                        this.classList.remove('is-invalid');
+                        emailError.style.display = 'none';
+                    }
+                });
+            }
+            
             // Password strength indicator
             const passwordField = document.getElementById('id_password');
             const passwordStrength = document.getElementById('passwordStrength');
@@ -270,6 +298,16 @@
             if (signupForm) {
                 signupForm.addEventListener('submit', function(e) {
                     let isValid = true;
+                    
+                    // Check email format
+                    if (emailField) {
+                        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                        if (!re.test(emailField.value)) {
+                            emailField.classList.add('is-invalid');
+                            emailError.style.display = 'block';
+                            isValid = false;
+                        }
+                    }
                     
                     // Check if passwords match
                     if (passwordField.value !== confirmPasswordField.value) {

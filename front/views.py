@@ -3,12 +3,13 @@ from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import AuthenticationForm
 import datetime
+import random
 from django.http import HttpResponse
-from .models import Contact
+from .models import Contact, EmailVerification
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.conf import settings
-from django.core.mail import send_mail  # optional if you want email
+from django.core.mail import send_mail
 from .models import Survay
 
 # Create your views here.
@@ -67,10 +68,6 @@ def contact(request):
         email = request.POST.get("email")
         business = request.POST.get("business")
 
-        # 🔹 Option 1: Just print (debugging)
-        #print(f"New Contact → {name}, {email}, {business}")
-
-        # 🔹 Option 2: Save into DB (make a model)
         Contact.objects.create(name=name, email=email, business=business)
 
         from crm.services import create_lead
@@ -79,36 +76,11 @@ def contact(request):
             source="website", notes=f"Contact form — business: {business or ''}",
         )
 
-        # 🔹 Option 3: Send email notification
-        # send_mail(
-        #     f"AI Agent Demo Request from {name}",
-        #     f"Business: {business}\nEmail: {email}",
-        #     "your@email.com",
-        #     ["yourother@email.com"],
-        # )
-
-        return HttpResponse("✅ Thank you! We’ll contact you soon.")
+        return HttpResponse("✅ Thank you! We'll contact you soon.")
     
     return HttpResponse("❌ Invalid request.")
 
 
-
-# login_required()
-# def dashboard(request):
-#     return render(request, "front/dashboard.html", {"user": request.user})
-
-
-# def c_dashboard(request):
-#     return render(request, "front/c_dashboard.html", {"user": request.user})
-
-# def products(request):
-#     return render(request, "front/products.html", {"user": request.user})
-
-# def stats(request):
-#     return render(request, "front/stats.html", {"user": request.user})
-
-# def sett(request):
-#     return render(request, "front/options.html", {"user": request.user})
 
 
 
@@ -130,66 +102,296 @@ def _post_login_redirect(user):
     return redirect("back:dashboard")
 
 
+def _authenticate_by_email_or_username(identifier, password):
+    """Try username first, then email. Returns user or None."""
+    user = authenticate(username=identifier, password=password)
+    if user is not None:
+        return user
+    try:
+        user_obj = User.objects.get(email__iexact=identifier)
+    except User.DoesNotExist:
+        user_obj = None
+    if user_obj is not None:
+        user = authenticate(username=user_obj.username, password=password)
+        if user is not None:
+            return user
+        if user_obj.check_password(password):
+            return user_obj
+        return None
+    try:
+        user_obj = User.objects.get(username__iexact=identifier)
+        if user_obj.check_password(password):
+            return user_obj
+    except User.DoesNotExist:
+        pass
+    return None
+
+
 def login_view(request):
-    print("Login open")
-    
     if request.user.is_authenticated:
-        return _post_login_redirect(request.user)  # Redirect if already logged in
-    
-    # Always get next URL from GET parameter
+        return _post_login_redirect(request.user)
+
     next_url = request.GET.get('next', '')
 
     if request.method == 'POST':
-        form = AuthenticationForm(request, data=request.POST)
-        # print(form)
-        if form.is_valid():
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password')
-            user = authenticate(username=username, password=password)
-            if user is not None:
-                print("Login successful")
-                login(request, user)
-                messages.success(request, f"Welcome back, {username}!")
-                
-                # Redirect to next_url if provided, else CRM (staff) or dashboard
-                if next_url:
-                    return redirect(next_url)
-                return _post_login_redirect(user)
-            else:
-                messages.error(request, "Invalid username or password.")
-                print("Login failed")
+        identifier = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+
+        user = _authenticate_by_email_or_username(identifier, password)
+
+        if user is not None:
+            if not user.is_active:
+                messages.error(
+                    request,
+                    "Your email is not verified yet. "
+                    f'<a href="/verify-email/{user.username}/resend/" class="alert-link">Resend verification code</a>.'
+                )
+                return redirect("front:verify_email", username=user.username)
+
+            login(request, user)
+            messages.success(request, f"Welcome back, {user.username}!")
+            if next_url:
+                return redirect(next_url)
+            return _post_login_redirect(user)
         else:
-            messages.error(request, "Invalid username or password.")
+            messages.error(request, "Invalid username/email or password.")
+            form = AuthenticationForm()
+            return render(request, 'front/login.html', {
+                'form': form,
+                'next': next_url
+            })
     else:
         form = AuthenticationForm()
-    
+
     return render(request, 'front/login.html', {
         'form': form,
         'next': next_url
     })
 
 
+def _generate_verification_code():
+    return str(random.randint(100000, 999999))
+
+
+def _send_verification_email(user, code):
+    subject = "Your TheMatrixAi Email Verification Code"
+    message = f"""
+Hi {user.username},
+
+Thank you for signing up with TheMatrixAi!
+
+Your email verification code is: {code}
+
+Enter this code on the verification page to activate your account.
+
+This code will expire in 30 minutes.
+
+If you did not sign up for TheMatrixAi, please ignore this email.
+
+Best regards,
+TheMatrixAi Team
+"""
+    html_message = f"""
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f8; padding: 20px;">
+  <div style="max-width: 480px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+    <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 24px; text-align: center;">
+      <h2 style="color: white; margin: 0;">TheMatrixAi</h2>
+      <p style="color: rgba(255,255,255,0.85); margin: 4px 0 0;">Verify your email address</p>
+    </div>
+    <div style="padding: 32px 24px; text-align: center;">
+      <p style="font-size: 16px; color: #333;">Hi <strong>{user.username}</strong>,</p>
+      <p style="color: #555;">Enter this code to activate your account:</p>
+      <div style="font-size: 36px; letter-spacing: 8px; font-weight: bold; color: #667eea; background: #f0f0ff; padding: 16px; border-radius: 8px; margin: 16px 0;">
+        {code}
+      </div>
+      <p style="color: #888; font-size: 13px;">This code expires in 30 minutes.</p>
+    </div>
+    <div style="padding: 16px 24px; background: #f9f9fb; text-align: center; font-size: 12px; color: #999;">
+      <p style="margin: 0;">TheMatrixAi — AI-powered customer engagement</p>
+    </div>
+  </div>
+</body>
+</html>
+"""
+    send_mail(
+        subject,
+        message,
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+        html_message=html_message,
+    )
+
+
 def signup(request):
     if request.method == "POST":
         try:
-            username = request.POST.get('username')
-            password = request.POST.get('password')
-            user_obj = User.objects.filter(username=username)
-            
-            if user_obj.exists():
-                messages.error(request, "Username is taken")
+            username = request.POST.get('username', '').strip()
+            email = request.POST.get('email', '').strip()
+            password = request.POST.get('password', '')
+            confirm_password = request.POST.get('confirm_password', '')
+
+            if not username or not email or not password:
+                messages.error(request, "All fields are required.")
                 return redirect("front:signup")
-            user = User.objects.create(username=username) #Here using password=password dosent works because thats not clean data I guess. 
+
+            if password != confirm_password:
+                messages.error(request, "Passwords do not match.")
+                return redirect("front:signup")
+
+            if User.objects.filter(username__iexact=username).exists():
+                messages.error(request, "Username is already taken.")
+                return redirect("front:signup")
+
+            if User.objects.filter(email__iexact=email).exists():
+                messages.error(request, "An account with this email already exists.")
+                return redirect("front:signup")
+
+            user = User.objects.create(
+                username=username,
+                email=email,
+                is_active=False,
+            )
             user.set_password(password)
-            
             user.save()
-            messages.success(request, "User Created Successfully")
-            return redirect("front:login")
-            
+
+            code = _generate_verification_code()
+            EmailVerification.objects.update_or_create(
+                user=user,
+                defaults={"code": code, "is_used": False, "attempts": 0},
+            )
+
+            try:
+                _send_verification_email(user, code)
+            except Exception:
+                messages.error(request, "Failed to send verification email. Please try again.")
+                user.delete()
+                return redirect("front:signup")
+
+            messages.success(
+                request,
+                f"Account created! We sent a 6-digit code to {email}. "
+                "Please verify your email to activate your account."
+            )
+            return redirect("front:verify_email", username=user.username)
+
         except Exception as e:
-            messages.error(request, "Smething Went Wrong")
-    
+            messages.error(request, "Something went wrong. Please try again.")
+
     return render(request, "front/sign-up.html")
+
+
+def verify_email(request, username):
+    try:
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        messages.error(request, "Invalid verification link.")
+        return redirect("front:signup")
+
+    if user.is_active:
+        messages.success(request, "Your email is already verified. Please sign in.")
+        return redirect("front:login")
+
+    verification, created = EmailVerification.objects.get_or_create(
+        user=user,
+        defaults={"code": _generate_verification_code(), "is_used": False},
+    )
+
+    if request.method == "POST":
+        code_entered = request.POST.get("code", "").strip()
+
+        if verification.is_used:
+            messages.success(request, "This account is already verified.")
+            return redirect("front:login")
+
+        from datetime import timedelta
+        from django.utils import timezone
+
+        expiry = verification.created_at + timedelta(minutes=30)
+        if timezone.now() > expiry:
+            verification.code = _generate_verification_code()
+            verification.attempts = 0
+            verification.created_at = timezone.now()
+            verification.save(update_fields=["code", "attempts", "created_at"])
+            try:
+                _send_verification_email(user, verification.code)
+            except Exception:
+                pass
+            messages.error(
+                request,
+                "Your verification code has expired. A new code has been sent to your email."
+            )
+            return redirect("front:verify_email", username=username)
+
+        if verification.attempts >= 5:
+            verification.code = _generate_verification_code()
+            verification.attempts = 0
+            verification.created_at = timezone.now()
+            verification.save(update_fields=["code", "attempts", "created_at"])
+            try:
+                _send_verification_email(user, verification.code)
+            except Exception:
+                pass
+            messages.error(
+                request,
+                "Too many failed attempts. A new code has been sent to your email."
+            )
+            return redirect("front:verify_email", username=username)
+
+        if code_entered != verification.code:
+            verification.attempts += 1
+            verification.save(update_fields=["attempts"])
+            remaining = 5 - verification.attempts
+            messages.error(
+                request,
+                f"Incorrect code. {remaining} attempt{'s' if remaining != 1 else ''} remaining."
+            )
+            return redirect("front:verify_email", username=username)
+
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        verification.is_used = True
+        verification.save(update_fields=["is_used"])
+
+        messages.success(request, "Email verified successfully! You can now sign in.")
+        return redirect("front:login")
+
+    masked_email = user.email[:3] + "***" + user.email[user.email.find("@"):]
+    return render(request, "front/verify-email.html", {
+        "username": username,
+        "masked_email": masked_email,
+        "attempts_remaining": 5 - verification.attempts,
+    })
+
+
+def resend_verification(request, username):
+    try:
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        messages.error(request, "Invalid request.")
+        return redirect("front:signup")
+
+    if user.is_active:
+        messages.success(request, "Your email is already verified.")
+        return redirect("front:login")
+
+    code = _generate_verification_code()
+    EmailVerification.objects.update_or_create(
+        user=user,
+        defaults={"code": code, "is_used": False, "attempts": 0},
+    )
+
+    try:
+        _send_verification_email(user, code)
+        messages.success(request, "A new verification code has been sent to your email.")
+    except Exception:
+        messages.error(request, "Failed to send verification email. Please try again later.")
+        return redirect("front:verify_email", username=username)
+
+    return redirect("front:verify_email", username=username)
 
 
 def logout_view(request):

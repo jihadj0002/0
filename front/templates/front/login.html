@@ -97,14 +97,14 @@
                                 <input type="hidden" name="next" value="{{ next }}">
                             {% endif %}
 
-                            <!-- Username Field -->
+                            <!-- Username / Email Field -->
                             <div class="mb-3">
-                                <label for="id_username" class="form-label">Username</label>
+                                <label for="id_username" class="form-label">Username or Email</label>
                                 <input type="text" 
                                        name="username" 
                                        id="id_username" 
                                        class="form-control form-control-lg {% if form.username.errors %}is-invalid{% endif %}" 
-                                       placeholder="Enter your username" 
+                                       placeholder="Enter your username or email" 
                                        required 
                                        autofocus
                                        value="{{ form.username.value|default:'' }}">

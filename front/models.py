@@ -3,6 +3,7 @@ from django.db import models
 # Create your models here.
 # core/models.py
 from django.db import models
+from django.contrib.auth.models import User
 
 class Contact(models.Model):
     name = models.CharField(max_length=100)
@@ -50,3 +51,14 @@ class Survay(models.Model):
 
     def __str__(self):
         return f"{self.name} — {self.business_name}"
+
+
+class EmailVerification(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="email_verification")
+    code = models.CharField(max_length=6)
+    is_used = models.BooleanField(default=False)
+    attempts = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.user.username} — {'verified' if self.is_used else 'pending'} ({self.code})"
