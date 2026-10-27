@@ -59,6 +59,7 @@ _IMAGE_REQUEST_RE = re.compile(
 from .context import build_system_prompt, get_conversation_history
 from .providers import async_call_llm_with_fallback
 from .providers import call_llm_with_fallback as call_llm
+from .providers import OpenRouterAPIKeyError
 from .sender import send_reply, send_reply_async
 from .tools import (
     TOOL_DEFINITIONS,
@@ -485,6 +486,12 @@ def run(conversation, incoming_message):
                 temperature=0.6,
                 max_tokens=700,
             )
+        except OpenRouterAPIKeyError:
+            logger.error(
+                "LLM stopped — OpenRouter API key invalid (401). No reply sent "
+                "reply_id=%s conv=%s", reply_id, conversation.pk,
+            )
+            return
         except Exception:
             logger.exception("LLM call failed reply_id=%s iter=%d", reply_id, iteration)
             final_text = "উত্তর দিতে সময় বেশি লাগছে। আবার চেষ্টা করবেন?"
@@ -1102,6 +1109,12 @@ async def run_async(conversation, incoming_message):
                 temperature=0.6,
                 max_tokens=700,
             )
+        except OpenRouterAPIKeyError:
+            logger.error(
+                "LLM stopped — OpenRouter API key invalid (401). No reply sent "
+                "reply_id=%s conv=%s", reply_id, conversation.pk,
+            )
+            return
         except Exception:
             logger.exception("LLM call failed reply_id=%s iter=%d", reply_id, iteration)
             final_text = "উত্তর দিতে সময় বেশি লাগছে। আবার চেষ্টা করবেন?"

@@ -1,9 +1,10 @@
 import hashlib
 import logging
-import os
 
 from openai import AsyncOpenAI, OpenAI
 from django.core.cache import cache
+
+from api.ai.providers import next_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,7 @@ _async_client: AsyncOpenAI | None = None
 def _client():
     return OpenAI(
         base_url=OPENROUTER_BASE_URL,
-        api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+        api_key=next_api_key(),
     )
 
 
@@ -25,7 +26,7 @@ def _async_client_instance():
     if _async_client is None:
         _async_client = AsyncOpenAI(
             base_url=OPENROUTER_BASE_URL,
-            api_key=os.environ.get("OPENROUTER_API_KEY", ""),
+            api_key=next_api_key(),
         )
     return _async_client
 

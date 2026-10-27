@@ -4,9 +4,13 @@ import os
 import threading
 import time
 
-from openai import AsyncOpenAI, InternalServerError, OpenAI, RateLimitError
+from openai import AsyncOpenAI, AuthenticationError, BadRequestError, InternalServerError, OpenAI, RateLimitError
 
 logger = logging.getLogger(__name__)
+
+
+class OpenRouterAPIKeyError(Exception):
+    """OpenRouter rejected our API key (401 User not found)."""
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_MODEL = "openai/gpt-4o-mini"
@@ -37,6 +41,11 @@ def _next_api_key():
         key = _key_pool[_key_index % len(_key_pool)]
         _key_index += 1
         return key
+
+
+def next_api_key():
+    """Return the next key from the configured pool (for shared consumers)."""
+    return _next_api_key()
 
 
 def _client():
@@ -88,6 +97,13 @@ def call_llm(messages, tools=None, model=None, temperature=0.7, max_tokens=1024)
             raise
         except InternalServerError:
             raise
+        except AuthenticationError as e:
+            logger.error(
+                "OpenRouter API key rejected (401 User not found): %s", e
+            )
+            raise OpenRouterAPIKeyError(
+                "OpenRouter API key invalid (401). Check OPENROUTER_API_KEY / OPENROUTER_API_KEYS."
+            ) from e
 
     raise last_error
 
@@ -101,6 +117,14 @@ def call_llm_with_fallback(messages, tools=None, model=None, temperature=0.7, ma
             raise
         logger.warning(
             "Primary model %s returned 5xx, retrying with fallback %s", model, FALLBACK_MODEL
+        )
+        return call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)
+    except BadRequestError as e:
+        if model == FALLBACK_MODEL or e.status_code != 400:
+            raise
+        logger.warning(
+            "Primary model %s returned provider 400, retrying with fallback %s",
+            model, FALLBACK_MODEL,
         )
         return call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)
 
@@ -169,6 +193,13 @@ async def async_call_llm(messages, tools=None, model=None, temperature=0.7, max_
             raise
         except InternalServerError:
             raise
+        except AuthenticationError as e:
+            logger.error(
+                "OpenRouter API key rejected (401 User not found): %s", e
+            )
+            raise OpenRouterAPIKeyError(
+                "OpenRouter API key invalid (401). Check OPENROUTER_API_KEY / OPENROUTER_API_KEYS."
+            ) from e
 
     raise last_error
 
@@ -184,5 +215,13 @@ async def async_call_llm_with_fallback(
             raise
         logger.warning(
             "Primary model %s returned 5xx, retrying with fallback %s", model, FALLBACK_MODEL
+        )
+        return await async_call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)
+    except BadRequestError as e:
+        if model == FALLBACK_MODEL or e.status_code != 400:
+            raise
+        logger.warning(
+            "Primary model %s returned provider 400, retrying with fallback %s",
+            model, FALLBACK_MODEL,
         )
         return await async_call_llm(messages, tools, FALLBACK_MODEL, temperature, max_tokens)
