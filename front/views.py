@@ -3,6 +3,7 @@ import random
 import threading
 import uuid
 import re
+import logging
 
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
@@ -18,6 +19,9 @@ from datetime import timedelta
 
 from .models import Contact, EmailVerification, Survay
 from back.meta_tracking import send_meta_event
+from .rq_jobs import send_verification_email_job
+
+logger = logging.getLogger(__name__)
 
 
 def home(request):
@@ -235,27 +239,38 @@ TheMatrixAi Team
 </body>
 </html>
 """
-    send_mail(
-        subject,
-        message,
-        settings.DEFAULT_FROM_EMAIL,
-        [user.email],
-        fail_silently=False,
-        html_message=html_message,
-    )
+    try:
+        send_mail(
+            subject,
+            message,
+            settings.DEFAULT_FROM_EMAIL,
+            [user.email],
+            fail_silently=False,
+            html_message=html_message,
+        )
+        logger.info("Verification email sent to %s (code=%s)", user.email, code)
+    except Exception:
+        logger.exception("Failed to send verification email to %s", user.email)
+        raise
 
 
 def _send_verification_email_async(user, code):
-    from django.conf import settings as s
-    if s.EMAIL_BACKEND == "django.core.mail.backends.locmem.EmailBackend":
+    if settings.EMAIL_BACKEND == "django.core.mail.backends.locmem.EmailBackend":
         _send_verification_email(user, code)
         return
-    t = threading.Thread(
-        target=_send_verification_email,
-        args=(user, code),
-        daemon=True,
-    )
-    t.start()
+    try:
+        from django_rq import get_queue
+        queue = get_queue("email")
+        queue.enqueue(
+            send_verification_email_job,
+            user.id, code,
+            retry=None,
+            job_timeout=60,
+        )
+        logger.info("Verification email enqueued for %s", user.email)
+    except Exception:
+        logger.exception("Failed to enqueue verification email for %s — falling back to synchronous send", user.email)
+        _send_verification_email(user, code)
 
 
 def signup(request):
