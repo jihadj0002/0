@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.forms import AuthenticationForm
 import datetime
 import random
+import uuid
 from django.http import HttpResponse
 from .models import Contact, EmailVerification
 from django.contrib.auth.decorators import login_required
@@ -11,6 +12,7 @@ from django.contrib import messages
 from django.conf import settings
 from django.core.mail import send_mail
 from .models import Survay
+from back.meta_tracking import send_meta_event
 
 # Create your views here.
 def home(request):
@@ -58,6 +60,14 @@ def forumm(request):
             notes=f"Survey: business '{business_name or ''}' · customer range {customer_range or ''} · social page {social_page or ''}",
         )
 
+        # Fire server-side Lead event
+        send_meta_event(
+            event_name="Lead",
+            event_id=str(uuid.uuid4()),
+            request=request,
+            email=email or "",
+        )
+
         return redirect('front:home')
 
     return render(request, "front/forum.html")
@@ -74,6 +84,14 @@ def contact(request):
         lead, created = create_lead(
             None, name=name, phone="", email=email or "",
             source="website", notes=f"Contact form — business: {business or ''}",
+        )
+
+        # Fire server-side Lead event
+        send_meta_event(
+            event_name="Lead",
+            event_id=str(uuid.uuid4()),
+            request=request,
+            email=email or "",
         )
 
         return HttpResponse("✅ Thank you! We'll contact you soon.")
@@ -355,6 +373,14 @@ def verify_email(request, username):
         user.save(update_fields=["is_active"])
         verification.is_used = True
         verification.save(update_fields=["is_used"])
+
+        # Fire server-side CompleteRegistration event
+        send_meta_event(
+            event_name="CompleteRegistration",
+            event_id=str(uuid.uuid4()),
+            request=request,
+            email=user.email,
+        )
 
         messages.success(request, "Email verified successfully! You can now sign in.")
         return redirect("front:login")

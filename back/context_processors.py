@@ -9,6 +9,7 @@ def meta_pixel(request):
         "meta_app_id": settings.META_APP_ID,
         "meta_graph_version": settings.META_GRAPH_VERSION,
         "meta_oauth_scope": settings.META_OAUTH_SCOPES,
+        "meta_capi_configured": bool(settings.META_CONVERSION_API_TOKEN),
     }
 
 

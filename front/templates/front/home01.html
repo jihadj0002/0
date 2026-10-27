@@ -531,8 +531,11 @@ document.addEventListener("DOMContentLoaded", () => {
 </script>
 <script>
   document.addEventListener('click', function(e) {
-    if (window.fbq && e.target && e.target.closest && e.target.closest('[data-cal-link]')) {
-      fbq('track', 'Lead');
+    if (window.fbq && e.target && e.target.closest) {
+      var link = e.target.closest('a[href*="wa.me"], button[onclick*="wa.me"]');
+      if (link) {
+        fbq('track', 'Lead');
+      }
     }
   });
 </script>

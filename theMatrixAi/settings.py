@@ -56,6 +56,12 @@ META_OAUTH_REDIRECT_URI = env("META_OAUTH_REDIRECT_URI", default="")
 # Empty/absent disables the pixel entirely.
 META_PIXEL_ID = env("META_PIXEL_ID", default="")
 
+# --- Meta Conversions API (server-side events) ---
+# Token for server-to-Meta Graph API calls. Uses META_PIXEL_ID + this token.
+META_CONVERSION_API_TOKEN = env("META_CONVERSION_API_TOKEN", default="")
+# Graph API version for Conversions API endpoint.
+META_GRAPH_API_VERSION = env("META_GRAPH_API_VERSION", default="v22.0")
+
 # SECURITY WARNING: don't run with debug turned on in production!
 
 if ENVIROMNENT == "development":
