@@ -1,27 +1,31 @@
+import datetime
+import random
+import threading
+import uuid
+import re
+
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.models import User
 from django.contrib.auth.forms import AuthenticationForm
-import datetime
-import random
-import uuid
-from django.http import HttpResponse
-from .models import Contact, EmailVerification
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.conf import settings
 from django.core.mail import send_mail
-from .models import Survay
+from django.http import HttpResponse
+from django.utils import timezone
+from datetime import timedelta
+
+from .models import Contact, EmailVerification, Survay
 from back.meta_tracking import send_meta_event
 
-# Create your views here.
+
 def home(request):
     context = {
         "year": datetime.date.today().year,
         "matrixai_logo_url": f"{settings.MEDIA_URL}images/matrixai.png"
     }
     return render(request, "front/home01.html", context)
-
 
 
 def pricing(request):
@@ -34,7 +38,7 @@ def terms(request):
 
 def forumm(request):
     if request.method == "POST":
-        
+
         name = request.POST.get("name")
         phone = request.POST.get("phone")
         business_name = request.POST.get("business_name")
@@ -60,7 +64,6 @@ def forumm(request):
             notes=f"Survey: business '{business_name or ''}' · customer range {customer_range or ''} · social page {social_page or ''}",
         )
 
-        # Fire server-side Lead event
         send_meta_event(
             event_name="Lead",
             event_id=str(uuid.uuid4()),
@@ -86,7 +89,6 @@ def contact(request):
             source="website", notes=f"Contact form — business: {business or ''}",
         )
 
-        # Fire server-side Lead event
         send_meta_event(
             event_name="Lead",
             event_id=str(uuid.uuid4()),
@@ -95,9 +97,8 @@ def contact(request):
         )
 
         return HttpResponse("✅ Thank you! We'll contact you soon.")
-    
-    return HttpResponse("❌ Invalid request.")
 
+    return HttpResponse("❌ Invalid request.")
 
 
 
@@ -244,6 +245,19 @@ TheMatrixAi Team
     )
 
 
+def _send_verification_email_async(user, code):
+    from django.conf import settings as s
+    if s.EMAIL_BACKEND == "django.core.mail.backends.locmem.EmailBackend":
+        _send_verification_email(user, code)
+        return
+    t = threading.Thread(
+        target=_send_verification_email,
+        args=(user, code),
+        daemon=True,
+    )
+    t.start()
+
+
 def signup(request):
     if request.method == "POST":
         try:
@@ -260,6 +274,23 @@ def signup(request):
                 messages.error(request, "Passwords do not match.")
                 return redirect("front:signup")
 
+            if len(username) < 3 or len(username) > 30:
+                messages.error(request, "Username must be between 3 and 30 characters.")
+                return redirect("front:signup")
+
+            if not re.match(r'^[\w.@+-]+\Z', username):
+                messages.error(request, "Username contains invalid characters.")
+                return redirect("front:signup")
+
+            if len(password) < 8:
+                messages.error(request, "Password must be at least 8 characters long.")
+                return redirect("front:signup")
+
+            email_re = re.compile(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+            if not email_re.match(email):
+                messages.error(request, "Please enter a valid email address.")
+                return redirect("front:signup")
+
             if User.objects.filter(username__iexact=username).exists():
                 messages.error(request, "Username is already taken.")
                 return redirect("front:signup")
@@ -274,7 +305,7 @@ def signup(request):
                 is_active=False,
             )
             user.set_password(password)
-            user.save()
+            user.save(update_fields=["password"])
 
             code = _generate_verification_code()
             EmailVerification.objects.update_or_create(
@@ -282,12 +313,7 @@ def signup(request):
                 defaults={"code": code, "is_used": False, "attempts": 0},
             )
 
-            try:
-                _send_verification_email(user, code)
-            except Exception:
-                messages.error(request, "Failed to send verification email. Please try again.")
-                user.delete()
-                return redirect("front:signup")
+            _send_verification_email_async(user, code)
 
             messages.success(
                 request,
@@ -325,19 +351,13 @@ def verify_email(request, username):
             messages.success(request, "This account is already verified.")
             return redirect("front:login")
 
-        from datetime import timedelta
-        from django.utils import timezone
-
         expiry = verification.created_at + timedelta(minutes=30)
         if timezone.now() > expiry:
             verification.code = _generate_verification_code()
             verification.attempts = 0
             verification.created_at = timezone.now()
             verification.save(update_fields=["code", "attempts", "created_at"])
-            try:
-                _send_verification_email(user, verification.code)
-            except Exception:
-                pass
+            _send_verification_email_async(user, verification.code)
             messages.error(
                 request,
                 "Your verification code has expired. A new code has been sent to your email."
@@ -349,10 +369,7 @@ def verify_email(request, username):
             verification.attempts = 0
             verification.created_at = timezone.now()
             verification.save(update_fields=["code", "attempts", "created_at"])
-            try:
-                _send_verification_email(user, verification.code)
-            except Exception:
-                pass
+            _send_verification_email_async(user, verification.code)
             messages.error(
                 request,
                 "Too many failed attempts. A new code has been sent to your email."
@@ -374,13 +391,16 @@ def verify_email(request, username):
         verification.is_used = True
         verification.save(update_fields=["is_used"])
 
-        # Fire server-side CompleteRegistration event
-        send_meta_event(
-            event_name="CompleteRegistration",
-            event_id=str(uuid.uuid4()),
-            request=request,
-            email=user.email,
-        )
+        threading.Thread(
+            target=send_meta_event,
+            kwargs={
+                "event_name": "CompleteRegistration",
+                "event_id": str(uuid.uuid4()),
+                "request": request,
+                "email": user.email,
+            },
+            daemon=True,
+        ).start()
 
         messages.success(request, "Email verified successfully! You can now sign in.")
         return redirect("front:login")
@@ -410,13 +430,8 @@ def resend_verification(request, username):
         defaults={"code": code, "is_used": False, "attempts": 0},
     )
 
-    try:
-        _send_verification_email(user, code)
-        messages.success(request, "A new verification code has been sent to your email.")
-    except Exception:
-        messages.error(request, "Failed to send verification email. Please try again later.")
-        return redirect("front:verify_email", username=username)
-
+    _send_verification_email_async(user, code)
+    messages.success(request, "A new verification code has been sent to your email.")
     return redirect("front:verify_email", username=username)
 
 

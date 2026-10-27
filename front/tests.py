@@ -57,6 +57,7 @@ class SignupTests(TestCase):
         self.assertRedirects(response, reverse("front:signup"))
 
 
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class VerifyEmailTests(TestCase):
 
     def setUp(self):
