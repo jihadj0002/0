@@ -27,6 +27,56 @@
   margin-top: 2px;
 }
 
+.buy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #25D366;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 10px 18px;
+  border-radius: 8px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.2s ease;
+  box-shadow: var(--shadow);
+}
+
+.buy-btn:hover { background: #1EBE5D; color: #fff; }
+
+.buy-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.buy-chips-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.buy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: #f0fdf4;
+  color: #128c7e;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none;
+  border: 1px solid #a7f3d0;
+  transition: background 0.2s ease;
+}
+
+.buy-chip:hover { background: #d1fae5; }
+
 /* ==============================
    STAT CARDS
 ============================== */
@@ -442,6 +492,25 @@ table.txn-table {
       {{ balance.plan.get_name_display }} Plan
     </div>
   {% endif %}
+  <a class="buy-btn" target="_blank"
+     href="https://wa.me/8801793504010/?text={{ 'Hi! I want to buy credits for TheMatrixAI. My username is '|add:request.user.username|urlencode }}">
+    Purchase Credits
+  </a>
+</div>
+
+<!-- Quick amount chips -->
+<div class="buy-chips">
+  <span class="buy-chips-label">Quick buy:</span>
+  {% with username=request.user.username|urlencode %}
+    <a class="buy-chip" target="_blank"
+       href="https://wa.me/8801793504010/?text=Hi!%20I%20want%20to%20buy%20100%20credits%20for%20TheMatrixAI.%20My%20username%20is%20{{ username }}">100 credits</a>
+    <a class="buy-chip" target="_blank"
+       href="https://wa.me/8801793504010/?text=Hi!%20I%20want%20to%20buy%20500%20credits%20for%20TheMatrixAI.%20My%20username%20is%20{{ username }}">500 credits</a>
+    <a class="buy-chip" target="_blank"
+       href="https://wa.me/8801793504010/?text=Hi!%20I%20want%20to%20buy%201000%20credits%20for%20TheMatrixAI.%20My%20username%20is%20{{ username }}">1000 credits</a>
+    <a class="buy-chip" target="_blank"
+       href="https://wa.me/8801793504010/?text=Hi!%20I%20want%20to%20buy%202000%20credits%20for%20TheMatrixAI.%20My%20username%20is%20{{ username }}">2000 credits</a>
+  {% endwith %}
 </div>
 
 <!-- Stat Cards -->
