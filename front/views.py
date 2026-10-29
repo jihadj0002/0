@@ -163,6 +163,14 @@ def login_view(request):
 
         if user is not None:
             if not user.is_active:
+                if not settings.FRONT_EMAIL_VERIFICATION_REQUIRED:
+                    user.is_active = True
+                    user.save(update_fields=["is_active"])
+                    login(request, user)
+                    messages.success(request, f"Welcome back, {user.username}!")
+                    if next_url:
+                        return redirect(next_url)
+                    return _post_login_redirect(user)
                 messages.error(
                     request,
                     "Your email is not verified yet. "
@@ -310,25 +318,28 @@ def signup(request):
             user = User.objects.create(
                 username=username,
                 email=email,
-                is_active=False,
+                is_active=not settings.FRONT_EMAIL_VERIFICATION_REQUIRED,
             )
             user.set_password(password)
             user.save(update_fields=["password"])
 
-            code = _generate_verification_code()
-            EmailVerification.objects.update_or_create(
-                user=user,
-                defaults={"code": code, "is_used": False, "attempts": 0},
-            )
+            if settings.FRONT_EMAIL_VERIFICATION_REQUIRED:
+                code = _generate_verification_code()
+                EmailVerification.objects.update_or_create(
+                    user=user,
+                    defaults={"code": code, "is_used": False, "attempts": 0},
+                )
+                _send_verification_email_async(user, code)
+                messages.success(
+                    request,
+                    f"Account created! We sent a 6-digit code to {email}. "
+                    "Please verify your email to activate your account."
+                )
+                return redirect("front:verify_email", username=user.username)
 
-            _send_verification_email_async(user, code)
-
-            messages.success(
-                request,
-                f"Account created! We sent a 6-digit code to {email}. "
-                "Please verify your email to activate your account."
-            )
-            return redirect("front:verify_email", username=user.username)
+            login(request, user)
+            messages.success(request, f"Welcome, {user.username}! Your account is ready.")
+            return _post_login_redirect(user)
 
         except Exception as e:
             messages.error(request, "Something went wrong. Please try again.")
@@ -337,6 +348,10 @@ def signup(request):
 
 
 def verify_email(request, username):
+    if not settings.FRONT_EMAIL_VERIFICATION_REQUIRED:
+        messages.info(request, "Email verification is currently disabled. You can sign in directly.")
+        return redirect("front:login")
+
     try:
         user = User.objects.get(username=username)
     except User.DoesNotExist:
@@ -422,6 +437,10 @@ def verify_email(request, username):
 
 
 def resend_verification(request, username):
+    if not settings.FRONT_EMAIL_VERIFICATION_REQUIRED:
+        messages.info(request, "Email verification is currently disabled. You can sign in directly.")
+        return redirect("front:login")
+
     try:
         user = User.objects.get(username=username)
     except User.DoesNotExist:

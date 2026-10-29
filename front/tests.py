@@ -10,7 +10,7 @@ class SignupTests(TestCase):
         response = self.client.get(reverse("front:signup"))
         self.assertEqual(response.status_code, 200)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", FRONT_EMAIL_VERIFICATION_REQUIRED=True)
     def test_signup_creates_inactive_user_and_sends_email(self):
         response = self.client.post(reverse("front:signup"), {
             "username": "testuser",
@@ -56,8 +56,21 @@ class SignupTests(TestCase):
         })
         self.assertRedirects(response, reverse("front:signup"))
 
+    def test_signup_creates_active_user_when_verification_disabled(self):
+        response = self.client.post(reverse("front:signup"), {
+            "username": "testuser",
+            "email": "test@example.com",
+            "password": "StrongPass123!",
+            "confirm_password": "StrongPass123!",
+        })
+        self.assertNotEqual(response.url, reverse("front:signup"))
+        self.assertNotEqual(response.url, reverse("front:verify_email", args=["testuser"]))
+        user = User.objects.get(username="testuser")
+        self.assertTrue(user.is_active)
+        self.assertFalse(EmailVerification.objects.filter(user=user).exists())
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", FRONT_EMAIL_VERIFICATION_REQUIRED=True)
 class VerifyEmailTests(TestCase):
 
     def setUp(self):
@@ -136,6 +149,7 @@ class LoginTests(TestCase):
         })
         self.assertNotEqual(response.url, reverse("front:login"))
 
+    @override_settings(FRONT_EMAIL_VERIFICATION_REQUIRED=True)
     def test_login_blocks_unverified_user(self):
         unverified = User.objects.create_user(
             username="unv", email="un@test.com", password="Test1234!", is_active=False,

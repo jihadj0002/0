@@ -349,6 +349,10 @@ else:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = 'front:login'
 
+# When False: signup creates active users without email verification.
+# Set True after configuring SendGrid/Mailgun to re-enable OTP flow.
+FRONT_EMAIL_VERIFICATION_REQUIRED = os.environ.get("FRONT_EMAIL_VERIFICATION_REQUIRED", "False") == "True"
+
 # --------------------
 # EMAIL (optional — enabled only when SMTP env vars are set)
 # --------------------
