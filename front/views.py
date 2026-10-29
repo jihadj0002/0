@@ -19,7 +19,6 @@ from datetime import timedelta
 
 from .models import Contact, EmailVerification, Survay
 from back.meta_tracking import send_meta_event
-from .rq_jobs import send_verification_email_job
 
 logger = logging.getLogger(__name__)
 
@@ -259,17 +258,11 @@ def _send_verification_email_async(user, code):
         _send_verification_email(user, code)
         return
     try:
-        from django_rq import get_queue
-        queue = get_queue("email")
-        queue.enqueue(
-            send_verification_email_job,
-            user.id, code,
-            retry=None,
-            job_timeout=60,
-        )
-        logger.info("Verification email enqueued for %s", user.email)
+        from api.concurrency import submit_sync
+        submit_sync(_send_verification_email, user, code)
+        logger.info("Verification email dispatched for %s", user.email)
     except Exception:
-        logger.exception("Failed to enqueue verification email for %s — falling back to synchronous send", user.email)
+        logger.exception("Failed to dispatch verification email for %s — sending inline", user.email)
         _send_verification_email(user, code)
 
 
